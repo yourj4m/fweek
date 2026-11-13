@@ -149,7 +149,7 @@ class _SyncSettingsState extends State<SyncSettings> {
           enabled: !_connecting,
         ),
         _Field(
-          label: 'User name',
+          label: 'Login name',
           controller: _user,
           enabled: !_connecting,
         ),
@@ -169,7 +169,7 @@ class _SyncSettingsState extends State<SyncSettings> {
         const SizedBox(height: 4),
         Text(
           'Create an app password in Nextcloud under Settings → Security → '
-          'Devices & sessions; that page also shows your user name. The '
+          'Devices & sessions; that page also shows your login name. The '
           'password is kept ${isMobile ? 'encrypted on this device' : 'in the system keyring'}.',
           style: muted,
         ),

@@ -214,7 +214,9 @@ class WebDavStorage implements SyncStorage {
       if (status == 403) {
         throw SyncException(
           SyncFailure.forbidden,
-          'The server accepted the login but refused access to ${uri.path}.',
+          'The server accepted the login but refused access to '
+          '${Uri.decodeFull(uri.path)}. If the app password was created '
+          'without "Allow filesystem access", create one with it.',
         );
       }
       // Nextcloud's brute-force protection: after more than ten failed

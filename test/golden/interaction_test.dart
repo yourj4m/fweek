@@ -255,7 +255,7 @@ void main() {
     expect(find.text('Enter the server address.'), findsOneWidget);
 
     await tester.enterText(field('Server'), 'cloud.example.com');
-    await tester.enterText(field('User name'), 'jonas');
+    await tester.enterText(field('Login name'), 'jonas');
     await tester.enterText(field('App password'), 'wrong');
     await tester.tap(find.text('Connect'));
     await tester.pumpAndSettle();

@@ -402,7 +402,7 @@ void main() {
       await expectLater(
         asBefore.createDir('WeekToDo/changes'),
         throwsA(failure(SyncFailure.forbidden).having(
-            (e) => e.message, 'message', allOf(contains('accepted the login'), isNot(contains('password'))))),
+            (e) => e.message, 'message', allOf(contains('accepted the login'), isNot(contains('did not accept'))))),
       );
       server.throttled = true;
       await expectLater(

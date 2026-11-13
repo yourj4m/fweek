@@ -173,7 +173,7 @@ Layout:
 
 ### Sync
 
-Set it up under Settings → Sync with your Nextcloud address, user name and an
+Set it up under Settings → Sync with your Nextcloud address, login name and an
 *app password* (Nextcloud: Settings → Security → Devices & sessions). The user
 name is the login Nextcloud shows next to the new app password: an app
 password works only together with that name. The address may also be the
