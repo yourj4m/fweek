@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# One-time setup of the build environment on Fedora, without root and without
+# installing development packages on the host:
+#
+#   - a toolbox container "weekleaf-dev" with the compiler toolchain, GTK
+#     headers and a headless X server for the smoke test
+#   - the stable Flutter SDK under .tools/flutter (git-ignored)
+#
+# Afterwards run everything through tools/dev, for example:
+#   tools/dev flutter test
+#   tools/dev flutter build linux --release
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+container="${WEEKLEAF_CONTAINER:-weekleaf-dev}"
+
+command -v toolbox >/dev/null || { echo "toolbox is required (dnf install toolbox)"; exit 1; }
+
+if ! toolbox list --containers 2>/dev/null | grep -qw "$container"; then
+  toolbox create --assumeyes "$container"
+fi
+toolbox run -c "$container" sudo dnf install -y --setopt=install_weak_deps=False \
+  clang cmake ninja-build pkgconf-pkg-config gtk3-devel xz-devel libstdc++-devel \
+  git curl unzip xz zip which file procps-ng \
+  xorg-x11-server-Xvfb mesa-dri-drivers mesa-libGL mesa-libEGL \
+  ImageMagick xdotool openbox google-noto-emoji-color-fonts
+
+if [ ! -x "$root/.tools/flutter/bin/flutter" ]; then
+  mkdir -p "$root/.tools/dl"
+  cd "$root/.tools/dl"
+  curl -fsSL -o releases_linux.json \
+    https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json
+  read -r url sha < <(python3 - <<'PY'
+import json
+d = json.load(open("releases_linux.json"))
+h = d["current_release"]["stable"]
+r = next(x for x in d["releases"] if x["hash"] == h and x["channel"] == "stable")
+print(d["base_url"] + "/" + r["archive"], r["sha256"])
+PY
+)
+  curl -fSL --retry 3 -o flutter.tar.xz "$url"
+  echo "$sha  flutter.tar.xz" | sha256sum -c -
+  tar -xJf flutter.tar.xz -C "$root/.tools"
+  rm -f flutter.tar.xz
+fi
+
+"$root/tools/dev" flutter --disable-analytics
+"$root/tools/dev" dart --disable-analytics
+"$root/tools/dev" flutter config --no-cli-animations --enable-linux-desktop
+"$root/tools/dev" flutter pub get
+"$root/tools/dev" flutter doctor

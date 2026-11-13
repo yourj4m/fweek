@@ -101,6 +101,26 @@ void main() {
     expect(titles(store.tasksOn(monday)).indexOf('Tap and edit'), 1);
   });
 
+  testWidgets('holding a task at the window edge carries it to the next week', (tester) async {
+    final store = seededStore();
+    await pumpApp(tester, store);
+    final from = tester.getCenter(find.text('Tap and edit'));
+    final gesture = await tester.startGesture(from, kind: PointerDeviceKind.mouse);
+    await gesture.moveBy(const Offset(10, 10));
+    await tester.pump();
+    await gesture.moveTo(const Offset(1432, 400));
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+    expect(find.text('W47'), findsOneWidget);
+    // Drop onto the new week's Monday.
+    await gesture.moveTo(const Offset(130, 210));
+    await tester.pumpAndSettle();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(titles(store.tasksOn(monday.addDays(7))), ['Tap and edit']);
+    expect(titles(store.tasksOn(monday.addDays(5))), ['Mark me complete', 'Drag to the next day']);
+  });
+
   testWidgets('arrow keys change week, T returns to today', (tester) async {
     await pumpApp(tester, seededStore());
     expect(find.text('W46'), findsOneWidget);
