@@ -193,6 +193,23 @@ void main() {
     expect(servers.values.single.files.length, 3);
   });
 
+  serviceTest('a throttled run is retried on the timer', (tester) async {
+    // Nextcloud refuses a throttled login before it checks the password, so
+    // retrying adds no failed attempt, and the saved password goes through
+    // once the block lifts.
+    final store = newStore();
+    final service = newService(store);
+    await connect(service);
+    current.failWith = const SyncException(SyncFailure.throttled, 'too many failed attempts');
+    await service.syncNow();
+    expect(service.state, SyncState.error);
+    final calls = current.calls;
+    current.failWith = null;
+    await tester.pump(const Duration(minutes: 5, seconds: 1));
+    expect(current.calls, greaterThan(calls));
+    expect(service.state, SyncState.idle);
+  });
+
   serviceTest('the files are found under the id the server reports', (tester) async {
     final store = newStore();
     String? reported = 'f00d-1d';

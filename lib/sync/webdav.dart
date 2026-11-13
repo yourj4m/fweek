@@ -122,7 +122,15 @@ Future<String?> discoverNextcloudUserId({
     if (principal == null) return null;
     // `/remote.php/dav/principals/users/<id>/`; ids may contain characters
     // that are percent-encoded there (spaces, `@`).
-    final segments = Uri.parse(principal).pathSegments.where((s) => s.isNotEmpty).toList();
+    final List<String> segments;
+    try {
+      segments = Uri.parse(principal).pathSegments.where((s) => s.isNotEmpty).toList();
+    } on FormatException {
+      // Not an address at all. Connecting must end with a message, not an
+      // exception that would leave the settings form waiting forever, so
+      // leave the id to the fallbacks.
+      return null;
+    }
     final users = segments.lastIndexOf('users');
     if (users < 0 || users != segments.length - 2) return null;
     return segments.last;

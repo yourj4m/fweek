@@ -508,4 +508,26 @@ void main() {
     expect(db.meta('sync.seen'), '{"0a1b2c3d":4}');
     expect(server.requests, everyElement(contains('/remote.php/dav/files/jonas/')));
   });
+
+  test('a principal that is not an address leaves the id to the fallbacks', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      await request.drain<void>();
+      request.response
+        ..statusCode = 207
+        ..headers.contentType = ContentType('application', 'xml', charset: 'utf-8')
+        ..write('<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response>'
+            '<d:href>/remote.php/dav/</d:href><d:propstat><d:prop><d:current-user-principal>'
+            '<d:href>http://[broken/principals/users/x/</d:href></d:current-user-principal>'
+            '</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>'
+            '</d:multistatus>');
+      await request.response.close();
+    });
+    expect(
+      await discoverNextcloudUserId(
+          server: 'http://127.0.0.1:${server.port}', login: 'jonas', password: 'x'),
+      isNull,
+    );
+  });
 }
