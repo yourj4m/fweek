@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weekleaf/data/database.dart';
-import 'package:weekleaf/data/day.dart';
-import 'package:weekleaf/data/models.dart';
-import 'package:weekleaf/data/planner_store.dart';
-import 'package:weekleaf/data/recurrence.dart';
+import 'package:weektodo/data/database.dart';
+import 'package:weektodo/data/day.dart';
+import 'package:weektodo/data/models.dart';
+import 'package:weektodo/data/planner_store.dart';
+import 'package:weektodo/data/recurrence.dart';
 
 void main() {
   late PlannerDatabase db;

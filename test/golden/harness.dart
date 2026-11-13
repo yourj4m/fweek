@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weekleaf/data/database.dart';
-import 'package:weekleaf/data/day.dart';
-import 'package:weekleaf/data/models.dart';
-import 'package:weekleaf/data/planner_store.dart';
-import 'package:weekleaf/main.dart';
+import 'package:weektodo/data/database.dart';
+import 'package:weektodo/data/day.dart';
+import 'package:weektodo/data/models.dart';
+import 'package:weektodo/data/planner_store.dart';
+import 'package:weektodo/main.dart';
 
 /// The day the reference captures were taken, so renders line up with them.
 final referenceToday = Day(2026, 11, 13);
@@ -75,6 +75,6 @@ Future<void> pumpApp(
   tester.platformDispatcher.platformBrightnessTestValue = brightness;
   addTearDown(tester.view.reset);
   addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
-  await tester.pumpWidget(WeekleafApp(store: store, notifications: false));
+  await tester.pumpWidget(WeekToDoApp(store: store, notifications: false));
   await tester.pumpAndSettle();
 }

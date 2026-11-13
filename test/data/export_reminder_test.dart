@@ -1,13 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weekleaf/data/database.dart';
-import 'package:weekleaf/data/day.dart';
-import 'package:weekleaf/data/export.dart';
-import 'package:weekleaf/data/models.dart';
-import 'package:weekleaf/data/planner_store.dart';
-import 'package:weekleaf/data/recurrence.dart';
-import 'package:weekleaf/services/reminders.dart';
+import 'package:weektodo/data/database.dart';
+import 'package:weektodo/data/day.dart';
+import 'package:weektodo/data/export.dart';
+import 'package:weektodo/data/models.dart';
+import 'package:weektodo/data/planner_store.dart';
+import 'package:weektodo/data/recurrence.dart';
+import 'package:weektodo/services/reminders.dart';
 
 void main() {
   final today = Day(2026, 11, 13);
@@ -69,7 +69,7 @@ void main() {
       expect(() => Export.restore(store, 'not json'),
           throwsA(isA<FormatException>().having((e) => e.message, 'message', contains('JSON'))));
       expect(() => Export.restore(store, '{"format":"other"}'),
-          throwsA(isA<FormatException>().having((e) => e.message, 'message', contains('not a Weekleaf backup'))));
+          throwsA(isA<FormatException>().having((e) => e.message, 'message', contains('not a WeekToDo backup'))));
       expect(
         () => Export.restore(store, jsonEncode({'format': Export.backupFormat, 'version': 99})),
         throwsA(isA<FormatException>().having((e) => e.message, 'message', contains('newer version'))),

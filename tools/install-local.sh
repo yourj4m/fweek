@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Install the built app for the current user: copies the release bundle to
-# ~/.local/opt/weekleaf and adds an application-menu entry and icon.
+# ~/.local/opt/weektodo and adds an application-menu entry and icon.
 #
 #   tools/dev flutter build linux --release   # build first
 #   tools/install-local.sh                    # install
 #   tools/install-local.sh --uninstall        # remove (keeps your planner data)
 #
 # Nothing here needs root. Planner data lives separately in
-# ~/.local/share/org.weekleaf.weekleaf and is never touched by this script.
+# ~/.local/share/io.github.yourj4m.weektodo and is never touched by this script.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-app_id="org.weekleaf.weekleaf"
+app_id="io.github.yourj4m.weektodo"
 prefix="$HOME/.local"
-target="$prefix/opt/weekleaf"
+target="$prefix/opt/weektodo"
 desktop="$prefix/share/applications/$app_id.desktop"
 icons="$prefix/share/icons/hicolor"
 
@@ -35,7 +35,7 @@ if [ "${1:-}" = "--uninstall" ]; then
 fi
 
 bundle="$root/build/linux/x64/release/bundle"
-if [ ! -x "$bundle/weekleaf" ]; then
+if [ ! -x "$bundle/weektodo" ]; then
   echo "No release build found. Run: tools/dev flutter build linux --release" >&2
   exit 1
 fi
@@ -49,24 +49,24 @@ mv "$target.new" "$target"
 
 for size in 48 64 128 256 512; do
   mkdir -p "$icons/${size}x${size}/apps"
-  cp "$root/assets/icon/weekleaf-$size.png" "$icons/${size}x${size}/apps/$app_id.png"
+  cp "$root/assets/icon/weektodo-$size.png" "$icons/${size}x${size}/apps/$app_id.png"
 done
 
 cat > "$desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=Weekleaf
+Name=WeekToDo
 GenericName=Weekly Planner
 Comment=A minimal weekly planner
-Exec=$target/weekleaf
+Exec=$target/weektodo
 Icon=$app_id
 Terminal=false
 Categories=Office;Calendar;ProjectManagement;
 Keywords=planner;todo;tasks;week;calendar;
-StartupWMClass=weekleaf
+StartupWMClass=weektodo
 StartupNotify=true
 DESKTOP
 
 refresh
 echo "Installed to $target"
-echo "Start it from the application menu (Weekleaf) or run: $target/weekleaf"
+echo "Start it from the application menu (WeekToDo) or run: $target/weektodo"

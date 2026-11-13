@@ -1,92 +1,148 @@
 #!/usr/bin/env bash
-# Start the built app on a headless X display, drive it with synthetic input
-# and save screenshots. Run inside the dev container:
+# End-to-end check of the built app as a native Wayland client.
 #
 #   tools/dev tools/smoke-run.sh <output-dir>
 #
+# Starts a headless sway compositor with two outputs at different scales (an
+# unscaled monitor beside a 125 % one, the arrangement that exposed the
+# quarter-window bug), launches the release build, and drives it with real
+# pointer and keyboard events: typing tasks, opening the task card, dragging
+# to another day, shortcuts, moving the window between the two outputs, and a
+# restart. Screenshots go to <output-dir>; the script fails if the app does
+# not fill its window, typed text does not arrive, or data does not persist.
+#
 # Uses a throwaway data folder, so the real planner is never touched.
-set -euo pipefail
+set -uo pipefail
 out="${1:?output directory}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+bin="$root/build/linux/x64/release/bundle/weektodo"
+app_id="io.github.yourj4m.weektodo"
+[ -x "$bin" ] || { echo "No release build; run: tools/dev flutter build linux --release" >&2; exit 1; }
 mkdir -p "$out"
+: >"$out/app.log"
+
+export XDG_RUNTIME_DIR="$(mktemp -d)"; chmod 700 "$XDG_RUNTIME_DIR"
 data="$(mktemp -d)"
-display=":97"
+failures=0
+fail() { echo "FAIL: $*"; failures=$((failures + 1)); }
+pass() { echo "ok:   $*"; }
 
-Xvfb "$display" -screen 0 1440x900x24 -nolisten tcp >/dev/null 2>&1 &
-xvfb=$!
-trap 'kill "$app" "${wm:-}" "$xvfb" 2>/dev/null || true; rm -rf "$data"' EXIT
-sleep 1
-
-export DISPLAY="$display" GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1
-# Text input only reaches a GTK window that a window manager has focused.
-openbox >/dev/null 2>&1 &
-wm=$!
-sleep 0.5
-export WEEKLEAF_DATA_DIR="$data"
-"$root/build/linux/x64/release/bundle/weekleaf" >"$out/app.log" 2>&1 &
-app=$!
-
+cat > "$XDG_RUNTIME_DIR/sway.conf" <<'CFG'
+output HEADLESS-1 mode 1440x900 scale 1 position 0 0
+default_border none
+focus_follows_mouse no
+CFG
+unset DISPLAY WAYLAND_DISPLAY
+export WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman
+sway -c "$XDG_RUNTIME_DIR/sway.conf" >"$out/sway.log" 2>&1 &
+compositor=$!
+app=""
+trap 'kill $app $compositor 2>/dev/null; rm -rf "$data" "$XDG_RUNTIME_DIR"' EXIT
 for _ in $(seq 1 40); do
-  win="$(xdotool search --onlyvisible --name Weekleaf 2>/dev/null | head -1 || true)"
-  [ -n "$win" ] && break
-  sleep 0.5
+  socket="$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v lock | head -1)"
+  [ -n "$socket" ] && break
+  sleep 0.25
 done
-[ -n "${win:-}" ] || { echo "window never appeared"; cat "$out/app.log"; exit 1; }
-xdotool windowactivate "$win" windowsize "$win" 1440 900
-sleep 1.5
-shot() { import -window "$win" "$out/$1.png"; echo "shot $1"; }
-at() { xdotool mousemove --window "$win" "$1" "$2"; }
-shot 01-empty
+[ -n "${socket:-}" ] || { echo "sway did not start"; tail -5 "$out/sway.log"; exit 1; }
+export WAYLAND_DISPLAY="$(basename "$socket")" GDK_BACKEND=wayland LIBGL_ALWAYS_SOFTWARE=1
+export SWAYSOCK="$(ls "$XDG_RUNTIME_DIR"/sway-ipc.* | head -1)"
+export WEEKTODO_DATA_DIR="$data"
+
+# A second output at 125 %, to the right; the app opens on the unscaled one.
+swaymsg create_output >/dev/null
+swaymsg output HEADLESS-2 mode 1800x1125 scale 1.25 position 1440 0 >/dev/null
+swaymsg focus output HEADLESS-1 >/dev/null
+sleep 0.5
+
+start_app() {
+  "$bin" >>"$out/app.log" 2>&1 &
+  app=$!
+  for _ in $(seq 1 60); do
+    swaymsg -t get_tree | grep -q "\"app_id\": \"$app_id\"" && break
+    sleep 0.25
+  done
+  sleep 2
+}
+at() { swaymsg seat seat0 cursor set "$1" "$2" >/dev/null; sleep 0.08; }
+press() { swaymsg seat seat0 cursor press button1 >/dev/null; }
+release() { swaymsg seat seat0 cursor release button1 >/dev/null; }
+click() { at "$1" "$2"; press; sleep 0.05; release; sleep 0.35; }
+shot() { grim -o "${2:-HEADLESS-1}" "$out/$1.png" && echo "shot  $1"; }
+stored() { strings "$data"/planner.db* 2>/dev/null | grep -c -- "$1"; }
+
+# The drawn content must reach the right-hand edge of the window. With the
+# quarter-window bug it stops at half the width.
+assert_fills() {
+  local file="$out/$1.png" width trimmed x right
+  width="$(magick "$file" -format '%w' info:)"
+  read -r trimmed x < <(magick "$file" -fuzz 3% -trim -format '%w %X' info: | tr -d '+')
+  right=$((x + trimmed))
+  if [ $((right * 100)) -ge $((width * 90)) ]; then
+    pass "$1 fills its window (content reaches $right of $width px)"
+  else
+    fail "$1 does not fill its window (content ends at $right of $width px)"
+  fi
+}
+
+start_app
+shot 01-start
+assert_fills 01-start
 
 # Type two tasks into Monday's first row.
-at 130 207; xdotool click 1
+click 130 207
+wtype "Typed on Wayland"; wtype -k Return
+wtype "Second task"; wtype -k Return
 sleep 0.4
-xdotool type --delay 20 "Typed in the real app"
-xdotool key Return
-xdotool type --delay 20 "Second task"
-xdotool key Return
-sleep 0.3
-shot 02-typing
-xdotool key Escape
-sleep 0.3
+shot 02-typed
+wtype -k Escape; sleep 0.3
+[ "$(stored 'Typed on Wayland')" -ge 1 ] && pass "typed text was stored" || fail "typed text was not stored"
 
-# Open the first task and type a note.
-at 100 207; xdotool click 1
-sleep 0.8
-shot 03-dialog
-at 620 285; xdotool click 1
-sleep 0.3
-xdotool type --delay 20 "A note typed through X11."
-sleep 0.8
-xdotool key Escape
-sleep 0.5
+# Open the first task and add a note.
+click 100 207; sleep 0.5
+shot 03-card
+click 620 285
+wtype "A note typed in the card."; sleep 0.8
+wtype -k Escape; sleep 0.6
+[ "$(stored 'A note typed in the card')" -ge 1 ] && pass "note was stored" || fail "note was not stored"
 
-# Drag the second task to Wednesday.
-at 70 249; xdotool mousedown 1
-for x in 90 150 250 400 520 560; do at "$x" 300; sleep 0.08; done
+# Drag the second task from Monday to Wednesday.
+at 70 249; press; sleep 0.1
+for x in 90 150 250 400 520 560; do at "$x" 300; done
 shot 04-dragging
-xdotool mouseup 1
-sleep 0.6
+release; sleep 0.6
 shot 05-dropped
 
-# Next week and back with the keyboard, then month view.
-xdotool key Right
-sleep 0.4
+# Keyboard: next week, back to today, month view.
+wtype -k Right; sleep 0.4
 shot 06-next-week
-xdotool key t
-xdotool key m
-sleep 0.5
+wtype t; sleep 0.2; wtype m; sleep 0.5
 shot 07-month
+wtype m; sleep 0.4
 
-kill "$app"; wait "$app" 2>/dev/null || true
-# Reopen: the data must still be there.
-"$root/build/linux/x64/release/bundle/weekleaf" >>"$out/app.log" 2>&1 &
-app=$!
-sleep 4
-win="$(xdotool search --onlyvisible --name Weekleaf | head -1)"
-xdotool windowactivate "$win" windowsize "$win" 1440 900
-sleep 1
-xdotool key m
-sleep 0.5
-shot 08-reopened
-echo "--- app log ---"; cat "$out/app.log"
+# Move the window to the 125 % output and back; it must fill both.
+swaymsg "[app_id=\"$app_id\"] move container to output HEADLESS-2" >/dev/null; sleep 2
+shot 08-on-125-percent HEADLESS-2
+assert_fills 08-on-125-percent
+swaymsg "[app_id=\"$app_id\"] move container to output HEADLESS-1" >/dev/null; sleep 2
+shot 09-back-on-100-percent
+assert_fills 09-back-on-100-percent
+
+# Restart: the tasks must still be there.
+kill "$app"; wait "$app" 2>/dev/null
+start_app
+shot 10-restarted
+assert_fills 10-restarted
+[ "$(stored 'Second task')" -ge 1 ] && pass "tasks survive a restart" || fail "tasks lost on restart"
+
+pattern='EXCEPTION|Unhandled|Unsupported operation|FATAL|Timed out waiting'
+errors="$(grep -c -E "$pattern" "$out/app.log" || true)"
+if [ "$errors" -eq 0 ]; then
+  pass "no errors in the app log"
+else
+  fail "$errors error lines in the app log"
+  grep -E "$pattern" "$out/app.log" | head -5
+fi
+
+echo
+[ "$failures" -eq 0 ] && echo "smoke run passed" || echo "smoke run FAILED ($failures)"
+exit "$failures"

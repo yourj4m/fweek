@@ -1,4 +1,4 @@
-# Weekleaf
+# WeekToDo
 
 A minimal weekly planner for Linux, with Android planned. Your week as ruled
 columns, a Someday area for undated tasks, and nothing else in the way.
@@ -7,7 +7,7 @@ Local-first: everything is stored on your machine and the app works offline.
 Sync through your own Nextcloud or Google Drive is the next milestone; the
 data layer is already built for it.
 
-"Weekleaf" is a working title.
+"WeekToDo" is a working title.
 
 ## Status
 
@@ -46,7 +46,7 @@ Not there yet:
 ```sh
 tools/setup-dev.sh                         # once: build container + Flutter SDK
 tools/dev flutter build linux --release    # build
-build/linux/x64/release/bundle/weekleaf    # run
+build/linux/x64/release/bundle/weektodo    # run
 tools/install-local.sh                     # optional: add to the application menu
 ```
 
@@ -55,8 +55,8 @@ the compiler and GTK headers live in a container, and the Flutter SDK is
 downloaded into `.tools/`. The built app runs directly on the host and needs
 only GTK 3.
 
-Your planner is stored in `~/.local/share/org.weekleaf.weekleaf/planner.db`.
-Set `WEEKLEAF_DATA_DIR=/some/folder` to try the app against a different,
+Your planner is stored in `~/.local/share/io.github.yourj4m.weektodo/planner.db`.
+Set `WEEKTODO_DATA_DIR=/some/folder` to try the app against a different,
 throwaway folder.
 
 ## Develop
@@ -95,7 +95,7 @@ so moving one task never rewrites its neighbours.
 The interface follows the layout and behaviour of the Tweek weekly planner,
 measured from its public web app and recorded in `docs/design-spec.md`. This
 is an independent implementation: no code, styles, fonts, icons, images or
-text from Tweek are included, and Weekleaf is not affiliated with or endorsed
+text from Tweek are included, and WeekToDo is not affiliated with or endorsed
 by Tweek.
 
 ## Licence

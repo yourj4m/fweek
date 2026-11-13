@@ -38,7 +38,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   Future<void> _export(String label, String extension, String Function() build) async {
     try {
       final location = await getSaveLocation(
-        suggestedName: 'weekleaf.$extension',
+        suggestedName: 'weektodo.$extension',
         acceptedTypeGroups: [XTypeGroup(label: label, extensions: [extension])],
       );
       if (location == null) return;
@@ -56,7 +56,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     try {
       final file = await openFile(
         acceptedTypeGroups: const [
-          XTypeGroup(label: 'Weekleaf backup', extensions: ['json']),
+          XTypeGroup(label: 'WeekToDo backup', extensions: ['json']),
         ],
       );
       if (file == null) return;
@@ -201,7 +201,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                           size: Dim.controlInline,
                           iconSize: 16,
                           onTap: () => _export(
-                              'Weekleaf backup', 'json', () => Export.backup(store)),
+                              'WeekToDo backup', 'json', () => Export.backup(store)),
                         ),
                         AppButton(
                           label: 'CSV',

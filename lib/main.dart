@@ -15,9 +15,9 @@ import 'ui/task_list.dart' show formatTime;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // WEEKLEAF_DATA_DIR points the app at another data folder, for testing
+  // WEEKTODO_DATA_DIR points the app at another data folder, for testing
   // without touching the real planner.
-  final override = Platform.environment['WEEKLEAF_DATA_DIR'];
+  final override = Platform.environment['WEEKTODO_DATA_DIR'];
   final directory = override != null && override.isNotEmpty
       ? Directory(override)
       : await getApplicationSupportDirectory();
@@ -25,11 +25,11 @@ Future<void> main() async {
   final store = PlannerStore(
     PlannerDatabase.open(p.join(directory.path, 'planner.db')),
   );
-  runApp(WeekleafApp(store: store));
+  runApp(WeekToDoApp(store: store));
 }
 
-class WeekleafApp extends StatefulWidget {
-  const WeekleafApp({super.key, required this.store, this.notifications = true});
+class WeekToDoApp extends StatefulWidget {
+  const WeekToDoApp({super.key, required this.store, this.notifications = true});
 
   final PlannerStore store;
 
@@ -37,10 +37,10 @@ class WeekleafApp extends StatefulWidget {
   final bool notifications;
 
   @override
-  State<WeekleafApp> createState() => _WeekleafAppState();
+  State<WeekToDoApp> createState() => _WeekToDoAppState();
 }
 
-class _WeekleafAppState extends State<WeekleafApp> {
+class _WeekToDoAppState extends State<WeekToDoApp> {
   late final AppController _controller = AppController(widget.store);
   late final ReminderService _reminders =
       ReminderService(widget.store, notify: _notify);
@@ -104,7 +104,7 @@ class _WeekleafAppState extends State<WeekleafApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Weekleaf',
+      title: 'WeekToDo',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true, fontFamily: AppText.family),
       builder: (context, child) => AppScope(

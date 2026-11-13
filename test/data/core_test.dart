@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weekleaf/data/day.dart';
-import 'package:weekleaf/data/hlc.dart';
-import 'package:weekleaf/data/order_key.dart';
-import 'package:weekleaf/data/recurrence.dart';
+import 'package:weektodo/data/day.dart';
+import 'package:weektodo/data/hlc.dart';
+import 'package:weektodo/data/order_key.dart';
+import 'package:weektodo/data/recurrence.dart';
 
 void main() {
   group('Day', () {

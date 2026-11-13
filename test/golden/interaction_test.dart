@@ -3,9 +3,9 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:weekleaf/data/models.dart';
-import 'package:weekleaf/data/planner_store.dart';
-import 'package:weekleaf/ui/task_list.dart';
+import 'package:weektodo/data/models.dart';
+import 'package:weektodo/data/planner_store.dart';
+import 'package:weektodo/ui/task_list.dart';
 
 import 'harness.dart';
 
