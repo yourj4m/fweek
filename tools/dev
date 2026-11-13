@@ -5,6 +5,7 @@
 #   tools/dev flutter test
 #   tools/dev flutter build linux --release
 #   tools/dev dart format lib
+#   tools/dev flutter build apk --release
 #
 # The container holds the compiler toolchain and GTK headers, so the host
 # needs no development packages. Create it once with tools/setup-dev.sh.
@@ -16,9 +17,18 @@ container="${WEEKTODO_CONTAINER:-weektodo-dev}"
 version="${FLUTTER_VERSION:-$(cat "$root/tools/flutter-version")}"
 sdk="$root/.tools/sdk-$version/flutter"
 [ -x "$sdk/bin/flutter" ] || { echo "Flutter $version is not installed; run tools/setup-dev.sh" >&2; exit 1; }
+# Android builds (after tools/setup-android.sh): the SDK, its per-user state
+# and Gradle's cache all stay under .tools, away from the home directory.
+android="$root/.tools/android-sdk"
 exec toolbox run -c "$container" env \
-  PATH="$sdk/bin:/usr/local/bin:/usr/bin:/bin" \
+  PATH="$sdk/bin:$android/cmdline-tools/latest/bin:$android/platform-tools:$android/emulator:/usr/local/bin:/usr/bin:/bin" \
   PUB_CACHE="$root/.tools/pub-cache" \
+  ANDROID_HOME="$android" \
+  ANDROID_SDK_ROOT="$android" \
+  ANDROID_USER_HOME="$root/.tools/android-user" \
+  ANDROID_AVD_HOME="$root/.tools/android-user/avd" \
+  GRADLE_USER_HOME="$root/.tools/gradle" \
+  JAVA_HOME="/usr/lib/jvm/java-25-openjdk" \
   FLUTTER_SUPPRESS_ANALYTICS=true \
   DART_SUPPRESS_ANALYTICS=true \
   CI=true \

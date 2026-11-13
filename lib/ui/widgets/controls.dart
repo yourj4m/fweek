@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/services.dart';
@@ -433,35 +435,47 @@ class _PopoverRoute<T> extends PopupRoute<T> {
     BuildContext context,
     Animation<double> animation,
     Animation<double> secondaryAnimation,
-  ) =>
-      CustomSingleChildLayout(
-        delegate: _PopoverLayout(anchor, side, gap, align),
-        child: FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.ease),
-          child: builder(context),
-        ),
-      );
+  ) {
+    // Keep clear of the status bar, the navigation bar and the keyboard.
+    final media = MediaQuery.of(context);
+    final safe = media.padding.copyWith(
+      bottom: math.max(media.padding.bottom, media.viewInsets.bottom),
+    );
+    return CustomSingleChildLayout(
+      delegate: _PopoverLayout(anchor, side, gap, align, safe),
+      child: FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.ease),
+        child: builder(context),
+      ),
+    );
+  }
 }
 
 class _PopoverLayout extends SingleChildLayoutDelegate {
-  _PopoverLayout(this.anchor, this.side, this.gap, this.align);
+  _PopoverLayout(this.anchor, this.side, this.gap, this.align, this.safe);
 
   final Rect anchor;
   final PopoverSide side;
   final double gap;
   final double align;
 
+  /// The parts of the window's edges taken by system bars and the keyboard.
+  final EdgeInsets safe;
+
   static const _margin = 8.0;
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
       BoxConstraints(
-        maxWidth: constraints.maxWidth - 2 * _margin,
-        maxHeight: constraints.maxHeight - 2 * _margin,
+        maxWidth: math.max(0, constraints.maxWidth - 2 * _margin - safe.horizontal),
+        maxHeight: math.max(0, constraints.maxHeight - 2 * _margin - safe.vertical),
       );
 
   @override
   Offset getPositionForChild(Size size, Size child) {
+    final minX = safe.left + _margin, minY = safe.top + _margin;
+    final maxX = size.width - safe.right - _margin - child.width;
+    final maxY = size.height - safe.bottom - _margin - child.height;
     final centred = anchor.center.dx - child.width / 2;
     final left = anchor.left;
     final right = anchor.right - child.width;
@@ -472,21 +486,56 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
         ? anchor.bottom + gap
         : anchor.top - gap - child.height;
     // Flip to the other side when there is no room, then clamp to the window.
-    if (side == PopoverSide.below && y + child.height > size.height - _margin) {
+    if (side == PopoverSide.below && y > maxY) {
       final above = anchor.top - gap - child.height;
-      if (above >= _margin) y = above;
-    } else if (side == PopoverSide.above && y < _margin) {
+      if (above >= minY) y = above;
+    } else if (side == PopoverSide.above && y < minY) {
       final below = anchor.bottom + gap;
-      if (below + child.height <= size.height - _margin) y = below;
+      if (below <= maxY) y = below;
     }
-    x = x.clamp(_margin, (size.width - child.width - _margin).clamp(_margin, double.infinity));
-    y = y.clamp(_margin, (size.height - child.height - _margin).clamp(_margin, double.infinity));
+    x = x.clamp(minX, math.max(minX, maxX));
+    y = y.clamp(minY, math.max(minY, maxY));
     return Offset(x, y);
   }
 
   @override
   bool shouldRelayout(_PopoverLayout old) =>
-      old.anchor != anchor || old.side != side || old.gap != gap || old.align != align;
+      old.anchor != anchor ||
+      old.side != side ||
+      old.gap != gap ||
+      old.align != align ||
+      old.safe != safe;
+}
+
+/// Lays a dialog out in the part of the window left free by the status bar,
+/// display cutouts and the on-screen keyboard, and tells it that this part
+/// is the whole window. Only the navigation bar's height is passed on (as
+/// bottom padding): a bottom sheet runs underneath that bar.
+class DialogArea extends StatelessWidget {
+  const DialogArea({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final keyboard = media.viewInsets.bottom;
+    final taken = EdgeInsets.fromLTRB(
+        media.padding.left, media.padding.top, media.padding.right, keyboard);
+    final below = EdgeInsets.only(bottom: keyboard > 0 ? 0 : media.padding.bottom);
+    return Padding(
+      padding: taken,
+      child: MediaQuery(
+        data: media.copyWith(
+          size: taken.deflateSize(media.size),
+          padding: below,
+          viewPadding: below,
+          viewInsets: EdgeInsets.zero,
+        ),
+        child: child,
+      ),
+    );
+  }
 }
 
 /// Closes the nearest route when Escape is pressed.

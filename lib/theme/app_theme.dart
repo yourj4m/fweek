@@ -1,16 +1,28 @@
 import 'package:flutter/widgets.dart';
 
+import '../platform.dart';
+
 /// Sizes shared across the interface. See docs/design-spec.md.
 abstract final class Dim {
   /// Below this window width the days stack in a single column.
   static const breakpoint = 1024.0;
 
   static const pagePadding = 24.0;
-  static const narrowPadding = 24.0;
+
+  /// Side padding of the single-column layout: 24 in a narrow desktop
+  /// window, 16 on a phone, where width is scarce.
+  static double get narrowPadding => isMobile ? 16.0 : 24.0;
   static const columnGap = 24.0;
 
-  /// Height of one ruled row.
-  static const row = 42.0;
+  /// Height of one ruled row: 42 under a mouse pointer, 50 where rows are
+  /// touched with a finger.
+  static double get row => isMobile ? 50.0 : 42.0;
+
+  /// Space between two days of the single-column layout.
+  static double get narrowDayGap => isMobile ? 40.0 : 24.0;
+
+  /// Height of a task's highlight pill.
+  static double get pill => isMobile ? 27.0 : 22.0;
   static const dayHeader = 42.0;
   static const listHeading = 53.0;
   static const headerHeight = 48.0;
@@ -300,6 +312,10 @@ class AppText {
   TextStyle get body17 => _style(17, 22, tracking: -0.1);
   TextStyle get bodyBold17 => _style(17, 22, weight: FontWeight.w700, tracking: -0.1);
   TextStyle get task16 => _style(16, 22, tracking: -0.15);
+
+  /// Task text of the single-column layout: a size larger on a phone.
+  TextStyle get taskCompact =>
+      isMobile ? _style(17, 22, tracking: -0.2) : task16;
   TextStyle get small15 => _style(15, 20, tracking: -0.1);
   TextStyle get task14 => _style(14, 22, tracking: -0.12);
   TextStyle get caption14 => _style(14, 20, tracking: -0.1);

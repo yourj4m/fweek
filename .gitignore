@@ -17,3 +17,6 @@ build/
 .vscode/
 
 __pycache__/
+
+# Screenshot test failure output
+/test/golden/failures/

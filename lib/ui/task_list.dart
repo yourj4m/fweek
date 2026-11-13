@@ -1,4 +1,4 @@
-import 'package:flutter/gestures.dart' show kPrimaryButton;
+import 'package:flutter/gestures.dart' show kPrimaryButton, PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'icons.dart';
 import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
@@ -25,13 +25,15 @@ class TaskPill extends StatelessWidget {
     super.key,
     required this.task,
     required this.style,
-    this.height = 22,
+    this.height,
     this.selected = false,
   });
 
   final Task task;
   final TextStyle style;
-  final double height;
+
+  /// Height of the pill; by default the one that fits a ruled row.
+  final double? height;
   final bool selected;
 
   @override
@@ -59,6 +61,7 @@ class TaskPill extends StatelessWidget {
         ? task.title
         : '${formatTime(task.time!, use24h: use24h)} ${task.title}';
     final iconSize = style.fontSize! - 2;
+    final height = this.height ?? Dim.pill;
     return Opacity(
       opacity: task.done ? 0.3 : 1,
       child: Container(
@@ -173,7 +176,12 @@ class _TaskRowState extends State<TaskRow> {
     final showCheck = widget.compact || (_hovered && !dragging);
     return Listener(
       onPointerDown: (event) {
-        if (event.buttons != kPrimaryButton) return;
+        // A mouse drags as soon as it moves. A finger that moves is
+        // scrolling; it picks a task up with a long press instead.
+        if (event.kind != PointerDeviceKind.mouse ||
+            event.buttons != kPrimaryButton) {
+          return;
+        }
         DragScope.read(context)
             .pointerDown(task, event.position, globalRect(context));
       },
@@ -184,54 +192,84 @@ class _TaskRowState extends State<TaskRow> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => widget.onOpen(task),
-          child: SizedBox(
-            height: Dim.row,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  right: 35,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: TaskPill(
-                      task: task,
-                      style: widget.compact
-                          ? context.text.task16
-                          : context.text.task14,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: AnimatedOpacity(
-                    duration: showCheck ? Duration.zero : Dim.medium,
-                    opacity: showCheck ? 1 : 0,
-                    child: IgnorePointer(
-                      ignoring: !showCheck,
-                      child: CheckToggle(
-                        done: task.done,
-                        onTap: () =>
-                            context.readStore.setDone(task.id, !task.done),
+          child: _TouchPickUp(
+            onPickUp: (position) => DragScope.read(context)
+                .begin(task, position, globalRect(context)),
+            child: SizedBox(
+              height: Dim.row,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    right: 35,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: TaskPill(
+                        task: task,
+                        selected: context.app.highlightedTask == task.id,
+                        style: widget.compact
+                            ? context.text.taskCompact
+                            : context.text.task14,
                       ),
                     ),
                   ),
-                ),
-                if (_hovered && !dragging)
                   Positioned(
-                    left: 0,
                     right: 0,
+                    top: 0,
                     bottom: 0,
-                    height: 1,
-                    child: ColoredBox(color: theme.hoverRule),
+                    child: AnimatedOpacity(
+                      duration: showCheck ? Duration.zero : Dim.medium,
+                      opacity: showCheck ? 1 : 0,
+                      child: IgnorePointer(
+                        ignoring: !showCheck,
+                        child: CheckToggle(
+                          done: task.done,
+                          onTap: () =>
+                              context.readStore.setDone(task.id, !task.done),
+                        ),
+                      ),
+                    ),
                   ),
-              ],
+                  if (_hovered && !dragging)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: 1,
+                      child: ColoredBox(color: theme.hoverRule),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Reports a long press by a finger or pen, which picks a task up. A mouse
+/// is left out on purpose: it drags by moving, and a slow click must stay a
+/// click.
+class _TouchPickUp extends StatelessWidget {
+  const _TouchPickUp({required this.onPickUp, required this.child});
+
+  /// Called with the global position of the press.
+  final ValueChanged<Offset> onPickUp;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        supportedDevices: const {
+          PointerDeviceKind.touch,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.invertedStylus,
+        },
+        onLongPressStart: (details) {
+          HapticFeedback.mediumImpact();
+          onPickUp(details.globalPosition);
+        },
+        child: child,
+      );
 }
 
 /// The empty ruled line at the end of a list where new tasks are typed.
@@ -289,7 +327,7 @@ class _AddRowState extends State<AddRow> {
   Widget build(BuildContext context) {
     final theme = context.theme;
     final focused = _focus.hasFocus;
-    final style = widget.compact ? context.text.task16 : context.text.task14;
+    final style = widget.compact ? context.text.taskCompact : context.text.task14;
     return MouseRegion(
       cursor: SystemMouseCursors.text,
       onEnter: (_) => setState(() => _hovered = true),

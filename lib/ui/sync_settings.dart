@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
 
 import '../app_state.dart';
+import '../platform.dart';
 import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import 'icons.dart';
@@ -169,7 +170,7 @@ class _SyncSettingsState extends State<SyncSettings> {
         Text(
           'Create an app password in Nextcloud under Settings → Security → '
           'Devices & sessions; that page also shows your user name. The '
-          'password is kept in the system keyring.',
+          'password is kept ${isMobile ? 'encrypted on this device' : 'in the system keyring'}.',
           style: muted,
         ),
         if (_error != null) ...[

@@ -19,7 +19,7 @@ void main() {
   final monday = referenceToday.startOfWeek();
   List<String> titles(Iterable<Task> tasks) => [for (final t in tasks) t.title];
 
-  testWidgets('typing in an empty row adds tasks, one per Enter', (tester) async {
+  desktopTest('typing in an empty row adds tasks, one per Enter', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store);
     final tuesday = monday.addDays(1);
@@ -37,7 +37,7 @@ void main() {
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/add_focused.png'));
   });
 
-  testWidgets('clicking an empty row makes it ready for typing', (tester) async {
+  desktopTest('clicking an empty row makes it ready for typing', (tester) async {
     // Regression: the row used to rebuild its text field on focus, leaving a
     // focused field with no keyboard connection. This goes through the real
     // input channel rather than setting the field's text directly.
@@ -71,7 +71,7 @@ void main() {
     }
   });
 
-  testWidgets('the check button completes a task', (tester) async {
+  desktopTest('the check button completes a task', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store);
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
@@ -86,7 +86,7 @@ void main() {
     expect(store.tasksOn(saturday).firstWhere((t) => t.title == 'Tap and edit').done, isTrue);
   });
 
-  testWidgets('dragging moves a task to another day at the drop position', (tester) async {
+  desktopTest('dragging moves a task to another day at the drop position', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store);
     final saturday = monday.addDays(5);
@@ -105,7 +105,7 @@ void main() {
     expect(titles(store.tasksOn(monday)).indexOf('Tap and edit'), 1);
   });
 
-  testWidgets('holding a task at the window edge carries it to the next week', (tester) async {
+  desktopTest('holding a task at the window edge carries it to the next week', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store);
     final from = tester.getCenter(find.text('Tap and edit'));
@@ -125,7 +125,7 @@ void main() {
     expect(titles(store.tasksOn(monday.addDays(5))), ['Mark me complete', 'Drag to the next day']);
   });
 
-  testWidgets('arrow keys change week, T returns to today', (tester) async {
+  desktopTest('arrow keys change week, T returns to today', (tester) async {
     await pumpApp(tester, seededStore());
     expect(find.text('W46'), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -140,7 +140,7 @@ void main() {
     expect(find.text('Today'), findsOneWidget);
   });
 
-  testWidgets('task dialog: edit title, colour and repeat', (tester) async {
+  desktopTest('task dialog: edit title, colour and repeat', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store);
     await tester.tap(find.text('Mark me complete'));
@@ -173,7 +173,7 @@ void main() {
     expect(find.text('Sat, 14 Nov 2026'), findsNothing);
   });
 
-  testWidgets('task dialog: date, time, reminder, subtasks and custom repeat render', (tester) async {
+  desktopTest('task dialog: date, time, reminder, subtasks and custom repeat render', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store);
     await tester.tap(find.text('Tap and edit'));
@@ -219,7 +219,7 @@ void main() {
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/dialog_full.png'));
   });
 
-  testWidgets('sync is set up from the settings and shows its state', (tester) async {
+  desktopTest('sync is set up from the settings and shows its state', (tester) async {
     final store = seededStore();
     final remote = MemoryStorage();
     final secrets = MemorySecretStore();
@@ -279,7 +279,7 @@ void main() {
     service.dispose();
   });
 
-  testWidgets('menu, search and settings open and work', (tester) async {
+  desktopTest('menu, search and settings open and work', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store);
     await tester.tap(find.bySemanticsLabel('Menu'));

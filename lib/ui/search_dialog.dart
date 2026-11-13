@@ -71,7 +71,7 @@ class _SearchDialogState extends State<_SearchDialog> {
             top: narrow ? 16 : Dim.dialogTop,
             left: 16,
             right: 16,
-            bottom: 24,
+            bottom: 24 + MediaQuery.paddingOf(context).bottom,
           ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: Dim.dialogWidth),

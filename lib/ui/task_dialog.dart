@@ -55,7 +55,7 @@ class _CardRoute extends PopupRoute<void> {
       child: SlideTransition(
         position: Tween(begin: const Offset(0, 0.02), end: Offset.zero)
             .animate(curved),
-        child: builder(context),
+        child: DialogArea(child: Builder(builder: builder)),
       ),
     );
   }
@@ -541,8 +541,17 @@ class _TaskDialogState extends State<_TaskDialog> {
             maxHeight: size.height * (_expanded ? 1 : 0.88),
             minHeight: _expanded ? size.height : 0,
           ),
-          child: _surface(theme, card,
-              radius: const BorderRadius.vertical(top: Radius.circular(24))),
+          // The sheet's surface continues under the navigation bar; its
+          // content stops above it.
+          child: _surface(
+            theme,
+            Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.paddingOf(context).bottom),
+              child: card,
+            ),
+            radius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
         ),
       );
     } else if (_expanded) {

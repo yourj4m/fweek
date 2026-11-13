@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'data/day.dart';
 import 'data/planner_store.dart';
+import 'services/android_bridge.dart';
 import 'sync/sync_service.dart';
 
 /// What the window is showing: which week or month, and in which view.
@@ -27,13 +28,26 @@ class AppController extends ChangeNotifier {
   void setMonthView(bool month) =>
       store.setSetting(Settings.view, month ? 'month' : 'week');
 
-  void show(Day day, {String? highlight}) {
+  /// The day a list of days should scroll to, and a count of the times one
+  /// was asked for (so that asking for the same day twice still scrolls).
+  Day get focusDay => _focusDay;
+  late Day _focusDay = store.today;
+  int get focusRequests => _focusRequests;
+  int _focusRequests = 0;
+
+  /// Shows the week or month holding [day]. With [focus], lists also scroll
+  /// to that day.
+  void show(Day day, {String? highlight, bool focus = false}) {
     _anchor = day;
     highlightedTask = highlight;
+    if (focus || highlight != null) {
+      _focusDay = day;
+      _focusRequests++;
+    }
     notifyListeners();
   }
 
-  void goToday() => show(store.today);
+  void goToday() => show(store.today, focus: true);
 
   void previous() =>
       show(monthView ? _anchor.startOfMonth.addMonths(-1) : _anchor.addDays(-7));
@@ -50,12 +64,16 @@ class AppScope extends InheritedNotifier<Listenable> {
     required this.store,
     required this.controller,
     required this.sync,
+    this.android,
     required super.child,
   }) : super(notifier: Listenable.merge([store, controller, sync]));
 
   final PlannerStore store;
   final AppController controller;
   final SyncService sync;
+
+  /// Android's own services (reminders, file saving); null elsewhere.
+  final AndroidBridge? android;
 
   static AppScope of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppScope>()!;
@@ -83,4 +101,7 @@ extension AppContext on BuildContext {
 
   /// The sync service, for use in callbacks.
   SyncService get readSync => AppScope.read(this).sync;
+
+  /// Android's own services, or null on other systems.
+  AndroidBridge? get readAndroid => AppScope.read(this).android;
 }

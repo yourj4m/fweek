@@ -12,26 +12,43 @@ class DueReminder {
   final DateTime at;
 }
 
-/// Fires task reminders while the app is running, and the daily rollover.
+/// Delivers task reminders and runs the daily rollover.
 ///
 /// Desktop Linux has no system service this app can hand a future
-/// notification to, so reminders are delivered only while the app is open; a
-/// reminder that came due while it was closed is delivered at the next start
-/// if it is less than [catchUp] old.
+/// notification to, so there reminders are delivered only while the app is
+/// open ([notify]); one that came due while it was closed is delivered at the
+/// next start if it is less than [catchUp] old.
+///
+/// Android has such a service. With [schedule] set, nothing is delivered from
+/// here: the upcoming reminders are handed over whenever they change and the
+/// system shows them, app open or not.
 class ReminderService {
   ReminderService(
     this.store, {
     required this.notify,
+    this.schedule,
     DateTime Function()? clock,
     this.catchUp = const Duration(hours: 12),
+    this.horizon = const Duration(days: 60),
+    this.maxScheduled = 64,
   }) : _clock = clock ?? DateTime.now;
 
   final PlannerStore store;
 
-  /// Shows one notification.
+  /// Shows one notification now.
   final void Function(DueReminder reminder) notify;
+
+  /// Takes over the reminders due within [horizon], soonest first and at most
+  /// [maxScheduled] of them. Called only when that list changed.
+  final void Function(List<DueReminder> upcoming)? schedule;
   final DateTime Function() _clock;
   final Duration catchUp;
+
+  /// How far ahead reminders are handed to [schedule]. Later ones follow the
+  /// next time the app is opened.
+  final Duration horizon;
+  final int maxScheduled;
+  String? _scheduled;
 
   static const _metaKey = 'reminders_fired';
   static const _keep = 300;
@@ -94,14 +111,8 @@ class ReminderService {
     }
   }
 
-  /// Delivers everything due, runs the rollover if the day changed, and arms
-  /// a timer for the next reminder.
-  void check() {
-    _timer?.cancel();
-    final now = _clock();
-    store.rollOver();
-    _seenRevision = store.revision;
-
+  /// Shows what has come due since the last check.
+  void _deliverDue(DateTime now) {
     final fired = _fired();
     final seen = fired.toSet();
     var changed = false;
@@ -117,6 +128,37 @@ class ReminderService {
           ? fired.sublist(fired.length - _keep)
           : fired;
       store.db.setMeta(_metaKey, jsonEncode(kept));
+    }
+  }
+
+  /// Gives the system the reminders ahead, if they differ from last time.
+  void _handOver(DateTime now) {
+    var upcoming = _between(now, now.add(horizon));
+    if (upcoming.length > maxScheduled) {
+      upcoming = upcoming.sublist(0, maxScheduled);
+    }
+    final signature = [
+      for (final due in upcoming)
+        '${due.task.id}|${due.at.toIso8601String()}|${due.task.title}|'
+            '${due.task.time}|${due.task.note}',
+    ].join('\n');
+    if (signature == _scheduled) return;
+    _scheduled = signature;
+    schedule!(upcoming);
+  }
+
+  /// Delivers (or hands over) reminders, runs the rollover if the day
+  /// changed, and arms a timer for the next reminder.
+  void check() {
+    _timer?.cancel();
+    final now = _clock();
+    store.rollOver();
+    _seenRevision = store.revision;
+
+    if (schedule != null) {
+      _handOver(now);
+    } else {
+      _deliverDue(now);
     }
 
     // Wake for the next reminder, at midnight for the rollover, and at least

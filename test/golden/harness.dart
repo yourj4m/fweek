@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:weektodo/data/database.dart';
 import 'package:weektodo/data/day.dart';
@@ -62,6 +63,21 @@ PlannerStore seededStore({Day? today}) {
   store.addTask(ListSlot(store.lists.first.id), 'Keep tasks here without a date');
   return store;
 }
+
+/// A widget test of the Linux desktop app. The test framework otherwise
+/// poses as Android, where the app uses its phone metrics.
+void desktopTest(String description, WidgetTesterCallback body) => testWidgets(
+      description,
+      body,
+      variant: TargetPlatformVariant.only(TargetPlatform.linux),
+    );
+
+/// A widget test of the Android app.
+void phoneTest(String description, WidgetTesterCallback body) => testWidgets(
+      description,
+      body,
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
 
 /// Pumps the whole app at a window size, with the given store.
 Future<void> pumpApp(

@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/widgets.dart';
@@ -7,6 +9,7 @@ import 'icons.dart';
 import '../app_state.dart';
 import '../data/export.dart';
 import '../data/planner_store.dart';
+import '../services/android_bridge.dart';
 import '../theme/app_theme.dart';
 import 'sync_settings.dart';
 import 'task_dialog.dart';
@@ -36,8 +39,27 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     });
   }
 
+  static const _mimeTypes = {
+    'json': 'application/json',
+    'csv': 'text/csv',
+    'ics': 'text/calendar',
+    'txt': 'text/plain',
+  };
+
   Future<void> _export(String label, String extension, String Function() build) async {
+    final android = context.readAndroid;
     try {
+      if (android != null) {
+        // Android has no path to write to; its file picker hands out a
+        // location in whichever storage app the user chooses.
+        final saved = await android.saveDocument(
+          name: 'weektodo.$extension',
+          mime: _mimeTypes[extension] ?? 'application/octet-stream',
+          bytes: Uint8List.fromList(utf8.encode(build())),
+        );
+        if (saved) _report('Saved weektodo.$extension');
+        return;
+      }
       final location = await getSaveLocation(
         suggestedName: 'weektodo.$extension',
         acceptedTypeGroups: [XTypeGroup(label: label, extensions: [extension])],
@@ -57,7 +79,11 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     try {
       final file = await openFile(
         acceptedTypeGroups: const [
-          XTypeGroup(label: 'WeekToDo backup', extensions: ['json']),
+          XTypeGroup(
+            label: 'WeekToDo backup',
+            extensions: ['json'],
+            mimeTypes: ['application/json'],
+          ),
         ],
       );
       if (file == null) return;
@@ -116,7 +142,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             top: narrow ? 16 : Dim.dialogTop,
             left: 16,
             right: 16,
-            bottom: 24,
+            bottom: 24 + MediaQuery.paddingOf(context).bottom,
           ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: Dim.dialogWidth),
@@ -127,7 +153,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 borderRadius: BorderRadius.circular(Dim.dialogRadius),
               ),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(32, 24, 32, 28),
+                padding: EdgeInsets.fromLTRB(
+                    narrow ? 24 : 32, 24, narrow ? 24 : 32, 28),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -191,6 +218,10 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     ),
                     toggle('Sort completed tasks down', Settings.sortDoneDown),
                     toggle('Hide completed tasks', Settings.hideDone),
+                    if (context.readAndroid case final android?) ...[
+                      section('Reminders'),
+                      _NotificationPermission(android: android),
+                    ],
                     section('Sync'),
                     const SyncSettings(),
                     section('Your data'),
@@ -257,6 +288,85 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Android only: whether reminders can appear, and a way to allow them.
+class _NotificationPermission extends StatefulWidget {
+  const _NotificationPermission({required this.android});
+
+  final AndroidBridge android;
+
+  @override
+  State<_NotificationPermission> createState() =>
+      _NotificationPermissionState();
+}
+
+class _NotificationPermissionState extends State<_NotificationPermission> {
+  bool? _allowed;
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+    // The answer may change in the system's settings while the app waits.
+    _lifecycle = AppLifecycleListener(onResume: _check);
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  Future<void> _check() async {
+    final allowed = await widget.android.notificationsAllowed();
+    if (mounted) setState(() => _allowed = allowed);
+  }
+
+  Future<void> _allow() async {
+    // The system shows its prompt only until it has been declined; after
+    // that the switch lives in the system's settings.
+    if (!await widget.android.requestNotifications()) {
+      await widget.android.openNotificationSettings();
+    }
+    await _check();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final muted = context.text.caption14.copyWith(color: theme.ink(60));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'A reminder set on a task appears as a notification at its time, '
+          'whether or not the app is open.',
+          style: muted,
+        ),
+        if (_allowed == false) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Notifications are turned off for WeekToDo, so reminders cannot '
+            'appear.',
+            style: muted.copyWith(color: AppTheme.danger),
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AppButton(
+              icon: AppIcons.bell,
+              label: 'Allow notifications',
+              size: Dim.controlInline,
+              iconSize: 16,
+              onTap: _allow,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

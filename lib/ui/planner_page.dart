@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
 import '../app_state.dart';
 import '../data/day.dart';
 import '../data/models.dart';
+import '../platform.dart';
 import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import 'drag.dart';
@@ -28,6 +29,9 @@ class PlannerPage extends StatefulWidget {
 class _PlannerPageState extends State<PlannerPage> {
   final _focus = FocusNode(debugLabel: 'planner');
   late final DragController _drag;
+
+  /// Height of the on-screen keyboard at the last build.
+  double _keyboard = 0;
 
   @override
   void initState() {
@@ -104,7 +108,19 @@ class _PlannerPageState extends State<PlannerPage> {
           builder: (context, constraints) {
             final size = constraints.biggest;
             final narrow = size.width < Dim.breakpoint;
-            _drag.edgesEnabled = !narrow && !app.monthView;
+            _drag.edgesEnabled = !app.monthView;
+            // An on-screen keyboard covers the bottom of the window. The
+            // planner ends above it, so the row being typed in can scroll
+            // into view.
+            final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+            if (isMobile && _keyboard > 0 && keyboard == 0) {
+              // The keyboard was put away (the back gesture does that):
+              // typing is over, so the field lets go as well. Android
+              // would otherwise leave it focused, with its text unsaved.
+              WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => FocusManager.instance.primaryFocus?.unfocus());
+            }
+            _keyboard = keyboard;
             return Listener(
               onPointerMove: (e) => _drag.pointerMove(e.position, size),
               onPointerUp: (_) => _drag.pointerUp(),
@@ -114,19 +130,20 @@ class _PlannerPageState extends State<PlannerPage> {
                 onTap: _focus.requestFocus,
                 child: ColoredBox(
                   color: theme.background,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: narrow
-                            ? _NarrowLayout(onOpen: _open)
-                            : _WideLayout(onOpen: _open),
-                      ),
-                      if (!narrow) ...[
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: keyboard),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: narrow
+                              ? _NarrowLayout(onOpen: _open)
+                              : _WideLayout(onOpen: _open),
+                        ),
                         _EdgeEar(direction: -1),
                         _EdgeEar(direction: 1),
+                        const _DragGhost(),
                       ],
-                      const _DragGhost(),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -168,13 +185,13 @@ class _Header extends StatelessWidget {
                 MenuRow(
                   icon: AppIcons.calendarCheck,
                   label: 'Today',
-                  hint: 'T',
+                  hint: isMobile ? null : 'T',
                   onTap: () => run(app.goToday),
                 ),
                 MenuRow(
                   icon: AppIcons.search,
                   label: 'Search',
-                  hint: 'Ctrl F',
+                  hint: isMobile ? null : 'Ctrl F',
                   onTap: () => run(() => showSearchDialog(context)),
                 ),
                 const _Divider(),
@@ -188,7 +205,7 @@ class _Header extends StatelessWidget {
                   icon: AppIcons.layoutGrid,
                   label: 'Month',
                   checked: app.monthView,
-                  hint: 'M',
+                  hint: isMobile ? null : 'M',
                   onTap: () => run(() => app.setMonthView(true)),
                 ),
                 const _Divider(),
@@ -209,7 +226,7 @@ class _Header extends StatelessWidget {
                 MenuRow(
                   icon: AppIcons.settings,
                   label: 'Settings',
-                  hint: 'Ctrl ,',
+                  hint: isMobile ? null : 'Ctrl ,',
                   onTap: () => run(() => showSettingsDialog(context)),
                 ),
               ],
@@ -238,7 +255,24 @@ class _Header extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Pressable(
-                onTap: app.goToday,
+                onTap: () {
+                  final store = context.readStore;
+                  final onThisWeek = app.weekStart ==
+                      store.today.startOfWeek(store.weekStart);
+                  if (!isMobile) {
+                    app.goToday();
+                  } else if (app.monthView) {
+                    // A phone has no keyboard shortcut for this: the title
+                    // leads back to the current week, and from there to the
+                    // month.
+                    app.setMonthView(false);
+                    app.goToday();
+                  } else if (onThisWeek) {
+                    app.setMonthView(true);
+                  } else {
+                    app.goToday();
+                  }
+                },
                 semanticLabel: 'Go to today',
                 builder: (context, hovered, pressed) => Row(
                   mainAxisSize: MainAxisSize.min,
@@ -246,6 +280,8 @@ class _Header extends StatelessWidget {
                   textBaseline: TextBaseline.alphabetic,
                   children: [
                     Flexible(
+                      // The title keeps its room; the week number yields.
+                      flex: 0,
                       child: Opacity(
                         opacity: hovered ? 0.75 : 1,
                         child: Text(
@@ -259,11 +295,15 @@ class _Header extends StatelessWidget {
                     ),
                     if (!app.monthView) ...[
                       const SizedBox(width: 12),
-                      Text(
-                        'W${first.addDays(3).isoWeek}',
-                        style: style.copyWith(color: theme.ink(20)),
-                        maxLines: 1,
-                        softWrap: false,
+                      // Fades out under the buttons when the header is tight.
+                      Flexible(
+                        child: Text(
+                          'W${first.addDays(3).isoWeek}',
+                          style: style.copyWith(color: theme.ink(20)),
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.fade,
+                        ),
                       ),
                     ],
                   ],
@@ -326,8 +366,11 @@ class _DayHeader extends StatelessWidget {
     final theme = context.theme;
     final today = day == context.store.today;
     final color = today ? theme.accent : theme.text;
-    final bold = narrow ? context.text.heading18 : context.text.heading21;
-    final regular = narrow ? context.text.label18 : context.text.label21;
+    // A narrow desktop window uses the smaller pair; a phone, read at
+    // arm's length, keeps the larger one.
+    final small = narrow && !isMobile;
+    final bold = small ? context.text.heading18 : context.text.heading21;
+    final regular = small ? context.text.label18 : context.text.label21;
     return Container(
       height: Dim.dayHeader,
       padding: const EdgeInsets.only(bottom: 12),
@@ -359,6 +402,7 @@ class _DayHeader extends StatelessWidget {
 
 class _DayColumn extends StatelessWidget {
   const _DayColumn({
+    super.key,
     required this.day,
     required this.tasks,
     required this.rows,
@@ -411,8 +455,9 @@ class _WideLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.app;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(Dim.pagePadding),
+    return _ScrollArea(
+      padding: const EdgeInsets.all(Dim.pagePadding) +
+          MediaQuery.paddingOf(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -490,7 +535,7 @@ class _WeekGrid extends StatelessWidget {
                 narrow: false,
                 onOpen: onOpen,
               ),
-              const SizedBox(height: Dim.row),
+              SizedBox(height: Dim.row),
               _DayColumn(
                 day: lower,
                 tasks: tasks(lower),
@@ -780,45 +825,225 @@ class _NarrowLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    final store = context.store;
-    final app = context.app;
-    final first = app.weekStart;
-    final days = [for (var i = 0; i < 7; i++) first.addDays(i)];
-    final byDay = store.tasksBetween(days.first, days.last);
+    // Status bar, display cutout, rounded corners.
+    final bars = MediaQuery.paddingOf(context);
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(
+              16 + bars.left, 16 + bars.top, 16 + bars.right, 16),
           color: theme.background,
           child: const _Header(narrow: true),
         ),
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-                Dim.narrowPadding, 8, Dim.narrowPadding, 48),
-            child: app.monthView
-                ? MonthView(onOpen: onOpen)
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    spacing: 24,
-                    children: [
-                      for (final d in days)
-                        _DayColumn(
-                          day: d,
-                          tasks: byDay[d] ?? const [],
-                          rows: _rowsNeeded(context, DaySlot(d),
-                              byDay[d] ?? const [], d == store.today ? 2 : 1),
-                          narrow: true,
-                          onOpen: onOpen,
-                        ),
-                      _SomedayGrid(onOpen: onOpen, columns: 1, narrow: true),
-                    ],
-                  ),
-          ),
-        ),
+        Expanded(child: _Pager(onOpen: onOpen)),
       ],
     );
   }
+}
+
+/// The narrow layout's pages, one week (or month) each. A swipe sideways
+/// turns the page, as the header's arrows do.
+class _Pager extends StatefulWidget {
+  const _Pager({required this.onOpen});
+
+  final ValueChanged<Task> onOpen;
+
+  @override
+  State<_Pager> createState() => _PagerState();
+}
+
+class _PagerState extends State<_Pager> {
+  /// Week pages count from the week holding this day; month pages count
+  /// months from year 0.
+  static final _origin = Day(2000, 1, 3);
+
+  PageController? _pages;
+
+  /// What page numbers currently mean: month or week, and the week's first
+  /// day. A change renumbers every page.
+  (bool, int)? _mode;
+
+  /// The page the pager is on or heading for.
+  int _shown = 0;
+
+  @override
+  void dispose() {
+    _pages?.dispose();
+    super.dispose();
+  }
+
+  static Day _firstDay(int page, bool month, int weekStart) => month
+      ? Day(page ~/ 12, page % 12 + 1, 1)
+      : _origin.startOfWeek(weekStart).addDays(page * 7);
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.app;
+    final month = app.monthView;
+    final weekStart = context.store.weekStart;
+    final mode = (month, weekStart);
+    final page = month
+        ? app.anchor.year * 12 + app.anchor.month - 1
+        : app.weekStart.difference(_origin.startOfWeek(weekStart)) ~/ 7;
+
+    if (_pages == null || mode != _mode) {
+      final old = _pages;
+      if (old != null) {
+        // Still attached to the view being replaced in this build.
+        WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+      }
+      _pages = PageController(initialPage: page);
+      _mode = mode;
+      _shown = page;
+    } else if (page != _shown) {
+      // Turned from outside: the arrows, Today, a search result.
+      _shown = page;
+      final pages = _pages!;
+      final animate = !MediaQuery.disableAnimationsOf(context);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!pages.hasClients) return;
+        final from = pages.page ?? page.toDouble();
+        if (animate && (from - page).abs() < 1.5) {
+          pages.animateToPage(
+            page,
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+          );
+        } else {
+          pages.jumpToPage(page);
+        }
+      });
+    }
+
+    return PageView.builder(
+      key: ValueKey(mode),
+      controller: _pages,
+      onPageChanged: (index) {
+        if (index == _shown) return;
+        // Turned by hand: the header and everything else follow.
+        _shown = index;
+        context.readApp.show(_firstDay(index, month, weekStart));
+      },
+      itemBuilder: (context, index) {
+        final first = _firstDay(index, month, weekStart);
+        return month
+            ? _ScrollArea(
+                padding: _pagePadding(context),
+                child: MonthView(month: first, onOpen: widget.onOpen),
+              )
+            : _WeekPage(first: first, onOpen: widget.onOpen);
+      },
+    );
+  }
+}
+
+/// Padding around a narrow page's content, clear of the system bars.
+EdgeInsets _pagePadding(BuildContext context) {
+  final bars = MediaQuery.paddingOf(context);
+  return EdgeInsets.fromLTRB(Dim.narrowPadding + bars.left, 8,
+      Dim.narrowPadding + bars.right, 48 + bars.bottom);
+}
+
+/// One week of the narrow layout: the days below one another, then Someday.
+class _WeekPage extends StatefulWidget {
+  const _WeekPage({required this.first, required this.onOpen});
+
+  final Day first;
+  final ValueChanged<Task> onOpen;
+
+  @override
+  State<_WeekPage> createState() => _WeekPageState();
+}
+
+class _WeekPageState extends State<_WeekPage> {
+  final Map<Day, GlobalKey> _dayKeys = {};
+
+  /// The request to show a particular day that was last acted on.
+  int? _seenFocus;
+
+  /// Scrolls so that [day] heads the page.
+  void _reveal(Day day, {required bool animate}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _dayKeys[day]?.currentContext;
+      if (target == null || !target.mounted) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: animate ? Dim.medium : Duration.zero,
+        curve: Curves.ease,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.store;
+    final app = context.app;
+    final days = [for (var i = 0; i < 7; i++) widget.first.addDays(i)];
+    final byDay = store.tasksBetween(days.first, days.last);
+
+    // A week is longer than a phone screen. Start at the day that was asked
+    // for (today when the app opens, or the day of a search result) rather
+    // than at the week's first day.
+    final focus = app.focusDay;
+    if (_seenFocus != app.focusRequests && days.contains(focus)) {
+      final first = _seenFocus == null;
+      _seenFocus = app.focusRequests;
+      if (isMobile || !first) _reveal(focus, animate: !first);
+    }
+
+    return _ScrollArea(
+      padding: _pagePadding(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: Dim.narrowDayGap,
+        children: [
+          for (final d in days)
+            _DayColumn(
+              key: _dayKeys.putIfAbsent(d, GlobalKey.new),
+              day: d,
+              tasks: byDay[d] ?? const [],
+              rows: _rowsNeeded(context, DaySlot(d), byDay[d] ?? const [],
+                  d == store.today ? 2 : 1),
+              narrow: true,
+              onOpen: widget.onOpen,
+            ),
+          _SomedayGrid(onOpen: widget.onOpen, columns: 1, narrow: true),
+        ],
+      ),
+    );
+  }
+}
+
+/// A vertically scrolling area that also scrolls by itself while a task is
+/// dragged near its top or bottom edge.
+class _ScrollArea extends StatefulWidget {
+  const _ScrollArea({required this.padding, required this.child});
+
+  final EdgeInsetsGeometry padding;
+  final Widget child;
+
+  @override
+  State<_ScrollArea> createState() => _ScrollAreaState();
+}
+
+class _ScrollAreaState extends State<_ScrollArea> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => DragAutoScroll(
+        controller: _controller,
+        child: SingleChildScrollView(
+          controller: _controller,
+          padding: widget.padding,
+          child: widget.child,
+        ),
+      );
 }
 
 // ------------------------------------------------------------ drag chrome
@@ -847,7 +1072,7 @@ class _DragGhost extends StatelessWidget {
               padding: const EdgeInsets.only(right: 35),
               child: TaskPill(
                 task: task,
-                style: narrow ? context.text.task16 : context.text.task14,
+                style: narrow ? context.text.taskCompact : context.text.task14,
               ),
             ),
           ),
@@ -869,8 +1094,9 @@ class _EdgeEar extends StatelessWidget {
     final drag = DragScope.of(context);
     final over = drag.active && drag.edge == direction;
     final visible = drag.active && drag.edgesEnabled;
-    // Hidden: fully off-window. Visible: 24 of 34 px peeking in.
-    final shift = !visible ? 34.0 : over ? 0.0 : 10.0;
+    // Hidden: fully off-window. Visible: 24 of 34 px peeking in (14 on a
+    // phone, whose margins are too slim for more).
+    final shift = !visible ? 34.0 : over ? 0.0 : (isMobile ? 20.0 : 10.0);
     final radius = direction < 0
         ? const BorderRadius.horizontal(right: Radius.circular(100))
         : const BorderRadius.horizontal(left: Radius.circular(100));

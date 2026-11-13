@@ -10,9 +10,12 @@ import 'widgets/controls.dart';
 
 /// A whole month on one screen: each day lists its tasks as small chips.
 class MonthView extends StatelessWidget {
-  const MonthView({super.key, required this.onOpen});
+  const MonthView({super.key, required this.onOpen, this.month});
 
   final ValueChanged<Task> onOpen;
+
+  /// The month to show; by default the one the app is on.
+  final Day? month;
 
   /// Chips shown per day before the rest collapse into "N more".
   static const _maxChips = 5;
@@ -22,7 +25,7 @@ class MonthView extends StatelessWidget {
     final theme = context.theme;
     final store = context.store;
     final app = context.app;
-    final month = app.anchor.startOfMonth;
+    final month = (this.month ?? app.anchor).startOfMonth;
     final weekStart = store.weekStart;
     final first = month.startOfWeek(weekStart);
     final lastOfMonth = month.addMonths(1).addDays(-1);

@@ -107,6 +107,7 @@ class SyncService extends ChangeNotifier {
   int _seenRevision = -1;
   bool _paused = false;
   bool _disposed = false;
+  DateTime? _lastAttempt;
 
   bool get configured => _config != null;
 
@@ -271,6 +272,23 @@ class SyncService extends ChangeNotifier {
     _notify();
   }
 
+  /// The app is back in the foreground. A phone suspends the app (and its
+  /// timers) in the background, so catch up now unless a sync just ran.
+  void resumed({Duration staleAfter = const Duration(minutes: 1)}) {
+    if (_engine == null || _paused) return;
+    final last = _lastAttempt;
+    if (last != null && _clock().difference(last) < staleAfter) return;
+    unawaited(syncNow());
+  }
+
+  /// The app is leaving the foreground. Upload pending edits right away
+  /// rather than after the usual pause, which the system may never let run.
+  void leaving() {
+    final engine = _engine;
+    if (engine == null || _paused || !engine.hasPending) return;
+    unawaited(syncNow());
+  }
+
   /// Syncs now. Calls made while a sync is running join that run.
   Future<void> syncNow() {
     final engine = _engine;
@@ -281,6 +299,7 @@ class SyncService extends ChangeNotifier {
   Future<void> _run(SyncEngine engine) async {
     _debounce?.cancel();
     _paused = false;
+    _lastAttempt = _clock();
     _state = SyncState.syncing;
     _notify();
     try {
