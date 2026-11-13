@@ -7,6 +7,7 @@ import 'package:weektodo/data/export.dart';
 import 'package:weektodo/data/models.dart';
 import 'package:weektodo/data/planner_store.dart';
 import 'package:weektodo/data/recurrence.dart';
+import 'package:weektodo/services/notifications.dart';
 import 'package:weektodo/services/reminders.dart';
 
 void main() {
@@ -144,6 +145,50 @@ void main() {
       // A fresh service on the same database remembers it too.
       service(store).check();
       expect(fired, hasLength(1));
+    });
+
+    test('hands the reminders ahead to the system instead of firing them', () {
+      final store = newStore();
+      final id = store.addTask(DaySlot(today), 'Call')!;
+      store.updateTask(id, reminder: () => DateTime(2026, 11, 13, 9, 0));
+      final handed = <List<String>>[];
+      final s = ReminderService(
+        store,
+        notify: (due) => fired.add(due.task.title),
+        schedule: (upcoming) => handed.add([
+          for (final due in upcoming) '${due.task.title}@${due.at.toIso8601String()}',
+        ]),
+        clock: () => clock,
+      );
+      addTearDown(s.dispose);
+      s.check();
+      expect(handed, [
+        ['Call@2026-11-13T09:00:00.000'],
+      ]);
+      // Unchanged: the system already has it.
+      s.check();
+      expect(handed, hasLength(1));
+      // The text is part of the notification, so an edit is handed over.
+      store.updateTask(id, title: 'Call back');
+      s.check();
+      expect(handed.last, ['Call back@2026-11-13T09:00:00.000']);
+      // A reminder beyond the horizon waits for a later start of the app.
+      final later = store.addTask(DaySlot(today), 'Renew passport')!;
+      store.updateTask(later, reminder: () => DateTime(2027, 6, 1, 9, 0));
+      s.check();
+      expect(handed.last, ['Call back@2026-11-13T09:00:00.000']);
+      // Once due it is the system's to show; nothing is fired from here.
+      clock = DateTime(2026, 11, 13, 9, 0, 1);
+      s.check();
+      expect(handed.last, isEmpty);
+      expect(fired, isEmpty);
+    });
+
+    test('names a reminder to the system by a stable positive number', () {
+      final a = stableId('task-1|2026-11-13T09:00:00.000|Call|');
+      expect(a, stableId('task-1|2026-11-13T09:00:00.000|Call|'));
+      expect(a, isNot(stableId('task-1|2026-11-13T09:00:00.000|Call back|')));
+      expect(a, inInclusiveRange(0, 0x7fffffff));
     });
 
     test('catches up on recent misses but not old ones, and skips done tasks', () {
