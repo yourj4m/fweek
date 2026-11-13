@@ -9,6 +9,7 @@ import 'icons.dart';
 import '../app_state.dart';
 import '../data/export.dart';
 import '../data/planner_store.dart';
+import '../platform.dart';
 import '../services/android_bridge.dart';
 import '../theme/app_theme.dart';
 import 'sync_settings.dart';
@@ -276,9 +277,12 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                       ),
                     const SizedBox(height: 20),
                     Text(
-                      'Your planner is stored on this computer, and in your '
-                      'Nextcloud if sync is on. Reminders are delivered while '
-                      'the app is open.',
+                      isMobile
+                          ? 'Your planner is stored on this device, and in '
+                              'your Nextcloud if sync is on.'
+                          : 'Your planner is stored on this computer, and in '
+                              'your Nextcloud if sync is on. Reminders are '
+                              'delivered while the app is open.',
                       style: context.text.caption14.copyWith(color: theme.ink(40)),
                     ),
                   ],

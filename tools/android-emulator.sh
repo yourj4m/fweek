@@ -26,7 +26,8 @@ case "${1:-}" in
       # the boot, and ANGLE-on-SwiftShader dies when the app starts drawing.
       setsid prlimit --core=1:1 -- "$dev" emulator -avd weektodo -no-window \
         -no-audio -no-boot-anim -no-snapshot -no-metrics \
-        -gpu "${WEEKTODO_EMULATOR_GPU:-host}" -memory 3072 -cores 2 \
+        -gpu "${WEEKTODO_EMULATOR_GPU:-host}" ${WEEKTODO_EMULATOR_ARGS:--feature -Vulkan} \
+        -memory 3072 -cores 2 \
         >"$log" 2>&1 < /dev/null &
     fi
     "$dev" adb wait-for-device

@@ -1,8 +1,7 @@
 # WeekToDo
 
-A minimal weekly planner for Linux (Wayland), with Android planned. Your week
-as ruled columns, a Someday area for undated tasks, and nothing else in the
-way.
+A minimal weekly planner for Linux (Wayland) and Android. Your week as ruled
+columns, a Someday area for undated tasks, and nothing else in the way.
 
 Local-first: everything is stored on your machine and the app works offline.
 Optionally it keeps your devices in step through a folder in your own
@@ -14,7 +13,7 @@ before being published.
 
 ## Status
 
-First test build for Linux. What works:
+Test builds for Linux and Android, from the same code. What works:
 
 - **Week view**: five weekday columns plus a stacked weekend, ten ruled rows
   that grow with your tasks; a single-column layout below 1024 px.
@@ -37,10 +36,14 @@ First test build for Linux. What works:
 - **Shortcuts**: ← → previous/next, T today, M month view, Ctrl+F search,
   Ctrl+, settings, Esc close.
 
+- **Android** (13 and newer): the single-column layout with larger rows, a
+  swipe to turn the week, a long press to pick a task up, reminders that
+  fire while the app is closed. See [Android](#android).
+
 Not there yet:
 
-- The Android app.
-- Reminders are delivered only while the app is running.
+- On Linux, reminders are delivered only while the app is running.
+- On Android: no home-screen widget, no sync while the app is closed.
 - Notes are plain text.
 - Reordering subtasks by drag, selecting several tasks at once, undo, print.
 - Attachments, sharing and calendar-provider sync are out of scope for now.
@@ -63,6 +66,70 @@ only GTK 3.
 Your planner is stored in `~/.local/share/io.github.yourj4m.weektodo/planner.db`.
 Set `WEEKTODO_DATA_DIR=/some/folder` to try the app against a different,
 throwaway folder.
+
+## Android
+
+```sh
+tools/setup-dev.sh                 # once, if not done for Linux already
+tools/setup-android.sh             # once: JDK + Android SDK, into the container and .tools/
+tools/android-build.sh             # signed APK for a 64-bit ARM phone
+tools/android-build.sh --install   # ... and install it over USB
+```
+
+The APK lands in `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`;
+copying that file to the phone and opening it installs it as well. It is
+signed with a key of your own that `tools/android-build.sh` creates on first
+use in `~/.config/weektodo/`. Android only updates an app with a build signed
+by the same key, so keep that folder.
+
+What to expect on the phone:
+
+- **No Google services** are used; it runs on LineageOS without them.
+- **Battery**: nothing runs in the background. Reminders are handed to
+  Android's alarm service ahead of time and cost nothing until they fire;
+  they also survive a restart of the phone. Sync happens when you open the
+  app, when you come back to it, a few seconds after an edit, and as you
+  leave it. The price: a change made on another device reaches the phone
+  when you next open the app, and a reminder set elsewhere is scheduled
+  from that moment on.
+- **Permissions**: network (sync), notifications (asked when you set your
+  first reminder), exact alarms, start at boot (to set the alarms again).
+- **Backups**: the app opts out of system backups and phone-to-phone
+  transfer, because the planner file carries the device's identity for sync.
+  Use sync, or Settings → Backup, to move your data.
+- **Touch**: tap an empty line to type; tap a task to open it, its circle to
+  complete it; press and hold a task to drag it, to the screen edge to carry
+  it to another week; swipe sideways to turn the week; tap the title to
+  return to today, and again for the month.
+
+The stack, and why: the Android app is the desktop app's Flutter code, so
+there is one sync engine and one data format to keep right. On top of that
+sit about 300 lines of Kotlin (`android/app/src/main/kotlin`) for what
+Android does better itself: alarms and notifications, the permission prompt
+and the save-file dialog. It targets Android 13+ only, which keeps a single
+code path for notifications, alarms and icons.
+
+### Testing on an emulator
+
+```sh
+tools/setup-android.sh --emulator          # once: emulator + Android 16 image
+tools/android-emulator.sh start            # headless; needs /dev/kvm
+tools/android-build.sh --emulator
+tools/dev python3 tools/android-smoke.py out/ \
+  --apk build/app/outputs/flutter-apk/app-x86_64-release.apk --wait-reminder
+tools/android-emulator.sh stop
+```
+
+`tools/android-smoke.py` drives the real app with touches and the on-screen
+keyboard through adb and checks typing, keyboard and system-bar clearance,
+completing, long-press drag, the week swipe, the task sheet, a reminder
+reaching the alarm service and firing with the app closed, and data
+surviving a restart.
+
+The emulator's renderer is fragile inside the container: the software modes
+crash within seconds, so the helper uses the host GPU with Vulkan switched
+off (`WEEKTODO_EMULATOR_GPU`, `WEEKTODO_EMULATOR_ARGS` override that). If it
+dies, start it again; what was installed on it is gone after a crash.
 
 ## Develop
 

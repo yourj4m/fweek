@@ -119,6 +119,38 @@ One breakpoint: **1024 px**.
 - Someday follows the last day, 48 px bottom padding.
 - The task dialog becomes a bottom sheet with 24 px top corners.
 
+### Phone app (store pictures and help pages, not a running app)
+
+The reference's phone apps are native, not the web page in a wrapper, and
+differ from the narrow web layout. Nothing below comes from running them:
+the sources are the stores' promotional pictures (designed mock-ups, 1290 px
+wide), a 2024 screen recording of the older iPhone app, and the public help
+pages. Notes and the pictures are in the git-ignored `reference/mobile/`.
+
+| Element | Reference phone app | Narrow web layout | Here, on a phone |
+| --- | --- | --- | --- |
+| Arrangement | one column of days, then Someday, under a pinned top bar | same | same |
+| Row pitch | about 50 dp (12.8 % of the width) | 42 px | 50 |
+| Task text | about 17.5 sp | 16 | 17 |
+| Side margin | 16 dp | 24 | 16 |
+| Day header | bold date about 22 sp, pale weekday, 2 dp rule | 18 | 21 |
+| Highlight pill | 27 dp tall, hugging the text | 22 | 27 |
+| Top-bar buttons | 40 dp circles, 6 dp apart | same | same |
+| Task card | bottom sheet tinted by the task colour | bottom sheet | bottom sheet |
+
+Behaviour taken from the help pages: tap an empty line to type and Return for
+the next task; tap the circle to complete; press and hold to drag, to the
+screen edge to change week; tap the title to return to today, and from the
+current week to open the month.
+
+Choices of this project where the sources were silent or it seemed better:
+
+- A sideways swipe turns the week (no source mentions one).
+- The week opens scrolled to today.
+- Reminders, repeats, subtasks and the month view are not paid features.
+- Not built: the day view, the floating view switcher with its "+" button,
+  swipe-free quick add for today, undo after delete, the home-screen widget.
+
 ## 3. Components
 
 ### Task row (live + css)

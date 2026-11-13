@@ -4,7 +4,8 @@
 # container or under .tools/ (git-ignored):
 #
 #   - a JDK in the container
-#   - the Android SDK (platform, build tools, adb) in .tools/android-sdk
+#   - the Android SDK (platform, build tools, adb) in .tools/android-sdk;
+#     the first build adds the NDK and CMake there by itself (about 5 GB)
 #   - with --emulator: the emulator and a system image, for tools/android-smoke.sh
 #
 #   tools/setup-android.sh [--emulator]
