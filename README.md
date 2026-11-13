@@ -1,13 +1,16 @@
 # WeekToDo
 
-A minimal weekly planner for Linux, with Android planned. Your week as ruled
-columns, a Someday area for undated tasks, and nothing else in the way.
+A minimal weekly planner for Linux (Wayland), with Android planned. Your week
+as ruled columns, a Someday area for undated tasks, and nothing else in the
+way.
 
 Local-first: everything is stored on your machine and the app works offline.
-Sync through your own Nextcloud or Google Drive is the next milestone; the
-data layer is already built for it.
+Sync through your own Nextcloud is the next milestone; the data layer is
+already built for it.
 
-"WeekToDo" is a working title.
+This is a personal project. It shares its name with, but is unrelated to, the
+open-source WeekToDo planner at weektodo.me; it would need a different name
+before being published.
 
 ## Status
 
@@ -65,8 +68,24 @@ throwaway folder.
 tools/dev flutter analyze
 tools/dev flutter test                     # unit, interaction and render tests
 tools/dev flutter test --update-goldens    # after an intended visual change
-tools/dev tools/smoke-run.sh /tmp/shots    # drive the real binary headlessly
+tools/dev tools/smoke-run.sh /tmp/shots    # drive the real binary on Wayland
 ```
+
+The smoke run starts a headless Wayland compositor with two outputs, one
+unscaled and one at 125 %, and drives the release build with real pointer and
+keyboard events. It fails if the app does not fill its window on either
+output, typed text does not arrive, the task card does not open, or data does
+not survive a restart.
+
+### Flutter version
+
+The Flutter release is pinned in `tools/flutter-version` (3.47.9). Flutter
+3.50.0 draws through a new Wayland renderer that fixes its buffer scale when
+the window is created. On a desktop that mixes a fractionally scaled output
+with unscaled ones, GTK starts the window at scale 2 and then corrects to 1,
+and the app ends up drawing into a quarter of its window. 3.47.9 predates
+that renderer. Before raising the pin, run the smoke test: it reproduces that
+arrangement.
 
 Layout:
 

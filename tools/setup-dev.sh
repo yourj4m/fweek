@@ -3,7 +3,7 @@
 # installing development packages on the host:
 #
 #   - a toolbox container "weektodo-dev" with the compiler toolchain, GTK
-#     headers and a headless X server for the smoke test
+#     headers and a headless Wayland compositor for the smoke test
 #   - the pinned Flutter SDK under .tools/sdk-<version> (git-ignored)
 #
 # Afterwards run everything through tools/dev, for example:
@@ -20,9 +20,9 @@ if ! toolbox list --containers 2>/dev/null | grep -qw "$container"; then
 fi
 toolbox run -c "$container" sudo dnf install -y --setopt=install_weak_deps=False \
   clang cmake ninja-build pkgconf-pkg-config gtk3-devel xz-devel libstdc++-devel \
-  git curl unzip xz zip which file procps-ng \
-  xorg-x11-server-Xvfb mesa-dri-drivers mesa-libGL mesa-libEGL \
-  ImageMagick xdotool openbox google-noto-emoji-color-fonts
+  git curl unzip xz zip which file procps-ng binutils \
+  mesa-dri-drivers mesa-libGL mesa-libEGL google-noto-emoji-color-fonts \
+  sway grim ImageMagick python3-pywayland libxkbcommon-utils
 
 # The Flutter release is pinned; see "Flutter version" in the README.
 version="$(cat "$root/tools/flutter-version")"
