@@ -240,7 +240,7 @@ void main() {
   });
 
   group('change log', () {
-    test('two devices converge whatever order changes arrive in', () {
+    test('two devices converge whatever order changes arrive in', () async {
       final dbA = PlannerDatabase.inMemory(), dbB = PlannerDatabase.inMemory();
       addTearDown(dbA.close);
       addTearDown(dbB.close);
@@ -254,6 +254,8 @@ void main() {
       b.updateTask(id, color: () => 'yellow');
       // …and for the same field the later edit wins on both sides.
       a.updateTask(id, note: 'first');
+      // "Later" means a later clock reading; make sure there is one.
+      await Future<void>.delayed(const Duration(milliseconds: 3));
       b.updateTask(id, note: 'second');
       final fromA = dbA.changesSince(null), fromB = dbB.changesSince(null);
       dbA.apply(fromB.reversed);

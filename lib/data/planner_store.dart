@@ -38,6 +38,10 @@ abstract final class Settings {
   /// The day on which rollover last ran, as `YYYY-MM-DD`.
   static const lastRollover = 'last_rollover';
 
+  /// Settings that belong to this device and are not synced: how a planner
+  /// looks on a phone need not follow the desktop.
+  static const local = {theme, view};
+
   static const defaults = <String, Object?>{
     theme: 'system',
     weekStart: 1,
@@ -93,8 +97,14 @@ class PlannerStore extends ChangeNotifier {
       if (!list.deleted) _lists[list.id] = list;
     }
     for (final row in db.rows('settings')) {
+      final key = row['id'] as String;
+      if (Settings.local.contains(key)) continue;
       final raw = row['value'] as String?;
-      _settings[row['id'] as String] = raw == null ? null : jsonDecode(raw);
+      _settings[key] = raw == null ? null : jsonDecode(raw);
+    }
+    for (final key in Settings.local) {
+      final raw = db.meta('local.$key');
+      if (raw != null) _settings[key] = jsonDecode(raw);
     }
     _ensureDefaultList();
   }
@@ -120,6 +130,7 @@ class PlannerStore extends ChangeNotifier {
             _lists[id] = list;
           }
         case 'settings':
+          if (Settings.local.contains(id)) break;
           final raw = row?['value'] as String?;
           _settings[id] = raw == null ? null : jsonDecode(raw);
       }
@@ -130,13 +141,38 @@ class PlannerStore extends ChangeNotifier {
 
   void _ensureDefaultList() {
     if (_lists.isNotEmpty) return;
-    // A fixed id, so two fresh devices that sync end up with one list, not two.
-    _write(
-      'lists',
-      'someday',
-      {'title': '', 'position': orderKeyBetween(null, null), 'deleted': false},
-      notify: false,
-    );
+    final columns = {
+      'title': '',
+      'position': orderKeyBetween(null, null),
+      'deleted': false,
+    };
+    final List<Change> changes;
+    if (db.rows('lists').isEmpty) {
+      // A new planner. The first list has a fixed id, so two fresh devices
+      // that sync end up with one list rather than two, and its creation is
+      // stamped with the oldest possible time: when this device later meets
+      // one where that list was renamed or reordered, the real edits win.
+      var n = 0;
+      changes = [
+        for (final entry in columns.entries)
+          Change(
+            hlc: '000000000000-${(n++).toRadixString(16).padLeft(4, '0')}-${db.deviceId}',
+            table: 'lists',
+            row: 'someday',
+            column: entry.key,
+            value: entry.value,
+          ),
+      ];
+    } else {
+      // Every list was deleted: bring the first one back as a real edit.
+      changes = db.stamp('lists', 'someday', columns);
+    }
+    for (final (table, id) in db.apply(changes)) {
+      final row = db.row(table, id);
+      if (row == null) continue;
+      final list = _listFromRow(row);
+      if (!list.deleted) _lists[id] = list;
+    }
   }
 
   static Task _taskFromRow(Map<String, Object?> row) {
@@ -222,6 +258,13 @@ class PlannerStore extends ChangeNotifier {
 
   void setSetting(String key, Object? value) {
     if (_settings.containsKey(key) && _settings[key] == value) return;
+    if (Settings.local.contains(key)) {
+      db.setMeta('local.$key', jsonEncode(value));
+      _settings[key] = value;
+      _revision++;
+      notifyListeners();
+      return;
+    }
     _write('settings', key, {'value': value});
   }
 

@@ -5,6 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:weektodo/data/models.dart';
 import 'package:weektodo/data/planner_store.dart';
+import 'package:weektodo/main.dart';
+import 'package:weektodo/sync/secrets.dart';
+import 'package:weektodo/sync/storage.dart';
+import 'package:weektodo/sync/sync_service.dart';
 import 'package:weektodo/ui/task_list.dart';
 
 import 'harness.dart';
@@ -213,6 +217,66 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.tasksOn(monday.addDays(15)).single.repeats, isTrue);
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/dialog_full.png'));
+  });
+
+  testWidgets('sync is set up from the settings and shows its state', (tester) async {
+    final store = seededStore();
+    final remote = MemoryStorage();
+    final secrets = MemorySecretStore();
+    final service = SyncService(
+      store,
+      secrets,
+      storageFor: (config, password) {
+        if (password != 'right') {
+          return MemoryStorage()
+            ..failNext = (op, path) => true; // rejects the first request
+        }
+        return remote;
+      },
+    );
+    tester.view.physicalSize = const Size(1440, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(WeekToDoApp(store: store, notifications: false, sync: service));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.bySemanticsLabel('Menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sync now'), findsNothing);
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/settings_sync_off.png'));
+
+    Finder field(String label) => find.descendant(
+        of: find.ancestor(of: find.text(label), matching: find.byType(Row)).first,
+        matching: find.byType(TextField));
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter the server address.'), findsOneWidget);
+
+    await tester.enterText(field('Server'), 'cloud.example.com');
+    await tester.enterText(field('User name'), 'jonas');
+    await tester.enterText(field('App password'), 'wrong');
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+    expect(find.text('The connection was lost.'), findsOneWidget);
+    expect(service.configured, isFalse);
+
+    await tester.enterText(field('App password'), 'right');
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+    expect(service.configured, isTrue);
+    expect(find.text('jonas on cloud.example.com, folder WeekToDo'), findsOneWidget);
+    expect(find.text('Synced just now.'), findsOneWidget);
+    expect(remote.files, isNotEmpty);
+    expect(secrets.values.values.single, 'right');
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/settings_sync_on.png'));
+
+    await tester.tap(find.text('Disconnect'));
+    await tester.pumpAndSettle();
+    expect(find.text('Connect'), findsOneWidget);
+    expect(service.configured, isFalse);
+    service.dispose();
   });
 
   testWidgets('menu, search and settings open and work', (tester) async {

@@ -22,7 +22,8 @@ toolbox run -c "$container" sudo dnf install -y --setopt=install_weak_deps=False
   clang cmake ninja-build pkgconf-pkg-config gtk3-devel xz-devel libstdc++-devel \
   git curl unzip xz zip which file procps-ng binutils \
   mesa-dri-drivers mesa-libGL mesa-libEGL google-noto-emoji-color-fonts \
-  sway grim ImageMagick python3-pywayland libxkbcommon-utils
+  sway grim ImageMagick python3-pywayland libxkbcommon-utils \
+  libsecret-devel libsecret gnome-keyring dbus-daemon
 
 # The Flutter release is pinned; see "Flutter version" in the README.
 version="$(cat "$root/tools/flutter-version")"

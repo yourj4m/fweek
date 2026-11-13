@@ -14,7 +14,7 @@ Reads one command per line from stdin:
     click X Y         move, press, release
     type TEXT...      type text (US layout: letters, digits, common punctuation)
     key NAME          Return, Escape, Tab, BackSpace, Left, Right, Up, Down
-    ctrl LETTER       Control + a letter
+    ctrl KEY          Control + a letter, digit or punctuation key
     sleep SECONDS
 
 Usage: wl-input.py --protocols DIR --extent WIDTH HEIGHT
@@ -109,17 +109,26 @@ def main():
         pointer.button(now(), BTN_LEFT, 1 if down else 0)
         pointer.frame()
 
+    def step():
+        # Deliver what has been sent and leave a gap, as between real key
+        # events. A whole chord sent in one burst can reach the client before
+        # it has processed the modifier change that precedes the key.
+        display.roundtrip()
+        time.sleep(0.015)
+
     def tap(code, mask=0, modifier=None):
         if modifier is not None:
             keyboard.key(now(), modifier, 1)
             keyboard.modifiers(mask, 0, 0, 0)
+            step()
         keyboard.key(now(), code, 1)
+        step()
         keyboard.key(now(), code, 0)
+        step()
         if modifier is not None:
             keyboard.key(now(), modifier, 0)
             keyboard.modifiers(0, 0, 0, 0)
-        display.roundtrip()
-        time.sleep(0.012)
+            step()
 
     print("ready", flush=True)
     for line in sys.stdin:
@@ -151,7 +160,7 @@ def main():
         elif command == "key":
             tap(NAMED[rest])
         elif command == "ctrl":
-            tap(LETTERS[rest], CONTROL_MASK, CONTROL)
+            tap(PLAIN[rest], CONTROL_MASK, CONTROL)
         elif command == "sleep":
             time.sleep(float(rest))
         elif command:

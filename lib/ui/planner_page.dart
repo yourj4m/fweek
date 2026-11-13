@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
 import '../app_state.dart';
 import '../data/day.dart';
 import '../data/models.dart';
+import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import 'drag.dart';
 import 'month_view.dart';
@@ -59,6 +60,10 @@ class _PlannerPageState extends State<PlannerPage> {
         HardwareKeyboard.instance.isMetaPressed;
     if (control && key == LogicalKeyboardKey.keyF) {
       showSearchDialog(context);
+      return KeyEventResult.handled;
+    }
+    if (control && key == LogicalKeyboardKey.comma) {
+      showSettingsDialog(context);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.escape && _drag.active) {
@@ -142,6 +147,7 @@ class _Header extends StatelessWidget {
 
   void _menu(BuildContext context) {
     final app = context.readApp;
+    final sync = context.readSync;
     showPopover<void>(
       context: context,
       anchor: globalRect(context),
@@ -186,9 +192,24 @@ class _Header extends StatelessWidget {
                   onTap: () => run(() => app.setMonthView(true)),
                 ),
                 const _Divider(),
+                if (sync.configured)
+                  MenuRow(
+                    icon: sync.state == SyncState.error
+                        ? AppIcons.cloudAlert
+                        : AppIcons.refreshCw,
+                    label: 'Sync now',
+                    hint: switch (sync.state) {
+                      SyncState.syncing => 'syncing',
+                      SyncState.error => 'failed',
+                      _ => null,
+                    },
+                    danger: sync.state == SyncState.error,
+                    onTap: () => run(() => sync.syncNow()),
+                  ),
                 MenuRow(
                   icon: AppIcons.settings,
                   label: 'Settings',
+                  hint: 'Ctrl ,',
                   onTap: () => run(() => showSettingsDialog(context)),
                 ),
               ],

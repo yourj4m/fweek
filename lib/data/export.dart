@@ -132,16 +132,21 @@ abstract final class Export {
       }
     }
     final settings = json['settings'];
+    final local = <String, Object?>{};
     if (settings is Map) {
       for (final entry in settings.entries) {
-        if (Settings.defaults.containsKey(entry.key)) {
-          changes.addAll(
-            db.stamp('settings', entry.key as String, {'value': entry.value}),
-          );
+        final key = entry.key;
+        if (key is! String || !Settings.defaults.containsKey(key)) continue;
+        if (Settings.local.contains(key)) {
+          local[key] = entry.value;
+        } else {
+          changes.addAll(db.stamp('settings', key, {'value': entry.value}));
         }
       }
     }
     store.refresh(db.apply(changes));
+    // Per-device settings are restored on this device only, not synced.
+    local.forEach(store.setSetting);
     return count;
   }
 

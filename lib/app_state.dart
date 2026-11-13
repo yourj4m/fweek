@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'data/day.dart';
 import 'data/planner_store.dart';
+import 'sync/sync_service.dart';
 
 /// What the window is showing: which week or month, and in which view.
 class AppController extends ChangeNotifier {
@@ -48,11 +49,13 @@ class AppScope extends InheritedNotifier<Listenable> {
     super.key,
     required this.store,
     required this.controller,
+    required this.sync,
     required super.child,
-  }) : super(notifier: Listenable.merge([store, controller]));
+  }) : super(notifier: Listenable.merge([store, controller, sync]));
 
   final PlannerStore store;
   final AppController controller;
+  final SyncService sync;
 
   static AppScope of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppScope>()!;
@@ -74,4 +77,10 @@ extension AppContext on BuildContext {
 
   /// The view state, for use in callbacks.
   AppController get readApp => AppScope.read(this).controller;
+
+  /// The sync service, rebuilding this widget when its status changes.
+  SyncService get sync => AppScope.of(this).sync;
+
+  /// The sync service, for use in callbacks.
+  SyncService get readSync => AppScope.read(this).sync;
 }

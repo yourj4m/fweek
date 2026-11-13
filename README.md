@@ -5,8 +5,8 @@ as ruled columns, a Someday area for undated tasks, and nothing else in the
 way.
 
 Local-first: everything is stored on your machine and the app works offline.
-Sync through your own Nextcloud is the next milestone; the data layer is
-already built for it.
+Optionally it keeps your devices in step through a folder in your own
+Nextcloud, with no other server involved.
 
 This is a personal project. It shares its name with, but is unrelated to, the
 open-source WeekToDo planner at weektodo.me; it would need a different name
@@ -31,13 +31,15 @@ First test build for Linux. What works:
   dark and follow-the-system.
 - **Settings**: week start, 12/24-hour time, move unfinished tasks to today,
   sort or hide completed tasks.
+- **Sync** through Nextcloud (Settings → Sync): on start, every five minutes,
+  a few seconds after you stop editing, and on request.
 - **Export** to CSV, iCalendar and plain text; **backup and restore** as JSON.
 - **Shortcuts**: ← → previous/next, T today, M month view, Ctrl+F search,
-  Esc close.
+  Ctrl+, settings, Esc close.
 
 Not there yet:
 
-- Sync, and the Android app.
+- The Android app.
 - Reminders are delivered only while the app is running.
 - Notes are plain text.
 - Reordering subtasks by drag, selecting several tasks at once, undo, print.
@@ -93,12 +95,50 @@ Layout:
 | --- | --- |
 | `lib/data/` | Dates, the change-log database, ordering keys, recurrence, the planner store, export |
 | `lib/services/` | Reminders and the daily rollover |
+| `lib/sync/` | Sync engine, WebDAV client, keyring access, the sync service |
 | `lib/theme/` | Colours, type scale and sizes |
 | `lib/ui/` | Screens and widgets |
 | `test/data/` | Unit tests for the data layer |
+| `test/sync/` | Sync tests: engine, WebDAV client, service, live Nextcloud |
 | `test/golden/` | Interaction tests and reference renders |
 | `docs/design-spec.md` | The measured design this interface follows |
 | `tools/analysis/` | Scripts used to take those measurements |
+
+### Sync
+
+Set it up under Settings → Sync with your Nextcloud address, user name and an
+*app password* (Nextcloud: Settings → Security → Devices & sessions). The
+password is kept in the system keyring (KWallet or GNOME Keyring), never in
+the planner database. Theme and week/month view stay per device; everything
+else syncs.
+
+In the chosen folder each device only ever adds files named after itself:
+
+    WeekToDo/changes/<device id>-<sequence number>.json
+
+A file is a batch of that device's changes and is never modified, so two
+devices cannot overwrite each other, and a sync that is interrupted is simply
+finished by the next one. A device that has piled up many files merges them
+into one. Nothing is encrypted beyond the connection itself: anyone who can
+read the folder can read the planner.
+
+Do not copy `planner.db` between devices to move your data; connect the new
+device to sync, or use Backup and Restore. Two copies of one database share a
+device identity.
+
+To test sync end to end against a real server:
+
+```sh
+# unit and protocol tests against a Nextcloud server (skipped when unset)
+NEXTCLOUD_TEST_URL=... NEXTCLOUD_TEST_USER=... NEXTCLOUD_TEST_PASSWORD=... \
+  tools/dev flutter test test/sync/nextcloud_live_test.dart
+# two app instances syncing through the settings screen
+tools/dev tools/sync-smoke.sh /tmp/shots <server-url> <user> <app-password>
+```
+
+Both create a clearly named test folder in the account. A throwaway server is
+one command: `podman run -d -p 127.0.0.1:8089:80 -e SQLITE_DATABASE=nc
+-e NEXTCLOUD_ADMIN_USER=tester -e NEXTCLOUD_ADMIN_PASSWORD=... nextcloud:34-apache`.
 
 ### How data is stored
 
@@ -106,7 +146,7 @@ Every edit is recorded as a change to one field of one task, stamped with a
 hybrid logical clock. The tables hold the result of applying all changes,
 newest stamp winning per field. Two devices that exchange their change logs
 therefore end up with the same planner regardless of order, without a server;
-that is what file-based sync will build on. Task order uses fractional keys,
+that is what sync builds on. Task order uses fractional keys,
 so moving one task never rewrites its neighbours.
 
 ## Design

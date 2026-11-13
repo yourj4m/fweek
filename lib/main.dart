@@ -9,6 +9,8 @@ import 'app_state.dart';
 import 'data/database.dart';
 import 'data/planner_store.dart';
 import 'services/reminders.dart';
+import 'sync/secrets.dart';
+import 'sync/sync_service.dart';
 import 'theme/app_theme.dart';
 import 'ui/planner_page.dart';
 import 'ui/task_list.dart' show formatTime;
@@ -29,9 +31,17 @@ Future<void> main() async {
 }
 
 class WeekToDoApp extends StatefulWidget {
-  const WeekToDoApp({super.key, required this.store, this.notifications = true});
+  const WeekToDoApp({
+    super.key,
+    required this.store,
+    this.notifications = true,
+    this.sync,
+  });
 
   final PlannerStore store;
+
+  /// The sync service to use; by default one backed by the system keyring.
+  final SyncService? sync;
 
   /// Whether to deliver desktop notifications (off in widget tests).
   final bool notifications;
@@ -44,6 +54,8 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
   late final AppController _controller = AppController(widget.store);
   late final ReminderService _reminders =
       ReminderService(widget.store, notify: _notify);
+  late final SyncService _sync =
+      widget.sync ?? SyncService(widget.store, const KeyringSecretStore());
   final _plugin = FlutterLocalNotificationsPlugin();
   Future<bool?>? _pluginReady;
   int _notificationId = 0;
@@ -63,6 +75,7 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
         return false;
       });
     }
+    _sync.load();
     // Tests run without the reminder timer; they still get the rollover.
     if (widget.notifications) {
       _reminders.start();
@@ -74,6 +87,7 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
   @override
   void dispose() {
     _reminders.dispose();
+    if (widget.sync == null) _sync.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -110,6 +124,7 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
       builder: (context, child) => AppScope(
         store: widget.store,
         controller: _controller,
+        sync: _sync,
         child: _Themed(child: child!),
       ),
       home: const PlannerPage(),

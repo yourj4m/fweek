@@ -8,6 +8,7 @@ import '../app_state.dart';
 import '../data/export.dart';
 import '../data/planner_store.dart';
 import '../theme/app_theme.dart';
+import 'sync_settings.dart';
 import 'task_dialog.dart';
 import 'widgets/controls.dart';
 
@@ -190,6 +191,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     ),
                     toggle('Sort completed tasks down', Settings.sortDoneDown),
                     toggle('Hide completed tasks', Settings.hideDone),
+                    section('Sync'),
+                    const SyncSettings(),
                     section('Your data'),
                     Wrap(
                       spacing: 8,
@@ -242,8 +245,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                       ),
                     const SizedBox(height: 20),
                     Text(
-                      'Everything is stored on this computer. '
-                      'Reminders are delivered while the app is open.',
+                      'Your planner is stored on this computer, and in your '
+                      'Nextcloud if sync is on. Reminders are delivered while '
+                      'the app is open.',
                       style: context.text.caption14.copyWith(color: theme.ink(40)),
                     ),
                   ],
