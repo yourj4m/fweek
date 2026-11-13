@@ -193,6 +193,47 @@ void main() {
     expect(servers.values.single.files.length, 3);
   });
 
+  serviceTest('the files are found under the id the server reports', (tester) async {
+    final store = newStore();
+    String? reported = 'f00d-1d';
+    SyncException? refusal;
+    final seen = <String>[];
+    final service = SyncService(
+      store,
+      secrets,
+      storageFor: (config, password) {
+        seen.add(config.root.toString());
+        return MemoryStorage();
+      },
+      findUserId: (config, password) async {
+        if (refusal != null) throw refusal;
+        return reported;
+      },
+    );
+    services.add(service);
+    const pasted = 'https://cloud.example.com/remote.php/dav/files/from-address/';
+
+    refusal = unauthorized;
+    expect(await service.connect(server: pasted, user: 'jonas', password: 'right', folder: 'W'),
+        unauthorized.message);
+    expect(seen, isEmpty, reason: 'nothing is tried once the login is refused');
+    expect(store.db.meta('sync.config'), isNull);
+
+    refusal = null;
+    expect(await service.connect(server: pasted, user: 'jonas', password: 'right', folder: 'W'),
+        isNull);
+    expect(seen.last, 'https://cloud.example.com/remote.php/dav/files/f00d-1d/');
+    expect(service.config!.user, 'jonas');
+
+    // A server that does not say: the id in a pasted address, else the login.
+    reported = null;
+    await service.connect(server: pasted, user: 'jonas', password: 'right', folder: 'W');
+    expect(service.config!.userId, 'from-address');
+    await service.connect(server: 'cloud.example.com', user: 'jonas', password: 'right', folder: 'W');
+    expect(service.config!.userId, isNull);
+    expect(seen.last, 'https://cloud.example.com/remote.php/dav/files/jonas/');
+  });
+
   serviceTest('a saved connection is restored on start', (tester) async {
     final store = newStore();
     await connect(newService(store));

@@ -2,8 +2,11 @@
 // otherwise:
 //
 //   NEXTCLOUD_TEST_URL       e.g. http://127.0.0.1:8089
-//   NEXTCLOUD_TEST_USER
+//   NEXTCLOUD_TEST_USER      the login name
 //   NEXTCLOUD_TEST_PASSWORD  an app password
+//   NEXTCLOUD_TEST_USER_ID   optional: the account's id, when it differs
+//                            from the login name (an LDAP account); checks
+//                            that the app finds it on its own
 //
 // Everything happens inside a folder created for the run and removed after.
 import 'dart:convert';
@@ -17,20 +20,24 @@ import 'package:weektodo/data/day.dart';
 import 'package:weektodo/data/models.dart';
 import 'package:weektodo/data/planner_store.dart';
 import 'package:weektodo/data/recurrence.dart';
+import 'package:weektodo/sync/secrets.dart';
 import 'package:weektodo/sync/storage.dart';
 import 'package:weektodo/sync/sync_engine.dart';
+import 'package:weektodo/sync/sync_service.dart';
 import 'package:weektodo/sync/webdav.dart';
 
 void main() {
   final url = Platform.environment['NEXTCLOUD_TEST_URL'];
   final user = Platform.environment['NEXTCLOUD_TEST_USER'];
   final password = Platform.environment['NEXTCLOUD_TEST_PASSWORD'];
+  final expectedId = Platform.environment['NEXTCLOUD_TEST_USER_ID'];
   final configured = url != null && user != null && password != null;
   final skip = configured ? null : 'no NEXTCLOUD_TEST_* environment';
 
   final today = Day(2026, 11, 13), monday = Day(2026, 11, 9);
   final folder = 'WeekToDo test ${Random().nextInt(1 << 32).toRadixString(16)}/nested';
   late WebDavStorage storage;
+  late String id;
 
   PlannerStore newStore() {
     final db = PlannerDatabase.inMemory();
@@ -40,10 +47,12 @@ void main() {
 
   List<String> titles(Iterable<Task> tasks) => [for (final t in tasks) t.title];
 
-  setUpAll(() {
+  setUpAll(() async {
     if (!configured) return;
+    // The files may be under an id other than the login name.
+    id = await discoverNextcloudUserId(server: url, login: user, password: password) ?? user;
     storage = WebDavStorage(
-      root: nextcloudFilesRoot(url, user),
+      root: nextcloudFilesRoot(url, id),
       user: user,
       password: password,
     );
@@ -75,10 +84,47 @@ void main() {
     expect(await storage.list('$folder/changes'), isEmpty);
   }, skip: skip);
 
-  test('a wrong password is reported as such', () async {
-    final wrong = WebDavStorage(
+  test('the account id is found from the login name', () async {
+    if (expectedId != null) expect(id, expectedId);
+    expect(await storage.list(''), isA<List<String>>());
+  }, skip: skip);
+
+  test('the settings form connects with the login name and app password', () async {
+    final store = newStore()..addTask(DaySlot(monday), 'Connected');
+    final service = SyncService(store, MemorySecretStore());
+    addTearDown(service.dispose);
+    final error = await service.connect(
+        server: url!, user: user!, password: password!, folder: '${folder.split('/').first}/form');
+    expect(error, isNull);
+    expect(service.config!.root.pathSegments, contains(id));
+    expect(await storage.list('${folder.split('/').first}/form/changes'), hasLength(1));
+  }, skip: skip);
+
+  test('the id is not a login name, and that is not mistaken for a refused folder', () async {
+    if (expectedId == null || expectedId == user) return;
+    // As the app used to do it: login name as the id, the server accepts
+    // the login and refuses the place.
+    final asLogin = WebDavStorage(
       root: nextcloudFilesRoot(url!, user!),
       user: user,
+      password: password!,
+    );
+    addTearDown(asLogin.close);
+    await expectLater(
+      asLogin.createDir(folder),
+      throwsA(isA<SyncException>().having((e) => e.failure, 'failure', SyncFailure.forbidden)),
+    );
+    // The id itself is rejected as a login.
+    await expectLater(
+      discoverNextcloudUserId(server: url, login: expectedId, password: password),
+      throwsA(isA<SyncException>().having((e) => e.failure, 'failure', SyncFailure.unauthorized)),
+    );
+  }, skip: skip);
+
+  test('a wrong password is reported as such', () async {
+    final wrong = WebDavStorage(
+      root: nextcloudFilesRoot(url!, id),
+      user: user!,
       password: 'definitely-not-the-password',
     );
     addTearDown(wrong.close);
