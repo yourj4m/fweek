@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'app_state.dart';
+import 'calendar/calendar_service.dart';
 import 'data/database.dart';
 import 'data/planner_store.dart';
 import 'platform.dart';
@@ -30,7 +31,14 @@ Future<void> main() async {
   final store = PlannerStore(
     PlannerDatabase.open(p.join(directory.path, 'planner.db')),
   );
-  runApp(WeekToDoApp(store: store));
+  runApp(WeekToDoApp(
+    store: store,
+    calendars: CalendarService(
+      store.db,
+      const KeyringSecretStore(),
+      FileCalendarCache(directory),
+    ),
+  ));
 }
 
 class WeekToDoApp extends StatefulWidget {
@@ -39,9 +47,13 @@ class WeekToDoApp extends StatefulWidget {
     required this.store,
     this.notifications = true,
     this.sync,
+    this.calendars,
   });
 
   final PlannerStore store;
+
+  /// Subscribed calendars; by default none, kept in memory (widget tests).
+  final CalendarService? calendars;
 
   /// The sync service to use; by default one backed by the system keyring.
   final SyncService? sync;
@@ -58,6 +70,8 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
   late final SyncService _sync =
       widget.sync ?? SyncService(widget.store, const KeyringSecretStore());
   late final ReminderService _reminders;
+  late final CalendarService _calendars = widget.calendars ??
+      CalendarService(widget.store.db, MemorySecretStore(), MemoryCalendarCache());
   final _navigator = GlobalKey<NavigatorState>();
   AndroidBridge? _android;
   DesktopNotifications? _desktop;
@@ -83,6 +97,10 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
       schedule: _android == null ? null : _handOver,
     );
     _sync.load();
+    // Saved events first, so the week is complete at once; then the news.
+    _calendars.load().then((_) {
+      if (live) _calendars.refresh();
+    });
     // Tests run without the reminder timer; they still get the rollover.
     if (live) {
       _reminders.start();
@@ -96,6 +114,7 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
         onResume: () {
           _reminders.check();
           _sync.resumed();
+          _calendars.resumed();
         },
         onHide: _sync.leaving,
       );
@@ -107,6 +126,7 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
     _lifecycle?.dispose();
     _reminders.dispose();
     if (widget.sync == null) _sync.dispose();
+    if (widget.calendars == null) _calendars.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -171,6 +191,7 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
         store: widget.store,
         controller: _controller,
         sync: _sync,
+        calendars: _calendars,
         android: _android,
         child: _Themed(child: child!),
       ),
@@ -208,7 +229,10 @@ class _Themed extends StatelessWidget {
           statusBarBrightness: theme.isDark ? Brightness.dark : Brightness.light,
           systemNavigationBarColor: const Color(0x00000000),
           systemNavigationBarIconBrightness: ink,
-          systemNavigationBarContrastEnforced: false,
+          // With button navigation the system lays a veil behind the
+          // buttons, so the list passing underneath stays readable; with
+          // gesture navigation it draws nothing.
+          systemNavigationBarContrastEnforced: true,
         ),
         child: ThemeScope(
           theme: theme,

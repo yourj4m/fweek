@@ -32,6 +32,9 @@ Test builds for Linux and Android, from the same code. What works:
   sort or hide completed tasks.
 - **Sync** through Nextcloud (Settings → Sync): on start, every five minutes,
   a few seconds after you stop editing, and on request.
+- **Calendars**: subscribe to a calendar's iCal address (for example Google
+  Calendar's "secret address") and its events appear in your week,
+  read-only. See [Calendars](#calendars).
 - **Export** to CSV, iCalendar and plain text; **backup and restore** as JSON.
 - **Shortcuts**: ← → previous/next, T today, M month view, Ctrl+F search,
   Ctrl+, settings, Esc close.
@@ -46,7 +49,8 @@ Not there yet:
 - On Android: no home-screen widget, no sync while the app is closed.
 - Notes are plain text.
 - Reordering subtasks by drag, selecting several tasks at once, undo, print.
-- Attachments, sharing and calendar-provider sync are out of scope for now.
+- Changing calendar events or sending tasks to a calendar (calendars are read-only).
+- Attachments and sharing are out of scope for now.
 - English only.
 
 ## Run it
@@ -217,6 +221,51 @@ tools/dev tools/sync-smoke.sh /tmp/shots <server-url> <user> <app-password>
 Both create a clearly named test folder in the account. A throwaway server is
 one command: `podman run -d -p 127.0.0.1:8089:80 -e SQLITE_DATABASE=nc
 -e NEXTCLOUD_ADMIN_USER=tester -e NEXTCLOUD_ADMIN_PASSWORD=... nextcloud:34-apache`.
+
+### Calendars
+
+Settings → Calendars takes the iCal address of a calendar and shows its
+events in the week and month, above the day's tasks, marked with a coloured
+bar and without a check circle. Tapping one shows its time, place and notes.
+Events cannot be changed here, and tasks are not sent to the calendar.
+
+For Google Calendar the address is under Settings → the calendar → Integrate
+calendar → "Secret address in iCal format". Any calendar that offers an
+`.ics` or `webcal://` address works the same way.
+
+- The planner reads the address itself: when it starts, every 15 minutes
+  while it is open, when you return to it on a phone, and on request. The
+  last copy is kept on the device, so events also show offline.
+- **Nothing of a calendar is synced.** Its events never become tasks, and
+  neither they nor the calendar's name or address enter the Nextcloud folder,
+  a backup or an export (`test/calendar/calendar_service_test.dart` checks
+  this). Add the address on each device that should show the calendar.
+- The address works like a password: whoever has it can read the calendar.
+  It is kept with the passwords (system keyring, Android keystore), not in
+  the planner database, and only https addresses are accepted.
+- Repeating events, exceptions to them, all-day and multi-day events and
+  time zones (from the definitions the calendar itself ships) are
+  understood; `lib/calendar/ics.dart` lists what is not.
+
+### Updates
+
+Installing a newer build keeps the planner, the sync connection and the
+subscribed calendars; nothing has to be entered again.
+
+- **Linux**: `tools/install-local.sh` replaces only the program in
+  `~/.local/opt/weektodo`. The planner (`~/.local/share/io.github.yourj4m.weektodo`)
+  and the passwords in the keyring are not touched.
+- **Android**: install the new APK over the old one. This works as long as
+  it is signed with the same key (`~/.config/weektodo/`, see
+  [Android](#android)); `tools/android-build.sh` numbers builds by commit
+  count, so a later build is always an update.
+
+Both are tested by setting a device up with an earlier build and continuing
+with the current one: `WEEKTODO_OLD_BIN=/path/to/old/weektodo tools/dev
+tools/sync-smoke.sh ...` on Linux, and `adb install -r` over the older APK on
+the emulator. What must stay the same for this to hold: the app id
+`io.github.yourj4m.weektodo`, the signing key, and the meaning of the saved
+connection (`sync.config`; new fields have to be optional).
 
 ### How data is stored
 

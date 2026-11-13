@@ -1,9 +1,11 @@
 import 'package:flutter/widgets.dart';
 
 import '../app_state.dart';
+import '../calendar/calendar_service.dart';
 import '../data/day.dart';
 import '../data/models.dart';
 import '../theme/app_theme.dart';
+import 'event_rows.dart';
 import 'strings.dart';
 import 'task_list.dart';
 import 'widgets/controls.dart';
@@ -31,6 +33,8 @@ class MonthView extends StatelessWidget {
     final lastOfMonth = month.addMonths(1).addDays(-1);
     final weeks = (lastOfMonth.difference(first) ~/ 7) + 1;
     final byDay = store.tasksBetween(first, first.addDays(weeks * 7 - 1));
+    final events =
+        context.calendars.eventsBetween(first, first.addDays(weeks * 7 - 1));
     final narrow = MediaQuery.sizeOf(context).width < Dim.breakpoint;
 
     return Column(
@@ -72,6 +76,7 @@ class MonthView extends StatelessWidget {
                         day: first.addDays(w * 7 + i),
                         inMonth: first.addDays(w * 7 + i).month == month.month,
                         tasks: byDay[first.addDays(w * 7 + i)] ?? const [],
+                        events: events[first.addDays(w * 7 + i)] ?? const [],
                         maxChips: _maxChips,
                         narrow: narrow,
                         onOpen: onOpen,
@@ -91,6 +96,7 @@ class _MonthCell extends StatelessWidget {
     required this.day,
     required this.inMonth,
     required this.tasks,
+    required this.events,
     required this.maxChips,
     required this.narrow,
     required this.onOpen,
@@ -99,6 +105,7 @@ class _MonthCell extends StatelessWidget {
   final Day day;
   final bool inMonth;
   final List<Task> tasks;
+  final List<CalendarEvent> events;
   final int maxChips;
   final bool narrow;
   final ValueChanged<Task> onOpen;
@@ -107,10 +114,13 @@ class _MonthCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.theme;
     final today = day == context.store.today;
-    final shown = tasks.length > maxChips
-        ? tasks.take(maxChips - 1).toList()
-        : tasks;
-    final hidden = tasks.length - shown.length;
+    // Events come first, as in the week; together with the tasks they share
+    // the cell's few lines.
+    final total = events.length + tasks.length;
+    final room = total > maxChips ? maxChips - 1 : maxChips;
+    final shownEvents = events.take(room).toList();
+    final shown = tasks.take(room - shownEvents.length).toList();
+    final hidden = total - shownEvents.length - shown.length;
     void openWeek() {
       final app = context.readApp;
       app.show(day);
@@ -153,6 +163,46 @@ class _MonthCell extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
+              for (final event in shownEvents)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Builder(
+                    builder: (anchor) => GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => showEventDetails(anchor, event),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: SizedBox(
+                          height: 18,
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 6),
+                              Container(
+                                width: 3,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: calendarColor(context, event.calendar),
+                                  borderRadius: BorderRadius.circular(1.5),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  eventLabel(context, event),
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.text.tiny12
+                                      .copyWith(color: theme.ink(60)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               for (final task in shown)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2),

@@ -142,25 +142,25 @@ class _SyncSettingsState extends State<SyncSettings> {
           style: muted,
         ),
         const SizedBox(height: 12),
-        _Field(
+        SettingsField(
           label: 'Server',
           hint: 'cloud.example.com',
           controller: _server,
           enabled: !_connecting,
         ),
-        _Field(
+        SettingsField(
           label: 'Login name',
           controller: _user,
           enabled: !_connecting,
         ),
-        _Field(
+        SettingsField(
           label: 'App password',
           controller: _password,
           enabled: !_connecting,
           obscure: true,
           onSubmitted: _connect,
         ),
-        _Field(
+        SettingsField(
           label: 'Folder',
           controller: _folder,
           enabled: !_connecting,
@@ -192,8 +192,10 @@ class _SyncSettingsState extends State<SyncSettings> {
   }
 }
 
-class _Field extends StatelessWidget {
-  const _Field({
+/// One labelled line of a settings form.
+class SettingsField extends StatelessWidget {
+  const SettingsField({
+    super.key,
     required this.label,
     required this.controller,
     this.hint,

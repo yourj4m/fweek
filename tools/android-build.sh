@@ -40,7 +40,11 @@ PROPS
 
 platform=android-arm64; abi=arm64-v8a
 [ "${1:-}" = "--emulator" ] && { platform=android-x64; abi=x86_64; }
-"$dev" flutter build apk --release --split-per-abi --target-platform "$platform"
+# The build number counts commits, so every build made later is an update
+# in Android's eyes and never a downgrade, which it would refuse.
+number="$(git -C "$root" rev-list --count HEAD)"
+"$dev" flutter build apk --release --split-per-abi --target-platform "$platform" \
+  --build-number "$number"
 apk="$root/build/app/outputs/flutter-apk/app-$abi-release.apk"
 echo "Built $apk ($(du -h "$apk" | cut -f1))"
 

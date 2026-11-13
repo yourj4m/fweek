@@ -1,12 +1,16 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:weektodo/calendar/calendar_service.dart';
+import 'package:weektodo/calendar/ics.dart';
 import 'package:weektodo/data/database.dart';
 import 'package:weektodo/data/day.dart';
 import 'package:weektodo/data/models.dart';
 import 'package:weektodo/data/planner_store.dart';
 import 'package:weektodo/main.dart';
+import 'package:weektodo/sync/secrets.dart';
 
 /// The day the reference captures were taken, so renders line up with them.
 final referenceToday = Day(2026, 11, 13);
@@ -84,12 +88,87 @@ Future<void> pumpApp(
   PlannerStore store, {
   Size size = const Size(1440, 900),
   Brightness brightness = Brightness.light,
+  CalendarService? calendars,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   tester.platformDispatcher.platformBrightnessTestValue = brightness;
   addTearDown(tester.view.reset);
   addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
-  await tester.pumpWidget(WeekToDoApp(store: store, notifications: false));
+  await tester.pumpWidget(
+      WeekToDoApp(store: store, notifications: false, calendars: calendars));
   await tester.pumpAndSettle();
+}
+
+/// A calendar feed for the reference week (9 to 15 November 2026): a timed
+/// event, one over two whole days, and a weekly one.
+const referenceFeed = '''
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Calendar//EN
+BEGIN:VEVENT
+UID:meeting@test
+SUMMARY:Team meeting
+LOCATION:Room 204
+DESCRIPTION:Bring the draft.
+DTSTART:20261109T090000Z
+DTEND:20261109T100000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:conference@test
+SUMMARY:Conference
+DTSTART;VALUE=DATE:20261113
+DTEND;VALUE=DATE:20261115
+END:VEVENT
+BEGIN:VEVENT
+UID:committee@test
+SUMMARY:Thesis committee
+DTSTART:20261113T133000Z
+DTEND:20261113T150000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:seminar@test
+SUMMARY:Group seminar
+DTSTART:20261104T080000Z
+DTEND:20261104T090000Z
+RRULE:FREQ=WEEKLY;BYDAY=WE
+END:VEVENT
+END:VCALENDAR
+''';
+
+/// A calendar service that already holds [feed], as if it had been read on
+/// an earlier run. Times are shown one hour ahead of UTC whatever the
+/// machine's zone, and nothing goes online.
+Future<CalendarService> calendarWith(
+  WidgetTester tester,
+  PlannerStore store, {
+  String feed = referenceFeed,
+  String name = 'Work',
+  String color = 'blue',
+}) async {
+  final cache = MemoryCalendarCache()..feeds['c1'] = feed;
+  store.db.setMeta(
+    'local.calendars',
+    jsonEncode([
+      {'id': 'c1', 'name': name, 'color': color},
+    ]),
+  );
+  late CalendarService service;
+  // Outside the test's fake clock, so the service's refresh timer is not
+  // mistaken for one the test left behind.
+  await tester.runAsync(() async {
+    service = CalendarService(
+      store.db,
+      MemorySecretStore(),
+      cache,
+      parse: (text) async => IcsCalendar.parse(
+        text,
+        toLocal: (utc) =>
+            DateTime(utc.year, utc.month, utc.day, utc.hour + 1, utc.minute),
+      ),
+    );
+    await service.load();
+  });
+  addTearDown(service.dispose);
+  return service;
 }

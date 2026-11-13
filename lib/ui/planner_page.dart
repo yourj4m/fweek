@@ -4,12 +4,14 @@ import 'icons.dart';
 import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
 
 import '../app_state.dart';
+import '../calendar/calendar_service.dart';
 import '../data/day.dart';
 import '../data/models.dart';
 import '../platform.dart';
 import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import 'drag.dart';
+import 'event_rows.dart';
 import 'month_view.dart';
 import 'search_dialog.dart';
 import 'settings_dialog.dart';
@@ -408,13 +410,19 @@ class _DayColumn extends StatelessWidget {
     required this.rows,
     required this.narrow,
     required this.onOpen,
+    this.events = const [],
   });
 
   final Day day;
   final List<Task> tasks;
+
+  /// Ruled lines for tasks; the day's [events] take their own lines above.
   final int rows;
   final bool narrow;
   final ValueChanged<Task> onOpen;
+
+  /// Events from subscribed calendars on this day.
+  final List<CalendarEvent> events;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -422,6 +430,7 @@ class _DayColumn extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _DayHeader(day: day, narrow: narrow),
+          if (events.isNotEmpty) EventRows(events: events, compact: narrow),
           TaskListBody(
             slot: DaySlot(day),
             tasks: tasks,
@@ -490,17 +499,26 @@ class _WeekGrid extends StatelessWidget {
     final byDay = store.tasksBetween(days.first, days.last);
     List<Task> tasks(Day d) => byDay[d] ?? const [];
 
+    final events = context.calendars.eventsBetween(days.first, days.last);
+    List<CalendarEvent> eventsOn(Day d) => events[d] ?? const [];
+
+    /// Lines a day takes in all: its events, its tasks and the line to type
+    /// on, but no fewer than [minimum].
+    int lines(Day d, int minimum) {
+      final needed = eventsOn(d).length +
+          _rowsNeeded(context, DaySlot(d), tasks(d), 1);
+      return needed > minimum ? needed : minimum;
+    }
+
     // Five single columns, then the last two days stacked in the sixth.
     var rows = Dim.weekdayRows;
     for (final d in days.take(5)) {
-      final needed = _rowsNeeded(context, DaySlot(d), tasks(d), Dim.weekdayRows);
+      final needed = lines(d, Dim.weekdayRows);
       if (needed > rows) rows = needed;
     }
     final upper = days[5], lower = days[6];
-    final upperRows =
-        _rowsNeeded(context, DaySlot(upper), tasks(upper), Dim.weekendRows);
-    var lowerRows =
-        _rowsNeeded(context, DaySlot(lower), tasks(lower), Dim.weekendRows);
+    final upperRows = lines(upper, Dim.weekendRows);
+    var lowerRows = lines(lower, Dim.weekendRows);
     // Both stacks share a height in rows: weekday = header + rows; weekend =
     // two headers, a one-row gap, and both bodies.
     final stacked = upperRows + lowerRows + 2;
@@ -519,7 +537,8 @@ class _WeekGrid extends StatelessWidget {
             child: _DayColumn(
               day: d,
               tasks: tasks(d),
-              rows: rows,
+              events: eventsOn(d),
+              rows: rows - eventsOn(d).length,
               narrow: false,
               onOpen: onOpen,
             ),
@@ -531,7 +550,8 @@ class _WeekGrid extends StatelessWidget {
               _DayColumn(
                 day: upper,
                 tasks: tasks(upper),
-                rows: upperRows,
+                events: eventsOn(upper),
+                rows: upperRows - eventsOn(upper).length,
                 narrow: false,
                 onOpen: onOpen,
               ),
@@ -539,7 +559,8 @@ class _WeekGrid extends StatelessWidget {
               _DayColumn(
                 day: lower,
                 tasks: tasks(lower),
-                rows: lowerRows,
+                events: eventsOn(lower),
+                rows: lowerRows - eventsOn(lower).length,
                 narrow: false,
                 onOpen: onOpen,
               ),
@@ -980,6 +1001,7 @@ class _WeekPageState extends State<_WeekPage> {
     final app = context.app;
     final days = [for (var i = 0; i < 7; i++) widget.first.addDays(i)];
     final byDay = store.tasksBetween(days.first, days.last);
+    final events = context.calendars.eventsBetween(days.first, days.last);
 
     // A week is longer than a phone screen. Start at the day that was asked
     // for (today when the app opens, or the day of a search result) rather
@@ -1002,6 +1024,7 @@ class _WeekPageState extends State<_WeekPage> {
               key: _dayKeys.putIfAbsent(d, GlobalKey.new),
               day: d,
               tasks: byDay[d] ?? const [],
+              events: events[d] ?? const [],
               rows: _rowsNeeded(context, DaySlot(d), byDay[d] ?? const [],
                   d == store.today ? 2 : 1),
               narrow: true,

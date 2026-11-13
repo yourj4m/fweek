@@ -18,6 +18,10 @@
 #
 # Use a test server or a dedicated test account: the run creates a folder
 # named "WeekToDo sync test <random>" in the account and leaves it there.
+#
+# To check that an update keeps the connection, point WEEKTODO_OLD_BIN at the
+# executable of an earlier build: device A is then set up with that build and
+# restarted (step 3) with the current one, on the same data and keyring.
 set -uo pipefail
 # A crash during a test run must not reach the desktop's crash reporter: the
 # container shares the host's kernel, so the report would pop up there. With
@@ -85,8 +89,8 @@ key() { send "key $1"; sleep 0.35; }
 shot() { grim -o HEADLESS-1 "$out/$1.png" && echo "shot  $1"; }
 stored() { strings "$1"/planner.db* 2>/dev/null | grep -c -- "$2"; }
 
-start_app() {
-  WEEKTODO_DATA_DIR="$1" "$bin" >>"$out/app.log" 2>&1 &
+start_app() {  # <data folder> [executable]
+  WEEKTODO_DATA_DIR="$1" "${2:-$bin}" >>"$out/app.log" 2>&1 &
   app=$!
   for _ in $(seq 1 60); do
     swaymsg -t get_tree | grep -q "\"app_id\": \"$app_id\"" && break
@@ -123,7 +127,9 @@ add_task() {  # <text>: typed into Monday's first free row
 }
 
 echo "folder: $folder"
-start_app "$data_a"
+old_bin="${WEEKTODO_OLD_BIN:-$bin}"
+[ "$old_bin" = "$bin" ] || echo "device A starts on the earlier build: $old_bin"
+start_app "$data_a" "$old_bin"
 connect "$data_a"
 shot 01-a-connected
 [ "$(stored "$data_a" 'sync.last_ok')" -ge 1 ] && pass "device A connected and synced" || fail "device A did not connect"
@@ -149,7 +155,9 @@ for _ in $(seq 1 30); do
   sleep 0.5
 done
 shot 05-a-restarted
-[ "$(stored "$data_a" 'Reply from device B')" -ge 1 ] && pass "device A received B's task after a restart, without re-entering the password" || fail "device A did not receive B's task after a restart"
+what="after a restart"
+[ "$old_bin" = "$bin" ] || what="after being updated to the current build"
+[ "$(stored "$data_a" 'Reply from device B')" -ge 1 ] && pass "device A received B's task $what, without re-entering the password" || fail "device A did not receive B's task $what"
 stop_app
 
 # The secure-storage plugin files its entry under this account name.

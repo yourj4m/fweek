@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'calendar/calendar_service.dart';
 import 'data/day.dart';
 import 'data/planner_store.dart';
 import 'services/android_bridge.dart';
@@ -64,13 +65,17 @@ class AppScope extends InheritedNotifier<Listenable> {
     required this.store,
     required this.controller,
     required this.sync,
+    required this.calendars,
     this.android,
     required super.child,
-  }) : super(notifier: Listenable.merge([store, controller, sync]));
+  }) : super(notifier: Listenable.merge([store, controller, sync, calendars]));
 
   final PlannerStore store;
   final AppController controller;
   final SyncService sync;
+
+  /// Subscribed calendars and their events.
+  final CalendarService calendars;
 
   /// Android's own services (reminders, file saving); null elsewhere.
   final AndroidBridge? android;
@@ -101,6 +106,12 @@ extension AppContext on BuildContext {
 
   /// The sync service, for use in callbacks.
   SyncService get readSync => AppScope.read(this).sync;
+
+  /// Subscribed calendars, rebuilding this widget when their events change.
+  CalendarService get calendars => AppScope.of(this).calendars;
+
+  /// Subscribed calendars, for use in callbacks.
+  CalendarService get readCalendars => AppScope.read(this).calendars;
 
   /// Android's own services, or null on other systems.
   AndroidBridge? get readAndroid => AppScope.read(this).android;

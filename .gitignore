@@ -20,3 +20,6 @@ __pycache__/
 
 # Screenshot test failure output
 /test/golden/failures/
+
+# Built packages kept for installing
+/dist/

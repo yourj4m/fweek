@@ -12,6 +12,7 @@ import '../data/planner_store.dart';
 import '../platform.dart';
 import '../services/android_bridge.dart';
 import '../theme/app_theme.dart';
+import 'calendar_settings.dart';
 import 'sync_settings.dart';
 import 'task_dialog.dart';
 import 'widgets/controls.dart';
@@ -225,6 +226,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     ],
                     section('Sync'),
                     const SyncSettings(),
+                    section('Calendars'),
+                    const CalendarSettings(),
                     section('Your data'),
                     Wrap(
                       spacing: 8,

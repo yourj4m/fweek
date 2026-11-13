@@ -479,11 +479,11 @@ class _TaskListBodyState extends State<TaskListBody> {
         ? drag.targetIndex.clamp(0, shown.length)
         : -1;
 
-    // The gap opens and moves smoothly during a drag, but closes at once
-    // when the drag ends: the dropped task takes its place in the same
-    // frame, and a gap still closing beside it would not fit the body.
+    // A gap opens smoothly but closes at once. The body is sized for its
+    // rows as they will be, so a gap still closing (beside the task just
+    // dropped, or in a list the pointer has left) would not fit in it.
     Widget gap(int index) => AnimatedContainer(
-          duration: drag.active
+          duration: index == gapAt
               ? const Duration(milliseconds: 120)
               : Duration.zero,
           curve: Curves.easeOut,
