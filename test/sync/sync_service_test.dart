@@ -193,6 +193,64 @@ void main() {
     expect(servers.values.single.files.length, 3);
   });
 
+  serviceTest('a throttled run is retried on the timer', (tester) async {
+    // Nextcloud refuses a throttled login before it checks the password, so
+    // retrying adds no failed attempt, and the saved password goes through
+    // once the block lifts.
+    final store = newStore();
+    final service = newService(store);
+    await connect(service);
+    current.failWith = const SyncException(SyncFailure.throttled, 'too many failed attempts');
+    await service.syncNow();
+    expect(service.state, SyncState.error);
+    final calls = current.calls;
+    current.failWith = null;
+    await tester.pump(const Duration(minutes: 5, seconds: 1));
+    expect(current.calls, greaterThan(calls));
+    expect(service.state, SyncState.idle);
+  });
+
+  serviceTest('the files are found under the id the server reports', (tester) async {
+    final store = newStore();
+    String? reported = 'f00d-1d';
+    SyncException? refusal;
+    final seen = <String>[];
+    final service = SyncService(
+      store,
+      secrets,
+      storageFor: (config, password) {
+        seen.add(config.root.toString());
+        return MemoryStorage();
+      },
+      findUserId: (config, password) async {
+        if (refusal != null) throw refusal;
+        return reported;
+      },
+    );
+    services.add(service);
+    const pasted = 'https://cloud.example.com/remote.php/dav/files/from-address/';
+
+    refusal = unauthorized;
+    expect(await service.connect(server: pasted, user: 'jonas', password: 'right', folder: 'W'),
+        unauthorized.message);
+    expect(seen, isEmpty, reason: 'nothing is tried once the login is refused');
+    expect(store.db.meta('sync.config'), isNull);
+
+    refusal = null;
+    expect(await service.connect(server: pasted, user: 'jonas', password: 'right', folder: 'W'),
+        isNull);
+    expect(seen.last, 'https://cloud.example.com/remote.php/dav/files/f00d-1d/');
+    expect(service.config!.user, 'jonas');
+
+    // A server that does not say: the id in a pasted address, else the login.
+    reported = null;
+    await service.connect(server: pasted, user: 'jonas', password: 'right', folder: 'W');
+    expect(service.config!.userId, 'from-address');
+    await service.connect(server: 'cloud.example.com', user: 'jonas', password: 'right', folder: 'W');
+    expect(service.config!.userId, isNull);
+    expect(seen.last, 'https://cloud.example.com/remote.php/dav/files/jonas/');
+  });
+
   serviceTest('a saved connection is restored on start', (tester) async {
     final store = newStore();
     await connect(newService(store));

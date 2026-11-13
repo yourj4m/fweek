@@ -16,29 +16,48 @@ class SyncConfig {
     required this.server,
     required this.user,
     required this.folder,
+    this.userId,
   });
 
   /// The Nextcloud address as the user typed it.
   final String server;
+
+  /// The login name the app password belongs to.
   final String user;
 
   /// Folder in the user's files, relative to their root.
   final String folder;
 
+  /// The id Nextcloud files the account under, as the server reported it
+  /// when connecting. It differs from [user] for accounts from a directory
+  /// (LDAP), whose id is generated. Connections saved before the app asked
+  /// for it have none; they only ever worked where the two are the same.
+  final String? userId;
+
   /// The account's WebDAV root.
-  Uri get root => nextcloudFilesRoot(server, user);
+  Uri get root => nextcloudFilesRoot(server, userId ?? user);
 
   /// Identifies the folder, to notice when the app is pointed elsewhere.
   String get target => '$root$folder';
 
-  Map<String, Object?> toJson() =>
-      {'server': server, 'user': user, 'folder': folder};
+  Map<String, Object?> toJson() => {
+        'server': server,
+        'user': user,
+        'folder': folder,
+        if (userId != null) 'userId': userId,
+      };
 
   static SyncConfig? fromJson(Object? json) {
     if (json is! Map) return null;
     final server = json['server'], user = json['user'], folder = json['folder'];
     if (server is! String || user is! String || folder is! String) return null;
-    return SyncConfig(server: server, user: user, folder: folder);
+    final userId = json['userId'];
+    return SyncConfig(
+      server: server,
+      user: user,
+      folder: folder,
+      userId: userId is String && userId.isNotEmpty ? userId : null,
+    );
   }
 }
 
@@ -61,15 +80,21 @@ class SyncService extends ChangeNotifier {
     this.store,
     this.secrets, {
     SyncStorage Function(SyncConfig config, String password)? storageFor,
+    Future<String?> Function(SyncConfig config, String password)? findUserId,
     DateTime Function()? clock,
     this.interval = const Duration(minutes: 5),
     this.afterEdit = const Duration(seconds: 8),
   })  : _storageFor = storageFor ?? _webDav,
+        // Replacing the storage replaces the server, so asking the real one
+        // for the account id would make no sense; such callers (tests) say
+        // what the id is, or leave it to be the login name.
+        _findUserId = findUserId ?? (storageFor == null ? _askNextcloud : _noUserId),
         _clock = clock ?? DateTime.now;
 
   final PlannerStore store;
   final SecretStore secrets;
   final SyncStorage Function(SyncConfig config, String password) _storageFor;
+  final Future<String?> Function(SyncConfig config, String password) _findUserId;
   final DateTime Function() _clock;
 
   /// Time between automatic runs.
@@ -84,6 +109,11 @@ class SyncService extends ChangeNotifier {
 
   static SyncStorage _webDav(SyncConfig config, String password) =>
       WebDavStorage(root: config.root, user: config.user, password: password);
+
+  static Future<String?> _askNextcloud(SyncConfig config, String password) =>
+      discoverNextcloudUserId(server: config.server, login: config.user, password: password);
+
+  static Future<String?> _noUserId(SyncConfig config, String password) async => null;
 
   SyncConfig? get config => _config;
   SyncConfig? _config;
@@ -213,18 +243,39 @@ class SyncService extends ChangeNotifier {
     required String password,
     required String folder,
   }) async {
-    final SyncConfig config;
+    final SyncConfig typed;
     try {
-      config = SyncConfig(
+      typed = SyncConfig(
         server: server.trim(),
         user: user.trim(),
         folder: normalizeFolder(folder),
       );
-      config.root; // validates the address
+      typed.root; // validates the address
     } on FormatException catch (error) {
       return error.message;
     }
+    // App passwords never contain white space; a space or line break copied
+    // along with one would otherwise read as a wrong password.
+    password = password.trim();
     if (password.isEmpty) return 'Enter the app password.';
+
+    // Log in first, and learn where the account's files are: the login name
+    // is not always the id in the files' address.
+    String? userId;
+    try {
+      userId = await _findUserId(typed, password);
+    } on SyncException catch (error) {
+      return error.message;
+    }
+    // A server that does not say: an id in a pasted WebDAV address is the
+    // next best guess, then the login name, as before.
+    userId ??= nextcloudUserIdInAddress(typed.server);
+    final config = SyncConfig(
+      server: typed.server,
+      user: typed.user,
+      folder: typed.folder,
+      userId: userId,
+    );
 
     final storage = _storageFor(config, password);
     final engine = SyncEngine(store, storage, folder: config.folder);
@@ -314,7 +365,9 @@ class SyncService extends ChangeNotifier {
       _state = SyncState.error;
       _message = error.message;
       // Retrying a rejected password would only trip the server's
-      // brute-force protection; wait for the user.
+      // brute-force protection; wait for the user. A throttled login is
+      // retried as usual: refused attempts do not count as failed ones, and
+      // the saved password goes through once the server lifts the block.
       if (error.failure == SyncFailure.unauthorized) _paused = true;
     } on Object catch (error) {
       if (_engine != engine) return;

@@ -9,6 +9,12 @@ enum SyncFailure {
   /// The server rejected the user name or password.
   unauthorized,
 
+  /// The server accepted the login but refuses this account the location.
+  forbidden,
+
+  /// The server refuses logins for a while after too many failed ones.
+  throttled,
+
   /// The address does not lead to a usable folder.
   notFound,
 

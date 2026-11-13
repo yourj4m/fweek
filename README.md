@@ -174,10 +174,19 @@ Layout:
 ### Sync
 
 Set it up under Settings → Sync with your Nextcloud address, user name and an
-*app password* (Nextcloud: Settings → Security → Devices & sessions). The
+*app password* (Nextcloud: Settings → Security → Devices & sessions). The user
+name is the login Nextcloud shows next to the new app password: an app
+password works only together with that name. The address may also be the
+WebDAV address from Nextcloud's Files settings. The
 password is kept in the system keyring (KWallet or GNOME Keyring), never in
 the planner database. Theme and week/month view stay per device; everything
 else syncs.
+
+The login name is not always the name the account's files are filed under:
+accounts that come from a directory (LDAP), as at many universities, get a
+generated id such as `0f1e2d3c-4b5a-1069-…` — the id in the WebDAV address.
+The app logs in with the login name and asks the server for that id (WebDAV
+`current-user-principal`), so nobody has to type it.
 
 In the chosen folder each device only ever adds files named after itself:
 
@@ -196,7 +205,9 @@ device identity.
 To test sync end to end against a real server:
 
 ```sh
-# unit and protocol tests against a Nextcloud server (skipped when unset)
+# unit and protocol tests against a Nextcloud server (skipped when unset);
+# NEXTCLOUD_TEST_USER is the login name, and the optional
+# NEXTCLOUD_TEST_USER_ID the account's id where it differs (an LDAP account)
 NEXTCLOUD_TEST_URL=... NEXTCLOUD_TEST_USER=... NEXTCLOUD_TEST_PASSWORD=... \
   tools/dev flutter test test/sync/nextcloud_live_test.dart
 # two app instances syncing through the settings screen
