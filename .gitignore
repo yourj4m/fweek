@@ -1,0 +1,4 @@
+# local toolchains and third-party reference captures (never committed)
+/.tools/
+/reference/
+__pycache__/

@@ -1,0 +1,242 @@
+# Design spec
+
+Measured reference for the planner UI. Values were taken on 2026-11-13 from the
+publicly served Tweek web app (demo planner on the home page, logged out) with
+the scripts in `tools/analysis/`: `rea` for passive page and bundle inspection,
+a small CDP driver for interactions, computed-style dumps at 17 viewport sizes,
+and the four public stylesheets.
+
+Ground rules for using this document:
+
+- It records **measurements and behaviour**, which this project reimplements
+  from scratch. No code, stylesheet, image, icon, font, logo, mascot or UI copy
+  from the reference app is used in this repository. Captures live in the
+  git-ignored `reference/` folder.
+- The reference typeface (Suisse Int'l) and icon set (Font Awesome Pro) are
+  commercial. This project uses **Inter** and **Lucide** instead; see
+  [Substitutions](#substitutions).
+- Each section says how it was established: **live** (observed in the demo),
+  **css** (read from stylesheet rules, not seen rendered), or **slide** (seen
+  only in the product's own illustration of a paid feature).
+
+All sizes are CSS pixels at device pixel ratio 1.
+
+## 1. Tokens
+
+### Colour (live)
+
+| Role | Light | Dark |
+| --- | --- | --- |
+| Background | `#FFFFFF` | `#000000` |
+| Text | `#000000` | `#FFFFFF` |
+| Accent (today, focus, selection) | `#5167F4` | `#5167F4` |
+| Row hover rule | accent at 40 % (`#5167F466`) | same |
+| Ruled line | text at 10 % | text at 10 % |
+| Round nav buttons | `#27282B` bg in theme vars, renders `#000` / white icon | same |
+| Account button | `#BE9CF3` bg, black icon | same |
+| Task dialog surface | `#FFFFFF` (tinted by task colour) | `#202023` |
+| Popover surface | `rgba(239,239,239,.9)` + 6 px backdrop blur | `rgba(32,32,35,.9)` |
+| Dialog backdrop | black at 40 % | black at 60 % |
+| Danger | `#DF525F`, pressed `#CD2C54` | same |
+| Scrollbar thumb | text at 30 % | text at 30 % |
+
+Neutral ramp: the text colour at 5, 10, 15, 20, 25, 40, 50, 60, 75, 90 %
+opacity. Dark mode swaps the black and white ramps (the 5–25 % steps become
+12, 15, 20, 25, 30 % white).
+
+Task highlight colours (named in the stylesheet): pink/red `#E00052`
+(`#CD2C54` in the newer ramp), yellow `#FDEF5D`, cornflower `#5167F4`,
+lavender `#DDE1FB`, green `#22FFA1`, mango `#FFB022`, grey `#C2C2C2`,
+lilac `#D85DFD`, cyan `#98F4F9`, purple `#BE9CF3`, black `#000`.
+Text on cornflower, black and pink is white; on the others black.
+The logged-out demo offers two (red, yellow); the rest sit behind the paywall.
+
+### Type scale (live + css)
+
+| Token | Size / line height | Used for |
+| --- | --- | --- |
+| 36 | 36 / 48, weight 700, tracking −1 px | Page title, desktop |
+| 31 | 31 / 40, weight 700, tracking −1 px | Page title, below 1024 px |
+| 28 | 28 / 34, weight 700 | Task dialog title |
+| 24 | 24 / 28 | Large headings in sheets |
+| 21 | 21 / 28 | Day header, desktop (date 700 with −0.5 px tracking, weekday 400) |
+| 18 | 18 / 28 | Day header, below 1024 px |
+| body 17 | 17 / 22 | Buttons (700), menu items, notes |
+| 16 | 16 / 22 | Task text below 1024 px |
+| 15 | 15 / 20 | Small buttons, secondary labels |
+| 14 | 14 / 22 | Task text on desktop; captions 14 / 20 |
+| 12 | 12 / 18 | Badges, calendar weekday initials |
+
+Two weights only: 400 and 700.
+
+### Shape, size, motion (css)
+
+- Radii: 6, 12, 16, 24, pill. Menus 16, menu items 8, toolbars 10, dialog card 24.
+- Control heights: 22 (compact), 32 (small), 36 (inline), 40 (medium), 44 (large); list cell 52.
+- Icons: 16, 20, 24.
+- Menu shadow: `0 8px 16px rgba(0,0,0,.1)`.
+- Durations: 0.1 s (fast) and 0.2 s (medium), `ease`. Hover-in is instant
+  (0 s), hover-out uses the fast duration. Slide distance for entering sheets: 16 px.
+- Reduced motion: animations collapse to 0 s.
+
+## 2. Layout
+
+One breakpoint: **1024 px**.
+
+### Desktop, ≥ 1024 px (live)
+
+- Page padding 24 px on all sides.
+- **Header**, 48 px tall: title "November 2026" (36/48 bold), then the week
+  number "W46" 12 px to its right at 20 % opacity, fading out at its right edge.
+  Right-aligned toolbar of 40 px round buttons with 6 px gaps: account,
+  previous, next (black, white 20 px chevrons). 72 px gap below the header.
+- **Week grid**: six equal columns (each 1/6 of the content width plus the
+  gutter), 24 px between column contents. Columns 1–5 are Monday–Friday;
+  column 6 stacks Saturday above Sunday with a 42 px gap.
+- **Day column**: header 42 px tall (28 px text + 12 px padding + 2 px rule in
+  text colour). Date left ("9 Nov", bold), weekday right ("Mon", 30 % opacity).
+  Today: date, label and rule in the accent colour, label reads "Today" at
+  full opacity.
+- **Rows**: 42 px each, separated by a 1 px rule at 10 %. Minimum 10 rows for
+  a weekday, 4 for each weekend day; a column grows when it holds more tasks.
+  The grid does not stretch with window height (minimum height 462 px).
+- **Someday area**: 32 px below the week grid. Three equal columns with the
+  same 24 px spacing. Each has a 53 px heading (21 px bold, 1 px rule below);
+  the first is titled "Someday", the others are untitled until named. Rows as
+  above, 2 by default.
+- An "About" pill button floats bottom right in the demo (not needed here).
+- Edge zones: while dragging, a 34 × 200 px rounded tab peeks in from the left
+  and right screen edges (text colour at 10 %, 25 % and 1.15× scale when the
+  pointer is over it); holding a task there flips to the previous/next week.
+
+### Narrow, < 1024 px (live)
+
+- Header is sticky, 16 px padding, title 31/40 and abbreviated ("Nov 2026"),
+  over a background that fades to transparent at the bottom.
+- Days stack in one column with 24 px side padding and 24 px between days.
+  Each day shows its tasks plus one empty row (two for today); day header 18/28.
+- Task text 16/22. The check button is always visible.
+- Someday follows the last day, 48 px bottom padding.
+- The task dialog becomes a bottom sheet with 24 px top corners.
+
+## 3. Components
+
+### Task row (live + css)
+
+- 42 px tall, 35 px right padding reserved for the check button.
+- Text sits in a pill: 22 px line height, 6 px horizontal padding, 11 px
+  radius, 10 px above and below. Uncoloured tasks have a transparent pill, so
+  text starts 6 px in from the column edge. Single line, ellipsis when too long.
+- Coloured task: the pill is filled with the task colour (a highlighter mark
+  that hugs the text, not the full row).
+- Optional leading glyphs inside the pill, 12 px, 4 px gap: bell (has
+  reminder), circular arrow (recurring), note mark (has notes) — **slide/css**.
+- A set time is shown as a text prefix ("12:00 PM Set a time").
+- Hover: bottom rule turns accent at 40 %; a 22 px circled-check button fades
+  in at the right (0.2 s). Cursor: pointer on the row, grab on the text.
+- Done: text struck through at 30 % opacity; the check is filled and at 30 %.
+- Selected (multi-select): 2 px accent ring around the pill. A group being
+  dragged shows a count badge (accent, 20 px, 12 px semibold) — **css**.
+
+### Empty row / add task (live)
+
+- Every empty ruled row is an input. Hover shows the same accent rule.
+- Focus raises a card over the row: 8 px wider on each side and 2 px taller,
+  4 px radius, shadow `0 1px 4px 1px rgba(0,0,0,.11)`, background surface.
+- Enter saves and moves focus to the next empty row (rapid entry). Escape
+  leaves the input.
+
+### Task dialog (live)
+
+- Centred card, **512 px** wide, 24 px radius, over the dimmed page; 32 px
+  inner padding at the sides. Tinted with the task colour when one is set
+  (**slide**: the whole card turns yellow).
+- Top row: calendar icon + date button ("Sat, 14 Nov 2026"), a clock button
+  for the time, and at the right "Expand" (grey) which grows the card to fill
+  the window with a 696 px text column and a "Compact" button to return; the
+  expanded view also has a "Next task" arrow bottom right.
+- Title: 28 px bold, multi-line, with a 44 px ghost "completed" toggle at the
+  right. A 1 px rule below.
+- Notes: rich text with placeholder "Add some extra notes here…" (17 px, 25 %).
+  Formatting observed in the stylesheet: bold, italic, strike, links,
+  blockquote, lists — **css**.
+- Footer: five 44 px ghost icon buttons spread evenly — subtasks, repeat,
+  colour, reminder, more. The active one has a black-5 % circle.
+- **Colour** opens a small popover above the button: 36 px round swatches;
+  the selected one shows a check.
+- **Date** opens a 288 × 324 popover: month title with previous/next
+  chevrons, weekday initials (12 px, muted), 6 × 7 day grid of ~38 px cells,
+  selected day as a black disc with white text, other-month days muted.
+- **Time** opens a 160 × 400 popover: an editable time field on top, then a
+  scrolling list in 30-minute steps (36 px rows), 12- or 24-hour by setting.
+- **More** opens a 204 px menu (36 px items, icon + label): Attach file,
+  Move ›, Copy ›, Delete (danger colour).
+- Escape or a click on the backdrop closes the dialog. Changes save as typed.
+
+### Paid-tier screens (slide + css; not observed live)
+
+- **Subtasks**: a checklist under the notes. Circle checkbox, text, optional
+  star marker for "important"; completed items struck and muted; plain lines
+  act as section headings; items can be indented one level; reorder by drag.
+- **Repeat** menu: Never, Daily, Weekly, Weekdays, Biweekly, Monthly,
+  Annually, Custom ›. Custom editor: "every N" + unit (day / week / month /
+  year); for months a day-of-month grid plus "on the same day" or "every
+  second Friday" style options; for years a month grid; "Ending" (never, or a
+  date); a plain-language summary line; Apply.
+- **Reminder**: date + hour + minute picker with a "Set Reminder" button;
+  delivery by notification.
+- **Colours**: a row of swatches (none, red, yellow, black, grey, blue,
+  orange, green, purple, cyan, …) plus "add colour", which opens a
+  hue/saturation square with a hex field and Save. Colours can be named.
+- **Themes**: about eight whole-app colour themes (white, black, pale blue,
+  pink, cream, yellow, beige, …), each restyling background, text and accent.
+- **Month view**: a 7-column month grid; each day lists its tasks as small
+  coloured chips with a "N more" overflow line; today's number in an accent
+  disc. A three-way switch chooses month / week / day.
+- **Day view**: a single day as a full-width list.
+- **Search**: opened with Ctrl+F; a search field, a row of colour filter
+  dots, and a flat list of matching tasks with their check buttons.
+- **Settings → completed tasks**: three switches — move unfinished tasks to
+  the next day, sort completed tasks down, hide tasks after completion.
+- **Other settings** (help pages): date format (DD-MM / MM-DD), language,
+  12/24-hour time, week start.
+- **Export**: XML, TXT, CSV, ICS.
+
+## 4. Behaviour (live unless noted)
+
+- Click a task: opens the task dialog. Click an empty row: start typing.
+- Click the check: toggles done.
+- Drag a task (pointer down on its text and move): the row's text follows the
+  pointer with no card or shadow; the source row closes up; rows at the target
+  open a 42 px gap. Drop into any day or Someday list, at any position. Drag
+  to a screen-edge tab to move it to another week.
+- Previous / next buttons and the Left / Right arrow keys change week;
+  `T` returns to the current week; Ctrl+F opens search; Escape closes the
+  topmost dialog or popover. Shortcuts are ignored while typing — **help pages**.
+- Clicking the page title returns to today (title dims to 75 % on hover).
+- Unfinished tasks from past days roll over to today when the option is on —
+  **help pages**.
+- Keyboard drag is supported (space to pick up, arrows to move, escape to
+  cancel) — announced by the page's accessibility text.
+
+## 5. Substitutions
+
+| Reference | Here | Why |
+| --- | --- | --- |
+| Suisse Int'l (Book, Bold) | Inter (400, 700), OFL | Commercial font; Inter is the closest open neo-grotesque. Tracking is tightened to match the reference's compact headings. |
+| Font Awesome 5 Pro | Lucide, ISC | Commercial icon set. |
+| Name, logo, mascot, onboarding text | Own name and icon, own wording | Trademarks and trade dress are reserved by the reference app's terms. |
+| Firebase backend, accounts | Local SQLite, optional file sync | Local-first by design. |
+
+## 6. Gaps
+
+- Paid-tier screens were specified from product illustrations and stylesheet
+  rules, never from a running paid account. Exact spacing inside the repeat
+  editor, reminder picker, month view and settings is therefore approximate.
+- Themes other than the default light and dark were not captured; this
+  project defines its own.
+- Rich-text notes, attachments, sharing and calendar-provider sync were not
+  analyzed in depth.
+- rea's static bundle analysis timed out on the two large scripts at its
+  default 30 s per-script limit and was not rerun; nothing in this spec
+  depends on it.
