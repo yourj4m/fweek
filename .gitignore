@@ -1,4 +1,19 @@
-# local toolchains and third-party reference captures (never committed)
+# Local toolchains and third-party reference captures (never committed)
 /.tools/
 /reference/
+
+# Flutter / Dart build output and generated files
+.dart_tool/
+build/
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/linux/flutter/ephemeral/
+
+# Editors
+*.iml
+.idea/
+.vscode/
+
 __pycache__/

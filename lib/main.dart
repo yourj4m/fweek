@@ -1,121 +1,150 @@
-import 'package:material_ui/material_ui.dart';
+import 'dart:io';
 
-void main() {
-  runApp(const MyApp());
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+import 'app_state.dart';
+import 'data/database.dart';
+import 'data/planner_store.dart';
+import 'services/reminders.dart';
+import 'theme/app_theme.dart';
+import 'ui/planner_page.dart';
+import 'ui/task_list.dart' show formatTime;
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // WEEKLEAF_DATA_DIR points the app at another data folder, for testing
+  // without touching the real planner.
+  final override = Platform.environment['WEEKLEAF_DATA_DIR'];
+  final directory = override != null && override.isNotEmpty
+      ? Directory(override)
+      : await getApplicationSupportDirectory();
+  await directory.create(recursive: true);
+  final store = PlannerStore(
+    PlannerDatabase.open(p.join(directory.path, 'planner.db')),
+  );
+  runApp(WeekleafApp(store: store));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class WeekleafApp extends StatefulWidget {
+  const WeekleafApp({super.key, required this.store, this.notifications = true});
 
-  // This widget is the root of your application.
+  final PlannerStore store;
+
+  /// Whether to deliver desktop notifications (off in widget tests).
+  final bool notifications;
+
+  @override
+  State<WeekleafApp> createState() => _WeekleafAppState();
+}
+
+class _WeekleafAppState extends State<WeekleafApp> {
+  late final AppController _controller = AppController(widget.store);
+  late final ReminderService _reminders =
+      ReminderService(widget.store, notify: _notify);
+  final _plugin = FlutterLocalNotificationsPlugin();
+  Future<bool?>? _pluginReady;
+  int _notificationId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.notifications) {
+      _pluginReady = _plugin
+          .initialize(
+            settings: const InitializationSettings(
+              linux: LinuxInitializationSettings(defaultActionName: 'Open'),
+            ),
+          )
+          .catchError((Object error) {
+        debugPrint('Notifications unavailable: $error');
+        return false;
+      });
+    }
+    // Tests run without the reminder timer; they still get the rollover.
+    if (widget.notifications) {
+      _reminders.start();
+    } else {
+      widget.store.rollOver();
+    }
+  }
+
+  @override
+  void dispose() {
+    _reminders.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _notify(DueReminder due) async {
+    final ready = await _pluginReady;
+    if (ready != true) return;
+    final task = due.task;
+    final use24h = widget.store.setting<bool>(Settings.use24h);
+    final time = task.time == null
+        ? null
+        : formatTime(task.time!, use24h: use24h);
+    try {
+      await _plugin.show(
+        id: _notificationId++,
+        title: task.title,
+        body: [?time, if (task.note.trim().isNotEmpty) task.note.trim()]
+            .join(' · '),
+        notificationDetails: const NotificationDetails(
+          linux: LinuxNotificationDetails(),
+        ),
+      );
+    } on Object catch (error) {
+      debugPrint('Could not show a notification: $error');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+      title: 'Weekleaf',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(useMaterial3: true, fontFamily: AppText.family),
+      builder: (context, child) => AppScope(
+        store: widget.store,
+        controller: _controller,
+        child: _Themed(child: child!),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const PlannerPage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+/// Resolves the theme setting and applies it to everything below.
+class _Themed extends StatelessWidget {
+  const _Themed({required this.child});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+    final store = context.store;
+    final theme = AppTheme.resolve(
+      store.setting<String>(Settings.theme),
+      MediaQuery.platformBrightnessOf(context),
+    );
+    return ThemeScope(
+      theme: theme,
+      child: TextSelectionTheme(
+        data: TextSelectionThemeData(
+          cursorColor: theme.text,
+          selectionColor: theme.accent.withValues(alpha: 0.3),
+          selectionHandleColor: theme.accent,
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+        child: Material(
+          type: MaterialType.transparency,
+          child: DefaultTextStyle(
+            style: AppText(theme.text).body17,
+            child: child,
+          ),
+        ),
       ),
     );
   }

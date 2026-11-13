@@ -22,7 +22,9 @@ static void my_application_activate(GApplication* application) {
 
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
-  gtk_window_set_default_size(window, 1280, 720);
+  gtk_window_set_default_size(window, 1280, 860);
+  // Smallest size at which the single-column layout stays usable.
+  gtk_widget_set_size_request(GTK_WIDGET(window), 360, 480);
 
   // If you want to use a header bar, uncomment the following lines.
   // Header bars are commonly used in GNOME based desktop environments and
@@ -33,7 +35,7 @@ static void my_application_activate(GApplication* application) {
   // gtk_header_bar_set_show_close_button(header_bar, TRUE);
   // gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
 
-  gtk_window_set_title(window, "weekleaf");
+  gtk_window_set_title(window, "Weekleaf");
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
@@ -41,9 +43,9 @@ static void my_application_activate(GApplication* application) {
 
   FlView* view = fl_view_new(project);
   GdkRGBA background_color;
-  // Background defaults to black, override it here if necessary, e.g. #00000000
-  // for transparent.
-  gdk_rgba_parse(&background_color, "#000000");
+  // Shown for a moment before the first frame; white avoids a dark flash in
+  // the default light theme.
+  gdk_rgba_parse(&background_color, "#ffffff");
   fl_view_set_background_color(view, &background_color);
   gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));

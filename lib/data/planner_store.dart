@@ -309,7 +309,7 @@ class PlannerStore extends ChangeNotifier {
   }
 
   /// Tasks on [day] in display order, including occurrences of repeating tasks.
-  List<Task> tasksOn(Day day) => tasksBetween(day, day)[day] ?? const [];
+  List<Task> tasksOn(Day day) => tasksBetween(day, day)[day] ?? [];
 
   /// Tasks for each day in [from]..[to] that has any.
   Map<Day, List<Task>> tasksBetween(Day from, Day to) {
@@ -375,17 +375,20 @@ class PlannerStore extends ChangeNotifier {
   /// An ordering key that places a task at [index] among the tasks at [slot],
   /// ignoring the task [except] (the one being moved).
   String _keyAt(Slot slot, int? index, {String? except}) {
-    final others = _tasksAt(slot)
-        .where((t) => t.id != except)
-        .toList()
-      ..sort(_compare);
-    final i = index == null ? others.length : index.clamp(0, others.length);
-    final before = i > 0 ? others[i - 1].position : null;
-    final after = i < others.length ? others[i].position : null;
-    // Duplicate keys can arise from concurrent edits on two devices; fall
-    // back to appending after the lower neighbour rather than failing.
+    final shown = _tasksAt(slot).where((t) => t.id != except).toList();
+    final i = index == null ? shown.length : index.clamp(0, shown.length);
+    final before = i > 0 ? shown[i - 1].position : null;
+    var after = i < shown.length ? shown[i].position : null;
     if (before != null && after != null && before.compareTo(after) >= 0) {
-      return orderKeyBetween(before, null);
+      // The list is not shown in stored order (done tasks sorted down), or
+      // two devices issued the same key: go directly after the upper
+      // neighbour in stored order instead.
+      final later = shown
+          .map((t) => t.position)
+          .where((p) => p.compareTo(before) > 0)
+          .toList()
+        ..sort();
+      after = later.isEmpty ? null : later.first;
     }
     return orderKeyBetween(before, after);
   }
@@ -489,9 +492,12 @@ class PlannerStore extends ChangeNotifier {
 
   /// Marks a task done or not done. Completing one occurrence of a repeating
   /// task splits it off, so the rest of the series stays open.
-  void setDone(String id, bool done) {
+  ///
+  /// Returns the id under which the task is addressed afterwards.
+  String setDone(String id, bool done) {
     final target = detach(id);
     _write('tasks', target, {'done': done, 'done_at': done ? _now() : null});
+    return target;
   }
 
   /// Sets or clears how a task repeats. Returns the id under which the task
@@ -593,7 +599,7 @@ class PlannerStore extends ChangeNotifier {
         final byDate = a.date!.compareTo(b.date!);
         return byDate != 0 ? byDate : _compare(a, b);
       });
-    final existing = tasksOn(now)..sort(_compare);
+    final existing = [...tasksOn(now)]..sort(_compare);
     final keys = orderKeysBetween(
       null,
       existing.isEmpty ? null : existing.first.position,

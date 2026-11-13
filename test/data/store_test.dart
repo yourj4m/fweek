@@ -197,6 +197,16 @@ void main() {
       expect(store.rollOver(), 4);
     });
 
+    test('works when today is still empty', () {
+      store.addTask(DaySlot(monday), 'old');
+      expect(store.rollOver(), 1);
+      expect(titles(store.tasksOn(today)), ['old']);
+    });
+
+    test('on a brand-new planner there is nothing to move', () {
+      expect(store.rollOver(), 0);
+    });
+
     test('does nothing when switched off', () {
       store.setSetting(Settings.rollover, false);
       store.addTask(DaySlot(monday), 'old');
