@@ -19,6 +19,10 @@
 # Use a test server or a dedicated test account: the run creates a folder
 # named "WeekToDo sync test <random>" in the account and leaves it there.
 set -uo pipefail
+# A crash during a test run must not reach the desktop's crash reporter: the
+# container shares the host's kernel, so the report would pop up there. With
+# a core limit of one byte the kernel skips the core handler altogether.
+prlimit --core=1:1 --pid $$ 2>/dev/null || ulimit -c 0
 if [ "${WEEKTODO_PRIVATE_BUS:-}" != 1 ]; then
   export WEEKTODO_PRIVATE_BUS=1
   exec dbus-run-session -- "$0" "$@"
