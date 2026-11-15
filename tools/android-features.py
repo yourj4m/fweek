@@ -116,10 +116,14 @@ def planner(out, shot, width, height):
     found = [n for n in ui.nodes() if "Berlin" in n.label and "Brandenburger Tor" in n.label]
     shot("f05-place-search")
     if check(bool(found), "the place search suggests places while typing"):
-        ui.tap(*found[0].centre, pause=1.0)
+        ui.tap(*found[0].centre, pause=1.5)
     else:
         print("note: no suggestions (no network in the emulator?); the typed text is kept")
-    ui.back(pause=1.0)
+    # Picking a suggestion ends typing and puts the keyboard away; without
+    # one it is still up, and Back closes it (a second Back would close the
+    # sheet).
+    if ui.keyboard_shown():
+        ui.back(pause=1.0)
     arrow = ui.find(r"^Open .* in the map app$")
     check(bool(arrow), "a task with a place offers to open it in the map app")
     if arrow:
@@ -129,7 +133,8 @@ def planner(out, shot, width, height):
         shot("f06-map")
         ui.launch()
         time.sleep(1.5)
-    ui.back(pause=0.8)
+    if ui.find("Add subtask"):
+        ui.back(pause=0.8)  # closes the sheet
     check(bool(ui.find("Brandenburger Tor")), "the place shows under the task in the week")
 
     # --- a new list
@@ -140,13 +145,22 @@ def planner(out, shot, width, height):
         ui.tap(*button[0].centre, pause=1.5)
         ui.type_text("Films")
         ui.key("ENTER", 1.0)
-        ui.back(pause=0.8)
-        check(bool(ui.find("Films", exact=True)), "and the list it creates takes its name")
+        # Back puts the keyboard away; with none up it would leave the app.
+        if ui.keyboard_shown():
+            ui.back(pause=0.8)
+        # A list's heading is a button that renames it.
+        check(bool(ui.find("Rename Films", exact=True)), "and the list it creates takes its name")
         shot("f07-list")
 
 
 def events(out, shot, width, height):
-    ui.launch()
+    # From an empty planner, which the profile build fills with its test
+    # tasks and calendar: what an earlier run hid stays hidden otherwise.
+    ui.launch(clear=True)
+    for _ in range(40):
+        time.sleep(1.5)
+        if ui.find("Menu", exact=True):
+            break
     time.sleep(2)
     # Today heads the page; earlier days of the week are above.
     meeting = []
@@ -168,9 +182,12 @@ def events(out, shot, width, height):
           "a long press on an event opens its menu")
     shot("e02-event-menu")
     ui.tap_on("Hide", exact=True)
-    time.sleep(1.0)
-    check(not ui.find(title), "Hide takes the event out of the week")
-    undo = ui.find("Undo", exact=True)
+    time.sleep(0.6)
+    # One look at the screen for both: the offer to undo goes away after a
+    # few seconds, and each look takes a couple.
+    seen = ui.nodes()
+    check(not any(title in n.label for n in seen), "Hide takes the event out of the week")
+    undo = [n for n in seen if n.label == "Undo"]
     if check(bool(undo), "and offers Undo"):
         ui.tap(*undo[0].centre, pause=1.0)
         check(bool(ui.find(title)), "which brings it back")
@@ -215,7 +232,8 @@ def events(out, shot, width, height):
           "the menu hides a whole calendar with one tap")
     ui.tap_on("Menu", exact=True)
     time.sleep(0.8)
-    ui.tap_on("Calendars", exact=True)
+    # With a calendar hidden the entry also says how many are shown.
+    ui.tap_on(r"^Calendars")
     time.sleep(0.8)
     ui.tap_on(r"^Show Calendar")
     time.sleep(1.0)
@@ -236,7 +254,11 @@ def main():
         ui.shot(os.path.join(args.out, name + ".png"))
 
     if args.apk:
-        ui.adb("install", "-r", args.apk, timeout=240)
+        # A profile build is signed and numbered differently from a release
+        # build, and Android installs neither over the other.
+        if "Success" not in ui.adb("install", "-r", args.apk, timeout=240, check=False):
+            ui.adb("uninstall", ui.PACKAGE, check=False)
+            ui.adb("install", args.apk, timeout=240)
     ui.shell("settings put secure show_ime_with_hard_keyboard 1")
     ui.shell("input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard", check=False)
     width, height = ui.screen_size()

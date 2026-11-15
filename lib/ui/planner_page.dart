@@ -240,23 +240,25 @@ class _ToastCard extends StatelessWidget {
     // light, and the other way round.
     final ink = theme.isDark ? const Color(0xFF111111) : const Color(0xFFFFFFFF);
     final surface = theme.isDark ? const Color(0xFFF2F2F2) : const Color(0xFF222226);
-    return Semantics(
-      liveRegion: true,
-      container: true,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 420, minHeight: 48),
-        padding: const EdgeInsets.only(left: 18, right: 6),
-        decoration: BoxDecoration(
-          color: surface,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: const [
-            BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 6)),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
+    // The message is announced when it appears; the action beside it is a
+    // button of its own, not part of what is read out.
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 420, minHeight: 48),
+      padding: const EdgeInsets.only(left: 18, right: 6),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 6)),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Semantics(
+              liveRegion: true,
+              container: true,
               child: Text(
                 toast.message,
                 maxLines: 2,
@@ -264,34 +266,35 @@ class _ToastCard extends StatelessWidget {
                 style: context.text.small15.copyWith(color: ink),
               ),
             ),
-            if (toast.action != null)
-              Pressable(
-                onTap: () {
-                  onClose();
-                  toast.onAction?.call();
-                },
-                semanticLabel: toast.action,
-                focusRadius: 20,
-                builder: (context, hovered, pressed) => Container(
-                  height: 40,
-                  margin: const EdgeInsets.only(left: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: hovered || pressed ? ink.withValues(alpha: 0.12) : null,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    toast.action!,
-                    style: context.text.small15
-                        .copyWith(color: ink, fontWeight: FontWeight.w700),
-                  ),
+          ),
+          if (toast.action != null)
+            Pressable(
+              onTap: () {
+                onClose();
+                toast.onAction?.call();
+              },
+              semanticLabel: toast.action,
+              labelOnly: true,
+              focusRadius: 20,
+              builder: (context, hovered, pressed) => Container(
+                height: 40,
+                margin: const EdgeInsets.only(left: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: hovered || pressed ? ink.withValues(alpha: 0.12) : null,
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              )
-            else
-              const SizedBox(width: 12),
-          ],
-        ),
+                child: Text(
+                  toast.action!,
+                  style: context.text.small15
+                      .copyWith(color: ink, fontWeight: FontWeight.w700),
+                ),
+              ),
+            )
+          else
+            const SizedBox(width: 12),
+        ],
       ),
     );
   }

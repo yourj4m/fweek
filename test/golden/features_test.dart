@@ -77,6 +77,22 @@ void main() {
       expect(named(store, 'Water the plants').note, 'Only the ferns');
     });
 
+    desktopTest('a screen reader hears the message, and Undo is a button of its own',
+        (tester) async {
+      final handle = tester.ensureSemantics();
+      final store = seededStore();
+      await pumpApp(tester, store);
+      await rightClick(tester, find.text('Water the plants'));
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      // Exactly "Undo": not the message, and not said twice.
+      expect(find.bySemanticsLabel('Undo'), findsOneWidget);
+      final message = tester.getSemantics(find.text('Task deleted'));
+      expect(message.label, 'Task deleted');
+      expect(message.flagsCollection.isLiveRegion, isTrue);
+      handle.dispose();
+    });
+
     desktopTest('a message goes away by itself', (tester) async {
       final store = seededStore();
       await pumpApp(tester, store);
