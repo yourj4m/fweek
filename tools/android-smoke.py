@@ -85,7 +85,11 @@ def main():
         ui.shot(os.path.join(args.out, name + ".png"))
 
     if args.apk:
-        ui.adb("install", "-r", args.apk, timeout=180)
+        # A profile build is signed and numbered differently from a release
+        # build, and Android installs neither over the other.
+        if "Success" not in ui.adb("install", "-r", args.apk, timeout=180, check=False):
+            ui.adb("uninstall", ui.PACKAGE, check=False)
+            ui.adb("install", args.apk, timeout=180)
     # The emulator types through a "hardware" keyboard; show the on-screen
     # one anyway, since staying clear of it is part of what is checked.
     ui.shell("settings put secure show_ime_with_hard_keyboard 1")

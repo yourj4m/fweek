@@ -387,9 +387,47 @@ redrawn"):
 
 To measure: build with `--profile --dart-define=WEEKTODO_PERF=true` and run
 `tools/android-perf.py` on the emulator; it plays the same interactions on
-the same test planner every time and prints frame timings per interaction
-(`--compare before.json after.json`). On the phone itself, Settings →
-Advanced → "Show frame timing" draws the timing graphs over the app.
+the same test planner (some 500 tasks, a calendar of 50 events) every time
+and prints frame timings per interaction. Runs differ, so measure each build
+twice, alternating, and compare the merged results
+(`--compare before1.json,before2.json after1.json,after2.json`). On the
+phone itself, Settings → Advanced → "Show frame timing" draws the timing
+graphs over the app.
+
+What that gave for this round of work, against the build before it with the
+same log added (15 November 2026; the app's own work per frame, in
+milliseconds, for frames drawn while a finger was down or the page was still
+moving; a frame has 16.7 ms in all):
+
+| | before | after |
+|---|---|---|
+| Swiping through 16 weeks: frames over 16 ms | 31 of 1427 | 3 of 1548 |
+| – slowest 1 % of frames from | 21.8 | 3.8 |
+| Scrolling a week: typical frame | 2.6 | 0.4 |
+| – slowest frame | 11.7 | 2.7 |
+| Dragging a task: typical frame | 6.1 | 0.5 |
+| – slowest frame | 13.8 | 5.7 |
+
+These are from the emulator, which runs on the computer's processor and
+graphics card: they compare one build with another and say nothing about
+how fast the phone is. Nothing here has been measured on a Pixel 4a yet.
+
+What was left as it is, and shows in the numbers:
+
+- Building a week's page takes about 30 ms on the emulator. It now happens
+  once per neighbouring week after a swipe has come to rest (the "resting
+  long builds" of the tool) instead of in the middle of it; the very first
+  swipe after starting can still catch one.
+- An edit (a task completed or dropped) rebuilds the visible week from the
+  planner's data: one longer frame after the finger has lifted.
+- The database is written on the interface's thread, a few milliseconds per
+  edit; fine for single edits, noticeable only for something like restoring
+  a large backup.
+- The month view sizes its rows by measuring their content, which is the
+  costly way; it has not been a problem at this size.
+- Opening a card, the menu and the keyboard are animations with no finger on
+  the screen; the tool lists them under "resting" and no long frames showed
+  there.
 
 ## Design
 
