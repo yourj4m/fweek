@@ -22,6 +22,13 @@
 # To check that an update keeps the connection, point WEEKTODO_OLD_BIN at the
 # executable of an earlier build: device A is then set up with that build and
 # restarted (step 3) with the current one, on the same data and keyring.
+# tools/dev does not pass variables on, so set them inside the container:
+#
+#   tools/dev env WEEKTODO_OLD_BIN=$HOME/.local/opt/weektodo/weektodo \
+#       WEEKTODO_OLD_FORM=1 tools/sync-smoke.sh <output-dir> ...
+#
+# WEEKTODO_OLD_FORM names where the earlier build has its sync form (see
+# "form" below); leave it out when both builds have it in the same place.
 set -uo pipefail
 # A crash during a test run must not reach the desktop's crash reporter: the
 # container shares the host's kernel, so the report would pop up there. With
@@ -100,18 +107,31 @@ start_app() {  # <data folder> [executable]
 }
 stop_app() { kill "$app"; wait "$app" 2>/dev/null; app=""; sleep 0.5; }
 
-# Fills in the sync settings and connects. Field positions are those of the
-# settings card in a 1440x1400 window.
-connect() {
+# Where the sync form sits in the settings card of a 1440x1400 window: the
+# four fields (server, login name, app password, folder) and the Connect
+# button, top to bottom. It moves when the settings above it grow.
+#   1: builds up to the calendars release (one row of themes)
+#   2: three rows of themes
+form() {
+  case "$1" in
+    1) echo "921 973 1025 1077 1203" ;;
+    *) echo "1074 1126 1178 1230 1356" ;;
+  esac
+}
+current_form=2
+
+# Fills in the sync settings and connects.
+connect() {  # <data folder> [form]
+  read -r y_server y_user y_password y_folder y_connect <<<"$(form "${2:-$current_form}")"
   # The settings card takes a moment to appear with software rendering.
   send "ctrl ,"; sleep 3
-  click 780 921;  type_text "$server"
-  click 780 973;  type_text "$user"
-  click 780 1025; type_text "$password"
-  click 780 1077
+  click 780 "$y_server";   type_text "$server"
+  click 780 "$y_user";     type_text "$user"
+  click 780 "$y_password"; type_text "$password"
+  click 780 "$y_folder"
   for _ in $(seq 1 12); do key BackSpace; done
   type_text "$folder"
-  click 549 1203
+  click 549 "$y_connect"
   # Wait for the first sync to finish.
   for _ in $(seq 1 40); do
     [ "$(stored "$1" 'sync.last_ok')" -ge 1 ] && break
@@ -130,7 +150,7 @@ echo "folder: $folder"
 old_bin="${WEEKTODO_OLD_BIN:-$bin}"
 [ "$old_bin" = "$bin" ] || echo "device A starts on the earlier build: $old_bin"
 start_app "$data_a" "$old_bin"
-connect "$data_a"
+if [ "$old_bin" = "$bin" ]; then connect "$data_a"; else connect "$data_a" "${WEEKTODO_OLD_FORM:-$current_form}"; fi
 shot 01-a-connected
 [ "$(stored "$data_a" 'sync.last_ok')" -ge 1 ] && pass "device A connected and synced" || fail "device A did not connect"
 add_task "Task from device A" 207

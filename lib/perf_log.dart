@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' show Timeline;
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui' show FramePhase;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
 
 import 'data/models.dart';
 import 'data/planner_store.dart';
@@ -13,24 +17,93 @@ import 'data/planner_store.dart';
 /// drives the app and reads these lines from the device log.
 const perfLog = bool.fromEnvironment('WEEKTODO_PERF');
 
+/// The stretches of time in which something moves under the user's hand: a
+/// finger is down, or a page or list is still scrolling after it. A frame
+/// that comes late then is a stutter one sees; a long frame while nothing
+/// moves (a page being prepared for later) is not.
+abstract final class PerfMotion {
+  static int _pointers = 0;
+  static int _scrolls = 0;
+  static int? _since;
+  static final List<(int, int)> _spans = [];
+
+  static void _update() {
+    final moving = _pointers > 0 || _scrolls > 0;
+    final now = Timeline.now;
+    if (moving && _since == null) {
+      _since = now;
+    } else if (!moving && _since != null) {
+      _spans.add((_since!, now));
+      _since = null;
+      if (_spans.length > 400) _spans.removeRange(0, 200);
+    }
+  }
+
+  static void _onPointer(PointerEvent event) {
+    if (event is PointerDownEvent) {
+      _pointers++;
+    } else if (event is PointerUpEvent || event is PointerCancelEvent) {
+      if (_pointers > 0) _pointers--;
+    } else {
+      return;
+    }
+    _update();
+  }
+
+  /// For a [NotificationListener] around the app.
+  static bool onScroll(ScrollNotification notification) {
+    if (notification is ScrollStartNotification) {
+      _scrolls++;
+    } else if (notification is ScrollEndNotification) {
+      if (_scrolls > 0) _scrolls--;
+    } else {
+      return false;
+    }
+    _update();
+    return false;
+  }
+
+  /// Whether the moment [micros] (on the frame timings' clock) lies in such
+  /// a stretch.
+  static bool at(int micros) {
+    final since = _since;
+    if (since != null && micros >= since) return true;
+    for (final (from, to) in _spans.reversed) {
+      if (micros > to) return false;
+      if (micros >= from) return true;
+    }
+    return false;
+  }
+
+  /// Wraps the app so that scrolling is noticed.
+  static Widget watch(Widget child) => perfLog
+      ? NotificationListener<ScrollNotification>(onNotification: onScroll, child: child)
+      : child;
+}
+
 /// Logs, about once a second while frames are drawn, how long each frame
 /// took to build (the interface thread) and to raster (the graphics thread),
-/// in microseconds: `PERF b=…,… r=…,…`.
+/// in microseconds, and whether the screen was in motion ([PerfMotion]):
+/// `PERF b=…,… r=…,… m=0110…`.
 void startPerfLog() {
   if (!perfLog) return;
   final build = <int>[], raster = <int>[];
+  final moving = StringBuffer();
   void flush() {
     if (build.isEmpty) return;
     // ignore: avoid_print
-    print('PERF b=${build.join(',')} r=${raster.join(',')}');
+    print('PERF b=${build.join(',')} r=${raster.join(',')} m=$moving');
     build.clear();
     raster.clear();
+    moving.clear();
   }
 
+  GestureBinding.instance.pointerRouter.addGlobalRoute(PerfMotion._onPointer);
   SchedulerBinding.instance.addTimingsCallback((timings) {
     for (final t in timings) {
       build.add(t.buildDuration.inMicroseconds);
       raster.add(t.rasterDuration.inMicroseconds);
+      moving.write(PerfMotion.at(t.timestampInMicroseconds(FramePhase.buildStart)) ? '1' : '0');
       // A log line holds a few thousand characters at most.
       if (build.length >= 40) flush();
     }

@@ -314,4 +314,19 @@ void main() {
     await SyncEngine(back, servers.values.first, folder: 'WeekToDo').sync();
     expect(titles(back.tasksOn(monday)), ['one', 'two', 'three']);
   });
+
+  serviceTest('while the app is out of sight it does not go online by the clock', (tester) async {
+    final store = newStore();
+    final service = newService(store);
+    expect(await connect(service), isNull);
+    final before = current.calls;
+    // A phone that has not put the hidden app to sleep yet: timers still run.
+    service.leaving();
+    await tester.pump(const Duration(minutes: 16));
+    expect(current.calls, before);
+    // Back in view, the five-minute rhythm resumes.
+    service.resumed();
+    await tester.pump(const Duration(minutes: 6));
+    expect(current.calls, greaterThan(before));
+  });
 }

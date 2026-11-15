@@ -8,15 +8,26 @@
 
 A build made with WEEKTODO_PERF fills an empty planner with the same few
 hundred tasks and a calendar every time, and logs how long each frame took
-(see lib/perf_log.dart). This script plays a fixed set of interactions with
-real touches and summarises those timings per interaction.
+and whether the screen was in motion at the time (see lib/perf_log.dart).
+This script plays a fixed set of interactions with real touches and
+summarises those timings per interaction.
 
-The emulator draws with the computer's graphics card, so the "raster"
-numbers say little about a phone. The "build" numbers are the app's own
-work per frame; a phone's processor is several times slower than a
-desktop's, so read them as relative: before against after.
+What to read:
 
-Compare two results with:  tools/android-perf.py --compare before.json after.json
+  * "moving" numbers are frames drawn while a finger was down or a page or
+    list was still scrolling. A frame that takes too long then is a stutter
+    one sees.
+  * "resting" long frames happen while nothing moves, such as a week being
+    prepared after a swipe has ended. They cost a little battery, not
+    smoothness.
+  * "build" is the app's own work per frame; "raster" is the graphics work.
+    The emulator draws with the computer's graphics card and runs on its
+    processor, so neither says how fast a phone is: read them as relative,
+    one build against another, measured in the same session. Runs differ by
+    a good deal from one to the next; measure each build more than once,
+    alternating, and compare the merged results:
+
+      tools/android-perf.py --compare before1.json,before2.json after1.json,after2.json
 """
 
 import argparse
@@ -40,13 +51,42 @@ def percentile(values, q):
 
 
 def frames_logged():
-    """Per-frame (build, raster) milliseconds logged since the log was cleared."""
+    """Per-frame build and raster milliseconds, and whether the screen was
+    in motion, logged since the log was cleared."""
     log = ui.adb("logcat", "-d", "-s", "flutter:*", "-v", "raw", check=False)
-    build, raster = [], []
-    for match in re.finditer(r"PERF b=([\d,]+) r=([\d,]+)", log):
-        build += [int(v) / 1000 for v in match.group(1).split(",")]
+    build, raster, moving = [], [], []
+    for match in re.finditer(r"PERF b=([\d,]+) r=([\d,]+)(?: m=([01]+))?", log):
+        b = [int(v) / 1000 for v in match.group(1).split(",")]
+        build += b
         raster += [int(v) / 1000 for v in match.group(2).split(",")]
-    return build, raster
+        flags = match.group(3)
+        # A build without the motion log counts every frame as moving.
+        moving += [c == "1" for c in flags] if flags else [True] * len(b)
+    return build, raster, moving
+
+
+def summarise(raw):
+    build, raster, moving = raw["build"], raw["raster"], raw["moving"]
+    in_motion = [b for b, m in zip(build, moving) if m]
+    at_rest = [b for b, m in zip(build, moving) if not m]
+    late = [b + r for b, r, m in zip(build, raster, moving) if m and b + r > BUDGET_MS]
+    return {
+        "frames": len(build),
+        "moving_frames": len(in_motion),
+        "moving_build_p50": round(percentile(in_motion, 0.5), 2),
+        "moving_build_p90": round(percentile(in_motion, 0.9), 2),
+        "moving_build_p99": round(percentile(in_motion, 0.99), 2),
+        "moving_build_max": round(max(in_motion, default=0), 2),
+        # Half the frame's time is what the app's own work may take if the
+        # graphics work is to fit in the other half.
+        "moving_build_over_8ms": sum(1 for b in in_motion if b > BUDGET_MS / 2),
+        "moving_build_over_16ms": sum(1 for b in in_motion if b > BUDGET_MS),
+        "moving_late_frames": len(late),
+        "resting_build_over_16ms": sum(1 for b in at_rest if b > BUDGET_MS),
+        "build_sum": round(sum(build), 1),
+        "raster_p50": round(percentile(raster, 0.5), 2),
+        "raster_p90": round(percentile(raster, 0.9), 2),
+    }
 
 
 def measure(name, action, results):
@@ -54,47 +94,56 @@ def measure(name, action, results):
     time.sleep(0.4)
     action()
     time.sleep(1.8)  # the app logs about once a second
-    build, raster = frames_logged()
-    total = [b + r for b, r in zip(build, raster)]
-    results[name] = {
-        "frames": len(build),
-        "build_p50": round(percentile(build, 0.5), 2),
-        "build_p90": round(percentile(build, 0.9), 2),
-        "build_p99": round(percentile(build, 0.99), 2),
-        "build_max": round(max(build, default=0), 2),
-        "build_sum": round(sum(build), 1),
-        "raster_p50": round(percentile(raster, 0.5), 2),
-        "raster_p90": round(percentile(raster, 0.9), 2),
-        "raster_max": round(max(raster, default=0), 2),
-        "build_over_8ms": sum(1 for b in build if b > BUDGET_MS / 2),
-        "build_over_16ms": sum(1 for b in build if b > BUDGET_MS),
-        "frame_over_16ms": sum(1 for t in total if t > BUDGET_MS),
-    }
+    build, raster, moving = frames_logged()
+    raw = {"build": build, "raster": raster, "moving": moving}
+    results[name] = {**summarise(raw), "raw": raw}
     r = results[name]
-    print(f"{name:14s} frames {r['frames']:4d}  build p50 {r['build_p50']:6.2f} p90 {r['build_p90']:6.2f} "
-          f"max {r['build_max']:7.2f} sum {r['build_sum']:8.1f} ms  slow builds {r['build_over_16ms']:3d}  "
-          f"slow frames {r['frame_over_16ms']:3d}")
+    print(f"{name:12s} moving: {r['moving_frames']:4d} frames, build p50 {r['moving_build_p50']:5.2f} "
+          f"p90 {r['moving_build_p90']:5.2f} max {r['moving_build_max']:6.2f} ms, "
+          f"over 8 ms {r['moving_build_over_8ms']:3d}, over 16 ms {r['moving_build_over_16ms']:3d}"
+          f"   resting long builds: {r['resting_build_over_16ms']}")
 
 
-def compare(before_path, after_path):
-    with open(before_path) as f:
-        before = json.load(f)
-    with open(after_path) as f:
-        after = json.load(f)
-    keys = ["frames", "build_p50", "build_p90", "build_max", "build_sum", "build_over_16ms", "frame_over_16ms"]
-    print(f"{'':14s} " + " ".join(f"{k:>24s}" for k in keys))
+def merged(paths):
+    """The results of several runs as one: their frames put together."""
+    out = {}
+    for path in paths.split(","):
+        with open(path) as f:
+            run = json.load(f)
+        for name, result in run.items():
+            raw = out.setdefault(name, {"build": [], "raster": [], "moving": []})
+            for key in raw:
+                raw[key] += result["raw"][key]
+    return {name: summarise(raw) for name, raw in out.items()}
+
+
+def compare(before_paths, after_paths):
+    before, after = merged(before_paths), merged(after_paths)
+    keys = [
+        ("moving_frames", "frames"),
+        ("moving_build_p50", "build p50"),
+        ("moving_build_p90", "build p90"),
+        ("moving_build_p99", "build p99"),
+        ("moving_build_max", "build max"),
+        ("moving_build_over_8ms", "over 8 ms"),
+        ("moving_build_over_16ms", "over 16 ms"),
+        ("resting_build_over_16ms", "resting long"),
+    ]
+    print("While the screen is in motion (build time per frame in ms; before -> after)")
+    print(f"{'':12s} " + " ".join(f"{label:>18s}" for _, label in keys))
     for name in before:
         if name not in after:
             continue
-        cells = [f"{before[name][k]:>10} -> {after[name][k]:<10}" for k in keys]
-        print(f"{name:14s} " + " ".join(f"{c:>24s}" for c in cells))
+        cells = [f"{before[name][k]:>7} -> {after[name][k]:<7}" for k, _ in keys]
+        print(f"{name:12s} " + " ".join(f"{c:>18s}" for c in cells))
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("out", nargs="?")
     parser.add_argument("--apk")
-    parser.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"))
+    parser.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"),
+                        help="result files of each side, comma-separated")
     args = parser.parse_args()
     if args.compare:
         compare(*args.compare)
@@ -126,8 +175,8 @@ def main():
     rows = [n for n in ui.nodes() if n.cls.endswith("EditText") and n.top > today.bottom]
     add_row = min(rows, key=lambda n: n.top)
     tasks = [n for n in ui.nodes()
-             if re.search(r" \d+$", n.label) and "Mark as" not in n.label and n.height < 200
-             and height * 0.25 < n.top < height * 0.6]
+             if re.search(r" \d+$", n.label.split("\n")[0]) and n.height < 200
+             and height * 0.2 < n.top < height * 0.65]
     task = tasks[0] if tasks else None
     menu = ui.find("Menu", exact=True)
     time.sleep(1.5)
@@ -137,9 +186,9 @@ def main():
 
     def swipe_weeks():
         for _ in range(8):
-            ui.swipe(width * 0.85, mid, width * 0.15, mid, 180, pause=0.7)
+            ui.swipe(width * 0.85, mid, width * 0.15, mid, 180, pause=0.9)
         for _ in range(8):
-            ui.swipe(width * 0.15, mid, width * 0.85, mid, 180, pause=0.7)
+            ui.swipe(width * 0.15, mid, width * 0.85, mid, 180, pause=0.9)
 
     def scroll():
         for _ in range(6):
@@ -173,12 +222,14 @@ def main():
     if task:
         measure("task sheet", sheet, results)
         measure("drag", drag, results)
+    else:
+        print("note: no task in the middle of the screen; drag and task sheet were not measured")
     if menu:
         measure("menu", open_menu, results)
     measure("keyboard", keyboard, results)
 
     with open(args.out, "w") as f:
-        json.dump(results, f, indent=2)
+        json.dump(results, f)
     print(f"written to {args.out}")
     return 0
 

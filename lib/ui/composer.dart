@@ -246,7 +246,7 @@ class _ComposerBarState extends State<ComposerBar> {
                   },
                 ),
                 AppButton(
-                  label: 'Done',
+                  label: 'Set',
                   kind: ButtonKind.primary,
                   size: Dim.controlInline,
                   onTap: _close,

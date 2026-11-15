@@ -291,6 +291,7 @@ class CalendarService extends ChangeNotifier {
   Future<void>? _refreshing;
   DateTime? _lastRefresh;
   int _seenOverlay = -1;
+  bool _hidden = false;
   bool _loaded = false;
   bool _disposed = false;
 
@@ -447,7 +448,10 @@ class CalendarService extends ChangeNotifier {
     _timer?.cancel();
     _timer = _subscriptions.isEmpty || _disposed
         ? null
-        : Timer.periodic(interval, (_) => unawaited(refresh()));
+        : Timer.periodic(interval, (_) {
+            // Not while the app is out of sight; see [leaving].
+            if (!_hidden) unawaited(refresh());
+          });
   }
 
   /// Subscribes to the calendar at [address]. Returns null on success,
@@ -601,11 +605,17 @@ class CalendarService extends ChangeNotifier {
   /// The app is back in the foreground (a phone suspends timers in the
   /// background): look for news unless that just happened.
   void resumed({Duration staleAfter = const Duration(minutes: 5)}) {
+    _hidden = false;
     final last = _lastRefresh;
     if (_subscriptions.isEmpty) return;
     if (last != null && _clock().difference(last) < staleAfter) return;
     unawaited(refresh());
   }
+
+  /// The app went to the background: no downloads until it is back. A
+  /// phone usually puts a hidden app to sleep anyway; this makes sure the
+  /// battery is not spent on calendars nobody is looking at.
+  void leaving() => _hidden = true;
 
   /// Downloads every calendar again. Calls made while one is running join it.
   Future<void> refresh() {
@@ -857,8 +867,9 @@ class CalendarService extends ChangeNotifier {
     showHidden ??= _showHidden;
     if (_subscriptions.isEmpty) return RangeEvents.empty;
     if (store.overlayRevision != _seenOverlay) {
-      _seenOverlay = store.overlayRevision;
-      _applyRows();
+      // Normally [_onStore] has seen the change already. This is asked for
+      // while the week is being built, when nothing may be written, so only
+      // what was worked out before is dropped here.
       _ranges.clear();
     }
     final known = _ranges[(first, last, showHidden)];

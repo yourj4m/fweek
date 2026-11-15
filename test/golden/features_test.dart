@@ -388,7 +388,7 @@ void main() {
       expect(task.location, cafe.label);
       expect(task.geo, '45.192900,5.728100');
 
-      await tester.tap(find.bySemanticsLabel('Open in the map app'));
+      await tester.tap(find.bySemanticsLabel(RegExp(r'^Open .* in the map app$')));
       await tester.pumpAndSettle();
       expect(opened.single, startsWith('geo:45.192900,5.728100?q=45.192900,5.728100('));
 
@@ -396,6 +396,20 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(find.text('Café de la Table Ronde'), findsOneWidget);
+    });
+
+    desktopTest('the card has a button for it', (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store);
+      await tester.tap(find.text('Water the plants'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, 'Add a place'), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Add a place'));
+      await tester.pumpAndSettle();
+      tester.testTextInput.enterText('Balcony');
+      await tester.pump();
+      expect(named(store, 'Water the plants').location, 'Balcony');
+      expect(find.bySemanticsLabel('Place'), findsOneWidget);
     });
 
     desktopTest('with suggestions switched off nothing is asked, and the text is kept',
@@ -499,7 +513,7 @@ void main() {
       expect(find.bySemanticsLabel('Hours'), findsOneWidget);
       expect(find.bySemanticsLabel('Minutes'), findsOneWidget);
       await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/phone_editing_bar.png'));
-      await tester.tap(find.text('Done'));
+      await tester.tap(find.text('Set'));
       await tester.pumpAndSettle();
 
       // A colour.
@@ -626,15 +640,36 @@ void main() {
     phoneTest('turning the week redraws no row of the weeks already built', (tester) async {
       final store = seededStore();
       await pumpApp(tester, store, size: const Size(411, 914));
+      // The weeks beside the visible one are built a moment after start.
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
       debugBuildCounts.clear();
       await tester.fling(find.byType(PageView), const Offset(-300, 0), 1200);
       await tester.pumpAndSettle();
       expect(find.text('16 Nov'), findsOneWidget);
-      // Only the week after next is new: seven empty days and the Someday
-      // list with its one task. Nothing of this week or the next was built
-      // again.
+      // Nothing was built during the swipe: not this week, not the next,
+      // and the week after next (which the pager now wants ready) waits
+      // until the swipe is over.
+      expect(built('TaskRow'), 0);
+      expect(built('TaskListBody'), 0);
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      // Seven empty days and the Someday list with its one task.
       expect(built('TaskRow'), 1);
       expect(built('TaskListBody'), 8);
+    });
+
+    phoneTest('a week swiped to before it was prepared is built at once', (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store, size: const Size(411, 914));
+      // No rest between start and swipe, nor between two swipes.
+      await tester.fling(find.byType(PageView), const Offset(-300, 0), 1200);
+      await tester.pumpAndSettle();
+      expect(find.text('16 Nov'), findsOneWidget);
+      await tester.fling(find.byType(PageView), const Offset(-300, 0), 1200);
+      await tester.pumpAndSettle();
+      expect(find.text('23 Nov'), findsOneWidget);
+      expect(find.text('Keep tasks here without a date', skipOffstage: false), findsWidgets);
     });
 
     phoneTest('the keyboard sliding in redraws nothing of the week', (tester) async {

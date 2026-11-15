@@ -272,3 +272,109 @@ Choices of this project where the sources were silent or it seemed better:
 - rea's static bundle analysis timed out on the two large scripts at its
   default 30 s per-script limit and was not rerun; nothing in this spec
   depends on it.
+
+## 7. Where this project departs from the reference
+
+Sections 1 to 6 record what was measured. This one records what the planner
+does differently by now, and why, so that the two are not confused.
+
+### Highlight colours
+
+The measured palette has four colours at or near full strength beside pale
+ones (green `#22FFA1`, lilac `#D85DFD`, yellow `#FDEF5D`, cyan `#98F4F9`);
+on a page of several coloured tasks those shout over the rest. The keys that
+tasks store are kept, the tones are evened out to a similar, moderate
+strength:
+
+| Key | Was | Is | Text |
+| --- | --- | --- | --- |
+| red | `#CD2C54` | `#C8405C` | white |
+| yellow | `#FEEE5D` | `#F3DC6B` | black |
+| blue | `#5167F4` | `#5568D8` | white |
+| green | `#23FFA1` | `#7FD8A6` | black |
+| orange | `#FFB022` | `#F1A85B` | black |
+| purple | `#BE9CF3` | `#B8A3EC` | black |
+| lilac | `#D85DFD` | `#D98BD3` | black |
+| cyan | `#98F4F9` | `#9BDCE5` | black |
+| lavender | `#DCE1FD` | `#D9DEFA` | black |
+| grey | `#C2C2C2` | `#C6C6CA` | black |
+| black | text colour of the theme | same | theme background |
+
+Rules the tests hold them to (`test/theme/contrast_test.dart`): text on each
+at 4.5 : 1 or better; any two at least 40 apart in RGB; none with a
+saturation above 0.72; each told from the page of every theme.
+
+### Themes
+
+Twelve, offered in three rows: light (Light, Paper, Ice, Rose, Sage), dark
+(Dark, Slate) and semi-dark. A semi-dark theme is a deep, muted colour
+instead of black, an off-white tinted the same way for text, and a soft
+accent of the same family:
+
+| Theme | Page | Text | Accent | Card |
+| --- | --- | --- | --- | --- |
+| Wine | `#2A1519` | `#F5E9EA` | `#E58A9B` | `#3A2025` |
+| Plum | `#221A2E` | `#EFEAF6` | `#B9A2EA` | `#312641` |
+| Forest | `#14231C` | `#E8F1EA` | `#86C9A0` | `#1F3329` |
+| Midnight | `#121B2B` | `#E8EDF6` | `#8FB0F0` | `#1D2A40` |
+| Cocoa | `#261D17` | `#F3EBE3` | `#E0A873` | `#362A21` |
+
+Every theme: text on page, card and menu at 7 : 1 or better; the muted text
+(60 % step) at 4.5 : 1; accent on page at 3 : 1.
+
+### Calendar events
+
+- **Row**: a task row with a 3 px bar in the calendar's colour at its left
+  (height: pill − 6, or row − 16 when there is a second line). Everything
+  else as for a task, including the check circle. A colour given to the
+  event by the user fills its pill; the bar stays the calendar's.
+- **Band**: events over several days lie directly under the day headings,
+  above all rows. One lane per event that overlaps, 24 px bars (30 on a
+  phone) with 4 px between and 6 px above the first. A bar is a wash of the
+  calendar's colour (18 % on light, 26 % on dark pages) with the 3 px bar at
+  its start, radius 6, square at an end where the event goes on beyond the
+  week. In the desktop week the band spans the six columns; Sunday, stacked
+  under Saturday, repeats its bars under its own heading on full ruled rows
+  so that the grid still lines up. In the single-column week every day
+  shows its bars under its heading with "2/3" for the second of three days.
+  In the month, bars sit at the top of each cell, flush with the cell's edge
+  where the event continues, titled once per row.
+- **Card**: the task card, with a line saying which calendar the event is
+  from and its own times, the calendar's description below the user's notes,
+  and "Edited · Reset" once anything was changed.
+
+### Rows
+
+Beside title and time a row shows, in muted ink after the pill: a note mark,
+subtasks as done/total, and for hidden events an eye-off mark. A place is a
+second line under the title (11.5 px, 13 on a phone), only when there is one.
+Done tasks and hidden events are drawn at 30 % by their colours.
+
+### Today
+
+The 2 px rule under today's heading is a 3 px bar instead: accent at 22 % as
+the track, accent as the part of the day that has passed. In the month, a
+2 px bar at the top of today's cell. No number, no clock.
+
+### Menus
+
+Right-click (long press and release on a phone) on a task, an event, a band
+bar or a month chip: Open, Mark as done · Move to, Time, Colour, Note, Place
+(Open map) · Duplicate / Delete for tasks, or Make a task, Reset, Hide, Hide
+calendar for events. 248 px wide, rows 36 px (44 on a phone). On a phone the
+menu surface is opaque: no backdrop blur there.
+
+### Phone: editing bar
+
+While a line has the keyboard: a 48 px bar above it, the surface of a card,
+with a rule on top. Round 40 px buttons for Time, Place, Note, Colour and
+All details, and a filled Done button at the right. A button shows what is
+attached (the time, the place's name, a colour dot) and opens its panel in
+place above the bar: wheels for hours and minutes, the place field with its
+suggestions, a note field, the colour swatches.
+
+### Lists
+
+The first blank column of the Someday area reads "+ New list" in muted ink
+at all times (30 %, 60 % under the pointer). The single-column layout has a
+"New list" button after the last list instead.

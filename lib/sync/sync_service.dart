@@ -136,6 +136,9 @@ class SyncService extends ChangeNotifier {
   Future<void>? _running;
   int _seenRevision = -1;
   bool _paused = false;
+
+  /// The app is in the background (phones only).
+  bool _hidden = false;
   bool _disposed = false;
   DateTime? _lastAttempt;
 
@@ -190,7 +193,10 @@ class SyncService extends ChangeNotifier {
     _seenRevision = store.revision;
     store.addListener(_onStoreChanged);
     _periodic = Timer.periodic(interval, (_) {
-      if (!_paused) unawaited(syncNow());
+      // Not while the app is out of sight: a phone that has not yet put the
+      // app to sleep would otherwise go online every few minutes for
+      // nothing. It catches up the moment it is looked at again.
+      if (!_paused && !_hidden) unawaited(syncNow());
     });
   }
 
@@ -326,6 +332,7 @@ class SyncService extends ChangeNotifier {
   /// The app is back in the foreground. A phone suspends the app (and its
   /// timers) in the background, so catch up now unless a sync just ran.
   void resumed({Duration staleAfter = const Duration(minutes: 1)}) {
+    _hidden = false;
     if (_engine == null || _paused) return;
     final last = _lastAttempt;
     if (last != null && _clock().difference(last) < staleAfter) return;
@@ -335,6 +342,7 @@ class SyncService extends ChangeNotifier {
   /// The app is leaving the foreground. Upload pending edits right away
   /// rather than after the usual pause, which the system may never let run.
   void leaving() {
+    _hidden = true;
     final engine = _engine;
     if (engine == null || _paused || !engine.hasPending) return;
     unawaited(syncNow());

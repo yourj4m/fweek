@@ -97,9 +97,26 @@ class _TaskDialogState extends State<_TaskDialog> {
   final _noteFocus = FocusNode();
   final _placeFocus = FocusNode();
 
-  /// Whether the place line is shown although the task has no place yet
-  /// (the user asked to add one).
-  bool _addingPlace = false;
+  /// Whether the place is being typed: shown as a field (with suggestions)
+  /// rather than as the link it is otherwise. Also true while a place is
+  /// being added to a task that has none yet.
+  bool _editingPlace = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _placeFocus.addListener(() {
+      // Done typing: the place becomes a link to the map again.
+      if (!_placeFocus.hasFocus && _editingPlace && mounted) {
+        setState(() => _editingPlace = false);
+      }
+    });
+  }
+
+  void _editPlace() {
+    setState(() => _editingPlace = true);
+    _placeFocus.requestFocus();
+  }
   final _subtaskText = <String, TextEditingController>{};
   final _subtaskFocus = <String, FocusNode>{};
   Timer? _saveTimer;
@@ -363,16 +380,6 @@ class _TaskDialogState extends State<_TaskDialog> {
                       _targets(rect, task, copy: true);
                     },
                   ),
-                if (!task.hasLocation && !_addingPlace)
-                  MenuRow(
-                    icon: AppIcons.mapPin,
-                    label: 'Add a place',
-                    onTap: () {
-                      close();
-                      setState(() => _addingPlace = true);
-                      _placeFocus.requestFocus();
-                    },
-                  ),
                 if (source != null) ...[
                   MenuRow(
                     icon: AppIcons.listPlus,
@@ -581,7 +588,7 @@ class _TaskDialogState extends State<_TaskDialog> {
       _loaded = true;
       final focus = widget.focus;
       if (focus != null) {
-        _addingPlace = focus == TaskField.place;
+        _editingPlace = focus == TaskField.place;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           (focus == TaskField.note ? _noteFocus : _placeFocus).requestFocus();
@@ -767,41 +774,67 @@ class _TaskDialogState extends State<_TaskDialog> {
       onChanged: _scheduleSave,
     );
 
-    // Where it takes place: typed freely, with suggestions; once set, a tap
-    // on the arrow opens it in the map app.
-    final place = task.hasLocation || _addingPlace
-        ? Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: LocationField(
-                    location: task.location,
-                    geo: task.geo,
-                    focusNode: _placeFocus,
-                    onChanged: (location, geo) => _store.updateTask(
-                      _id,
-                      location: location,
-                      geo: () => geo,
+    // Where it takes place. While it is typed: a field with suggestions.
+    // Otherwise the place is a link: a click opens it in the map program,
+    // the pencil beside it changes it.
+    final Widget? place;
+    if (_editingPlace) {
+      place = Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: LocationField(
+          location: task.location,
+          geo: task.geo,
+          focusNode: _placeFocus,
+          autofocus: true,
+          onChanged: (location, geo) =>
+              _store.updateTask(_id, location: location, geo: () => geo),
+          onDone: () => _placeFocus.unfocus(),
+        ),
+      );
+    } else if (task.hasLocation) {
+      place = Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 3, right: 8),
+              child: Icon(AppIcons.mapPin, size: 16, color: theme.ink(60)),
+            ),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Pressable(
+                  onTap: () => context.readOpener
+                      .openMap(label: task.location, geo: task.geo),
+                  semanticLabel: 'Open ${task.location} in the map app',
+                  labelOnly: true,
+                  builder: (context, hovered, pressed) => Text(
+                    task.location,
+                    style: context.text.body17.copyWith(
+                      color: hovered ? theme.ink(75) : theme.text,
+                      decoration: TextDecoration.underline,
+                      decorationColor: theme.ink(40),
                     ),
-                    onDone: () => _placeFocus.unfocus(),
                   ),
                 ),
-                if (task.hasLocation)
-                  AppButton(
-                    icon: AppIcons.navigation,
-                    kind: ButtonKind.ghost,
-                    size: Dim.controlSmall,
-                    iconSize: 16,
-                    tooltip: 'Open in the map app',
-                    onTap: () => context.readOpener
-                        .openMap(label: task.location, geo: task.geo),
-                  ),
-              ],
+              ),
             ),
-          )
-        : null;
+            AppButton(
+              icon: AppIcons.pencil,
+              kind: ButtonKind.ghost,
+              size: Dim.controlSmall,
+              iconSize: 15,
+              tooltip: 'Change the place',
+              foreground: theme.ink(40),
+              onTap: _editPlace,
+            ),
+          ],
+        ),
+      );
+    } else {
+      place = null;
+    }
 
     // For an imported event: which calendar it is from and what that
     // calendar says, kept apart from what was added here.
@@ -929,6 +962,15 @@ class _TaskDialogState extends State<_TaskDialog> {
               tooltip: 'Colour',
               onTap: () => _pickColor(anchor, task),
             ),
+          ),
+          AppButton(
+            icon: AppIcons.mapPin,
+            kind: ButtonKind.ghost,
+            size: Dim.controlLarge,
+            tooltip: task.hasLocation ? 'Place' : 'Add a place',
+            foreground: task.hasLocation ? theme.text : theme.ink(40),
+            // The place line appears above the notes, ready to type in.
+            onTap: _editPlace,
           ),
           Builder(
             builder: (anchor) => AppButton(

@@ -145,7 +145,10 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
           _sync.resumed();
           _calendars.resumed();
         },
-        onHide: _sync.leaving,
+        onHide: () {
+          _sync.leaving();
+          _calendars.leaving();
+        },
       );
     }
   }
@@ -236,7 +239,7 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
         opener: _opener,
         places: _places,
         android: _android,
-        child: _Themed(child: child!),
+        child: PerfMotion.watch(_Themed(child: child!)),
       ),
       home: const PlannerPage(),
     );

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'icons.dart';
@@ -1531,15 +1532,125 @@ class _PagerState extends State<_Pager> {
       },
       itemBuilder: (context, index) {
         final first = _firstDay(index, month, weekStart);
-        return month
-            ? _ScrollArea(
-                padding: _pagePadding(context),
-                child: MonthView(month: first, onOpen: widget.onOpen),
-              )
-            : _WeekPage(first: first, onOpen: widget.onOpen);
+        return _DeferredPage(
+          key: ValueKey(index),
+          index: index,
+          immediate: index == _shown,
+          child: month
+              ? _ScrollArea(
+                  padding: _pagePadding(context),
+                  child: MonthView(month: first, onOpen: widget.onOpen),
+                )
+              : _WeekPage(first: first, onOpen: widget.onOpen),
+        );
       },
     );
   }
+}
+
+/// A page of the pager that is built when it is needed and no sooner.
+///
+/// The pager keeps the pages beside the visible one ready. Building a week
+/// takes long enough to drop frames on a slow phone, and the pager asks for
+/// the next page to keep ready just as a swipe starts: the worst moment. So
+/// a page that is not in view stays blank until scrolling has stopped, and
+/// is built then, while nothing moves. A page that comes into view before
+/// that is built at once.
+class _DeferredPage extends StatefulWidget {
+  const _DeferredPage({
+    super.key,
+    required this.index,
+    required this.immediate,
+    required this.child,
+  });
+
+  final int index;
+
+  /// The page the pager is on: built without waiting.
+  final bool immediate;
+  final Widget child;
+
+  @override
+  State<_DeferredPage> createState() => _DeferredPageState();
+}
+
+class _DeferredPageState extends State<_DeferredPage> {
+  /// How long after scrolling stops a page out of view is built.
+  static const _rest = Duration(milliseconds: 120);
+
+  late bool _ready = widget.immediate;
+  ScrollPosition? _pager;
+  Timer? _timer;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_ready) return;
+    final pager = Scrollable.maybeOf(context)?.position;
+    if (pager != _pager) {
+      _unlisten();
+      _pager = pager;
+      pager?.addListener(_check);
+      pager?.isScrollingNotifier.addListener(_check);
+    }
+    _check();
+  }
+
+  @override
+  void dispose() {
+    _unlisten();
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _unlisten() {
+    _pager?.removeListener(_check);
+    _pager?.isScrollingNotifier.removeListener(_check);
+    _pager = null;
+  }
+
+  /// Whether any part of this page is on screen.
+  bool get _inView {
+    final pager = _pager;
+    if (pager == null) return true;
+    if (!pager.hasPixels || !pager.hasViewportDimension || pager.viewportDimension <= 0) {
+      return false;
+    }
+    return (pager.pixels / pager.viewportDimension - widget.index).abs() < 1;
+  }
+
+  void _check() {
+    if (_ready) return;
+    final pager = _pager;
+    if (pager == null || _inView) {
+      _show();
+    } else if (pager.isScrollingNotifier.value) {
+      // Moving again: wait for the next rest.
+      _timer?.cancel();
+      _timer = null;
+    } else {
+      _timer ??= Timer(_rest, _show);
+    }
+  }
+
+  void _show() {
+    if (_ready || !mounted) return;
+    _timer?.cancel();
+    _unlisten();
+    // The pager reports its position while it is being laid out, when
+    // nothing may be marked for rebuilding; then wait for the frame's end.
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _ready = true);
+      });
+    } else {
+      setState(() => _ready = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      _ready ? widget.child : const SizedBox.expand();
 }
 
 /// Padding around a narrow page's content, clear of the system bars.
