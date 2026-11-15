@@ -50,7 +50,18 @@ class _SearchDialogState extends State<_SearchDialog> {
     final store = context.store;
     final size = MediaQuery.sizeOf(context);
     final narrow = size.width < Dim.breakpoint;
-    final results = store.search(_query.text, color: _color);
+    // Tasks first, then events of the calendars from the last half year to
+    // a year ahead (a colour filter is about tasks only).
+    final today = store.today;
+    final results = [
+      ...store.search(_query.text, color: _color),
+      if (_color == null)
+        ...context.calendars.search(
+          _query.text,
+          from: today.addDays(-183),
+          to: today.addDays(366),
+        ),
+    ];
     final usedColors = {
       for (final t in store.allTasks)
         if (t.color != null) t.color!,
@@ -160,7 +171,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Text(
-                        'Type to search titles, notes and subtasks.',
+                        'Type to search tasks and events: titles, notes, places.',
                         textAlign: TextAlign.center,
                         style: context.text.small15.copyWith(color: theme.ink(40)),
                       ),
@@ -202,6 +213,18 @@ class _SearchDialogState extends State<_SearchDialog> {
                               ),
                               child: Row(
                                 children: [
+                                  if (task.event case final source?) ...[
+                                    Container(
+                                      width: 3,
+                                      height: Dim.pill - 6,
+                                      decoration: BoxDecoration(
+                                        color: calendarColor(
+                                            theme, source.calendarColor),
+                                        borderRadius: BorderRadius.circular(1.5),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 3),
+                                  ],
                                   Expanded(
                                     child: Align(
                                       alignment: Alignment.centerLeft,

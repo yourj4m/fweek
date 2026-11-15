@@ -3,8 +3,10 @@ package io.github.yourj4m.weektodo
 import android.Manifest
 import android.app.Activity
 import android.app.NotificationManager
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -14,7 +16,8 @@ import io.flutter.plugin.common.MethodChannel
 /**
  * The app's single screen, plus the few things the Dart side asks Android
  * for directly (channel "weektodo/platform"): scheduled reminders, the
- * notification permission, and saving a file through the system's picker.
+ * notification permission, saving a file through the system's picker, and
+ * handing a link or a place to the app that shows such things.
  */
 class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
@@ -76,7 +79,26 @@ class MainActivity : FlutterActivity() {
                 launchTask = null
             }
             "saveDocument" -> saveDocument(call, result)
+            "openUri" -> result.success(openUri(call.arguments as? String))
             else -> result.notImplemented()
+        }
+    }
+
+    /**
+     * Shows a web or mail address, or a geo: place, in the app the user has
+     * for it. Only those kinds: what is opened comes out of notes and
+     * calendar descriptions. False when no app takes it.
+     */
+    private fun openUri(text: String?): Boolean {
+        val uri = text?.let { Uri.parse(it) } ?: return false
+        if (uri.scheme !in setOf("http", "https", "mailto", "tel", "geo")) return false
+        return try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
         }
     }
 

@@ -27,6 +27,7 @@ class ReminderService {
     this.store, {
     required this.notify,
     this.schedule,
+    this.events,
     DateTime Function()? clock,
     this.catchUp = const Duration(hours: 12),
     this.horizon = const Duration(days: 60),
@@ -41,6 +42,10 @@ class ReminderService {
   /// Takes over the reminders due within [horizon], soonest first and at most
   /// [maxScheduled] of them. Called only when that list changed.
   final void Function(List<DueReminder> upcoming)? schedule;
+
+  /// The imported events that carry a reminder set in the planner, as
+  /// tasks; null when no calendars are shown.
+  final Iterable<Task> Function()? events;
   final DateTime Function() _clock;
   final Duration catchUp;
 
@@ -95,6 +100,13 @@ class ReminderService {
         if (!at.isBefore(from) && !at.isAfter(to)) {
           out.add(DueReminder(store.task('${task.id}@${day.iso}') ?? task, at));
         }
+      }
+    }
+    for (final event in events?.call() ?? const <Task>[]) {
+      final reminder = event.reminder;
+      if (reminder == null || event.done) continue;
+      if (!reminder.isBefore(from) && !reminder.isAfter(to)) {
+        out.add(DueReminder(event, reminder));
       }
     }
     return out..sort((a, b) => a.at.compareTo(b.at));

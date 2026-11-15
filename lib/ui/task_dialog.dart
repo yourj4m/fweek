@@ -11,18 +11,25 @@ import '../data/day.dart';
 import '../data/models.dart';
 import '../data/planner_store.dart';
 import '../theme/app_theme.dart';
+import 'location_field.dart';
+import 'note_field.dart';
 import 'pickers.dart';
 import 'strings.dart';
+import 'task_actions.dart';
 import 'task_list.dart';
 import 'widgets/controls.dart';
 
-/// Opens the task card for the task with [id].
-Future<void> showTaskDialog(BuildContext context, String id) {
+/// A part of the task card to start typing in when it opens.
+enum TaskField { note, place }
+
+/// Opens the card for the task, or the imported event, with [id]. With
+/// [focus], typing starts in that field.
+Future<void> showTaskDialog(BuildContext context, String id, {TaskField? focus}) {
   final theme = context.theme;
   return Navigator.of(context, rootNavigator: true).push<void>(
     _CardRoute(
       barrier: theme.barrier,
-      builder: (context) => _TaskDialog(id: id),
+      builder: (context) => _TaskDialog(id: id, focus: focus),
     ),
   );
 }
@@ -55,7 +62,9 @@ class _CardRoute extends PopupRoute<void> {
       child: SlideTransition(
         position: Tween(begin: const Offset(0, 0.02), end: Offset.zero)
             .animate(curved),
-        child: DialogArea(child: Builder(builder: builder)),
+        // What a card says (details, descriptions, explanations) can be
+        // selected; its buttons take themselves out of that.
+        child: DialogArea(child: Selectable(child: Builder(builder: builder))),
       ),
     );
   }
@@ -69,9 +78,10 @@ Future<void> showCard(BuildContext context, WidgetBuilder builder) {
 }
 
 class _TaskDialog extends StatefulWidget {
-  const _TaskDialog({required this.id});
+  const _TaskDialog({required this.id, this.focus});
 
   final String id;
+  final TaskField? focus;
 
   @override
   State<_TaskDialog> createState() => _TaskDialogState();
@@ -82,9 +92,14 @@ class _TaskDialogState extends State<_TaskDialog> {
   bool _expanded = false;
 
   final _title = TextEditingController();
-  final _note = TextEditingController();
+  final _note = LinkTextController();
   final _titleFocus = FocusNode();
   final _noteFocus = FocusNode();
+  final _placeFocus = FocusNode();
+
+  /// Whether the place line is shown although the task has no place yet
+  /// (the user asked to add one).
+  bool _addingPlace = false;
   final _subtaskText = <String, TextEditingController>{};
   final _subtaskFocus = <String, FocusNode>{};
   Timer? _saveTimer;
@@ -106,6 +121,7 @@ class _TaskDialogState extends State<_TaskDialog> {
     _note.dispose();
     _titleFocus.dispose();
     _noteFocus.dispose();
+    _placeFocus.dispose();
     for (final c in _subtaskText.values) {
       c.dispose();
     }
@@ -311,6 +327,7 @@ class _TaskDialogState extends State<_TaskDialog> {
 
   void _more(BuildContext anchor, Task task) {
     final rect = globalRect(anchor);
+    final source = task.event;
     showPopover<void>(
       context: context,
       anchor: rect,
@@ -318,41 +335,96 @@ class _TaskDialogState extends State<_TaskDialog> {
       align: 1,
       builder: (popover) {
         void close() => Navigator.of(popover).pop();
+        Widget chevron() =>
+            Icon(AppIcons.chevronRight, size: 16, color: context.theme.ink(60));
         return PopoverSurface(
           padding: const EdgeInsets.all(8),
           child: SizedBox(
-            width: 232,
+            width: 248,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 MenuRow(
                   icon: AppIcons.arrowRight,
                   label: 'Move',
-                  trailing: Icon(AppIcons.chevronRight,
-                      size: 16, color: context.theme.ink(60)),
+                  trailing: chevron(),
                   onTap: () {
                     close();
                     _targets(rect, task, copy: false);
                   },
                 ),
-                MenuRow(
-                  icon: AppIcons.copy,
-                  label: 'Copy',
-                  trailing: Icon(AppIcons.chevronRight,
-                      size: 16, color: context.theme.ink(60)),
-                  onTap: () {
-                    close();
-                    _targets(rect, task, copy: true);
-                  },
-                ),
-                if (task.isOccurrence) ...[
+                if (source == null)
+                  MenuRow(
+                    icon: AppIcons.copy,
+                    label: 'Copy',
+                    trailing: chevron(),
+                    onTap: () {
+                      close();
+                      _targets(rect, task, copy: true);
+                    },
+                  ),
+                if (!task.hasLocation && !_addingPlace)
+                  MenuRow(
+                    icon: AppIcons.mapPin,
+                    label: 'Add a place',
+                    onTap: () {
+                      close();
+                      setState(() => _addingPlace = true);
+                      _placeFocus.requestFocus();
+                    },
+                  ),
+                if (source != null) ...[
+                  MenuRow(
+                    icon: AppIcons.listPlus,
+                    label: 'Make a task of it',
+                    onTap: () {
+                      close();
+                      _leave(() => makeTaskOf(context, task));
+                    },
+                  ),
+                  if (source.edited)
+                    MenuRow(
+                      icon: AppIcons.rotateCcw,
+                      label: 'Reset to the calendar\'s version',
+                      onTap: () {
+                        close();
+                        _reset();
+                      },
+                    ),
+                  if (source.hidden)
+                    MenuRow(
+                      icon: AppIcons.eye,
+                      label: 'Show again',
+                      onTap: () {
+                        close();
+                        _store.setEventHidden(_id, false);
+                      },
+                    )
+                  else
+                    MenuRow(
+                      icon: AppIcons.eyeOff,
+                      label: 'Hide',
+                      onTap: () {
+                        close();
+                        _leave(() => hideWithUndo(context, task));
+                      },
+                    ),
+                  MenuRow(
+                    icon: AppIcons.calendarOff,
+                    label: 'Hide ${source.calendarName}',
+                    onTap: () {
+                      close();
+                      _leave(() => hideCalendarWithUndo(context, source.calendar));
+                    },
+                  ),
+                ] else if (task.isOccurrence) ...[
                   MenuRow(
                     icon: AppIcons.trash2,
                     label: 'Delete this one',
                     danger: true,
                     onTap: () {
                       close();
-                      _delete(wholeSeries: false);
+                      _leave(() => deleteWithUndo(context, task));
                     },
                   ),
                   MenuRow(
@@ -361,7 +433,7 @@ class _TaskDialogState extends State<_TaskDialog> {
                     danger: true,
                     onTap: () {
                       close();
-                      _delete(wholeSeries: true);
+                      _leave(() => deleteWithUndo(context, task, wholeSeries: true));
                     },
                   ),
                 ] else
@@ -371,7 +443,7 @@ class _TaskDialogState extends State<_TaskDialog> {
                     danger: true,
                     onTap: () {
                       close();
-                      _delete(wholeSeries: true);
+                      _leave(() => deleteWithUndo(context, task, wholeSeries: true));
                     },
                   ),
               ],
@@ -382,20 +454,28 @@ class _TaskDialogState extends State<_TaskDialog> {
     );
   }
 
+  /// Saves what is being typed, does [action] (which removes the task from
+  /// view), and closes the card.
+  void _leave(VoidCallback action) {
+    _flush();
+    action();
+    if (mounted) Navigator.of(context).maybePop();
+  }
+
+  /// Drops everything changed about an imported event.
+  void _reset() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    _store.resetEvent(_id);
+    final fresh = _store.task(_id);
+    if (fresh != null) {
+      _title.text = fresh.title;
+      _note.text = fresh.note;
+    }
+  }
+
   void _targets(Rect rect, Task task, {required bool copy}) {
-    final today = _store.today;
-    final targets = <(String, Slot)>[
-      ('Today', DaySlot(today)),
-      ('Tomorrow', DaySlot(today.addDays(1))),
-      ('Next week', DaySlot(today.startOfWeek(_store.weekStart).addDays(7))),
-      for (final list in _store.lists)
-        (
-          list.title.isEmpty
-              ? (list.id == _store.lists.first.id ? 'Someday' : 'Untitled list')
-              : list.title,
-          ListSlot(list.id),
-        ),
-    ];
+    final targets = moveTargets(_store);
     showPopover<void>(
       context: context,
       anchor: rect,
@@ -417,6 +497,9 @@ class _TaskDialogState extends State<_TaskDialog> {
                     if (copy) {
                       _flush();
                       _store.copyTask(_id, slot);
+                    } else if (task.isEvent && slot is ListSlot) {
+                      // An event sent to a list becomes a task there.
+                      _leave(() => makeTaskOf(context, task, slot: slot));
                     } else {
                       _apply(() => _store.moveTask(_id, slot));
                     }
@@ -427,13 +510,6 @@ class _TaskDialogState extends State<_TaskDialog> {
         ),
       ),
     );
-  }
-
-  void _delete({required bool wholeSeries}) {
-    _saveTimer?.cancel();
-    final id = _id;
-    Navigator.of(context).pop();
-    _store.deleteTask(id, wholeSeries: wholeSeries);
   }
 
   // ------------------------------------------------------------ subtasks
@@ -503,6 +579,14 @@ class _TaskDialogState extends State<_TaskDialog> {
       _title.text = task.title;
       _note.text = task.note;
       _loaded = true;
+      final focus = widget.focus;
+      if (focus != null) {
+        _addingPlace = focus == TaskField.place;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          (focus == TaskField.note ? _noteFocus : _placeFocus).requestFocus();
+        });
+      }
     } else {
       // Pick up changes made elsewhere, but never under the cursor.
       if (!_titleFocus.hasFocus && _saveTimer == null && _title.text != task.title) {
@@ -593,10 +677,14 @@ class _TaskDialogState extends State<_TaskDialog> {
     final use24h = context.store.setting<bool>(Settings.use24h);
     final date = task.date;
     final list = task.listId == null ? null : context.store.list(task.listId!);
+    final source = task.event;
     final where = date != null
-        ? Strings.fullDate(date)
-        : (list == null || list.title.isEmpty ? 'Someday' : list.title);
+        ? (task.spansDays
+            ? '${Strings.fullDate(date)} – ${Strings.fullDate(source!.lastDay)}'
+            : Strings.fullDate(date))
+        : (list == null ? 'Someday' : listTitle(context.store, list));
     final side = narrow ? 24.0 : 32.0;
+    final muted = context.text.caption14.copyWith(color: theme.ink(60));
 
     final header = SizedBox(
       height: 44,
@@ -646,7 +734,7 @@ class _TaskDialogState extends State<_TaskDialog> {
             maxLines: null,
             textInputAction: TextInputAction.done,
             decoration: InputDecoration.collapsed(
-              hintText: 'Task',
+              hintText: source == null ? 'Task' : 'Event',
               hintStyle: context.text.title28.copyWith(color: theme.ink(25)),
             ),
             onChanged: (_) => _scheduleSave(),
@@ -666,20 +754,117 @@ class _TaskDialogState extends State<_TaskDialog> {
       ],
     );
 
-    final notes = TextField(
+    final notes = NoteField(
       controller: _note,
       focusNode: _noteFocus,
       style: context.text.body17,
-      cursorColor: theme.text,
-      maxLines: null,
-      minLines: _expanded ? 8 : 5,
-      keyboardType: TextInputType.multiline,
-      decoration: InputDecoration.collapsed(
-        hintText: 'Add some extra notes here…',
-        hintStyle: context.text.body17.copyWith(color: theme.ink(25)),
-      ),
-      onChanged: (_) => _scheduleSave(),
+      // Room for a few lines; an event's card also shows the calendar's
+      // own description below, so its field starts smaller.
+      minLines: _expanded ? 8 : (source == null ? 5 : 3),
+      hint: source == null
+          ? 'Add some extra notes here…'
+          : 'Add notes of your own…',
+      onChanged: _scheduleSave,
     );
+
+    // Where it takes place: typed freely, with suggestions; once set, a tap
+    // on the arrow opens it in the map app.
+    final place = task.hasLocation || _addingPlace
+        ? Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: LocationField(
+                    location: task.location,
+                    geo: task.geo,
+                    focusNode: _placeFocus,
+                    onChanged: (location, geo) => _store.updateTask(
+                      _id,
+                      location: location,
+                      geo: () => geo,
+                    ),
+                    onDone: () => _placeFocus.unfocus(),
+                  ),
+                ),
+                if (task.hasLocation)
+                  AppButton(
+                    icon: AppIcons.navigation,
+                    kind: ButtonKind.ghost,
+                    size: Dim.controlSmall,
+                    iconSize: 16,
+                    tooltip: 'Open in the map app',
+                    onTap: () => context.readOpener
+                        .openMap(label: task.location, geo: task.geo),
+                  ),
+              ],
+            ),
+          )
+        : null;
+
+    // For an imported event: which calendar it is from and what that
+    // calendar says, kept apart from what was added here.
+    Widget? origin;
+    if (source != null) {
+      String clock(DateTime t) =>
+          formatTime(t.hour * 60 + t.minute, use24h: use24h);
+      final start = source.start, end = source.end;
+      final when = source.allDay || start == null
+          ? null
+          : end == null || !end.isAfter(start)
+              ? clock(start)
+              : '${clock(start)} – ${clock(end)}';
+      origin = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: calendarColor(theme, source.calendarColor),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  [
+                    source.calendarName,
+                    ?when,
+                    if (source.repeats) 'repeats',
+                    if (source.hidden) 'hidden',
+                  ].join(' · '),
+                  style: muted,
+                ),
+              ),
+              if (source.edited)
+                Pressable(
+                  onTap: _reset,
+                  semanticLabel: 'Reset to the calendar\'s version',
+                  builder: (context, hovered, pressed) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    child: Text(
+                      'Edited · Reset',
+                      style: muted.copyWith(
+                        color: theme.ink(hovered ? 90 : 60),
+                        decoration: TextDecoration.underline,
+                        decorationColor: theme.ink(30),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (source.description.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            LinkedText(source.description, style: context.text.small15),
+          ],
+        ],
+      );
+    }
 
     final subtasks = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -725,9 +910,15 @@ class _TaskDialogState extends State<_TaskDialog> {
               icon: AppIcons.rotateCw,
               kind: ButtonKind.ghost,
               size: Dim.controlLarge,
-              tooltip: date == null ? 'Only dated tasks can repeat' : 'Repeat',
+              tooltip: source != null
+                  ? 'How an event repeats is set in its calendar'
+                  : date == null
+                      ? 'Only dated tasks can repeat'
+                      : 'Repeat',
               foreground: task.repeats ? theme.text : theme.ink(40),
-              onTap: date == null ? null : () => _pickRepeat(anchor, task),
+              onTap: date == null || source != null
+                  ? null
+                  : () => _pickRepeat(anchor, task),
             ),
           ),
           Builder(
@@ -789,10 +980,17 @@ class _TaskDialogState extends State<_TaskDialog> {
         const SizedBox(height: 20),
         Container(height: 1, color: theme.ink(10)),
         const SizedBox(height: 24),
+        ?place,
         notes,
         if (task.hasSubtasks) ...[
           const SizedBox(height: 12),
           subtasks,
+        ],
+        if (origin != null) ...[
+          const SizedBox(height: 16),
+          Container(height: 1, color: theme.ink(10)),
+          const SizedBox(height: 14),
+          origin,
         ],
         if (details.isNotEmpty) ...[
           const SizedBox(height: 12),

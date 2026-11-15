@@ -21,8 +21,13 @@ class _Zone {
 /// Rows report pointer-down; the page forwards pointer moves and releases.
 /// Day and list bodies register as drop zones and render a gap at
 /// [targetIndex] while they are the [targetSlot].
+///
+/// Listeners are told when a drag starts or ends and when its target or
+/// edge changes — not on every pointer move. What follows the pointer (the
+/// dragged row's ghost) listens to [ghost] instead, so that moving a finger
+/// redraws one small widget rather than the week.
 class DragController extends ChangeNotifier {
-  DragController({required this.onDrop, required this.onEdge});
+  DragController({required this.onDrop, required this.onEdge, this.onHold});
 
   /// Called when a task is released over a zone.
   final void Function(Task task, Slot slot, int index) onDrop;
@@ -31,7 +36,15 @@ class DragController extends ChangeNotifier {
   /// edge, to turn to the previous or next week.
   final void Function(int direction) onEdge;
 
+  /// Called when a task picked up by a long press is let go without having
+  /// been moved: a hold, which asks for the task's menu. [row] is where the
+  /// task's row is on screen.
+  final void Function(Task task, Rect row)? onHold;
+
   static const _slop = 5.0;
+
+  /// How far a finger may wander during a long press and still be holding.
+  static const _holdSlop = 10.0;
   static const _edgeWidth = 30.0;
   static const _edgeDelay = Duration(milliseconds: 650);
 
@@ -40,6 +53,10 @@ class DragController extends ChangeNotifier {
   Task? _candidate;
   Offset _downAt = Offset.zero;
   Offset _grab = Offset.zero;
+  Rect _row = Rect.zero;
+
+  /// Picked up by a long press and not moved since.
+  bool _holding = false;
 
   /// The task being dragged, or null.
   Task? get task => _task;
@@ -47,8 +64,17 @@ class DragController extends ChangeNotifier {
 
   bool get active => _task != null;
 
-  /// Top-left of the dragged row in global coordinates.
-  Offset get position => _pointer - _grab;
+  /// Top-left of the dragged row in global coordinates; changes with every
+  /// pointer move.
+  final ghost = ValueNotifier<Offset>(Offset.zero);
+
+  /// Counts the changes that alter how many rows the days and lists need:
+  /// a drag starting or ending, or its target moving to another day or
+  /// list. (Moving within one list changes no height.)
+  final layout = ValueNotifier<int>(0);
+
+  /// Where the pointer is, in global coordinates.
+  Offset get pointer => _pointer;
   Offset _pointer = Offset.zero;
 
   /// Width of the row when it was picked up.
@@ -66,8 +92,9 @@ class DragController extends ChangeNotifier {
   int _edge = 0;
   Timer? _edgeTimer;
 
-  /// Whether edge zones are in use (the week view; a month has none).
-  bool edgesEnabled = true;
+  /// Says whether edge zones are in use (the week view; a month has none).
+  bool Function() edges = () => true;
+  bool get edgesEnabled => edges();
   double _viewWidth = 0;
 
   void register(Slot slot, GlobalKey key, int count) {
@@ -89,54 +116,67 @@ class DragController extends ChangeNotifier {
     _downAt = global;
     _grab = global - row.topLeft;
     _width = row.width;
+    _row = row;
   }
 
-  /// A long press on a task row: the drag starts at once. A finger that
-  /// moves right away scrolls instead, so touch never goes through
-  /// [pointerDown].
+  /// A long press on a task row: the row is picked up at once. A finger
+  /// that moves right away scrolls instead, so touch never goes through
+  /// [pointerDown]. Moving on from here drags; letting go without moving is
+  /// a hold ([onHold]).
   void begin(Task task, Offset global, Rect row) {
     _candidate = null;
     _grab = global - row.topLeft;
     _width = row.width;
+    _row = row;
+    _downAt = global;
+    _holding = true;
     _task = task;
     _pointer = global;
+    ghost.value = global - _grab;
     _retarget();
+    layout.value++;
     notifyListeners();
   }
-
-  /// Where the pointer is, in global coordinates.
-  Offset get pointer => _pointer;
 
   /// Works out the drop target again after the content moved under a
   /// resting pointer (the list scrolled, or the week changed).
   void refresh() {
     if (_task == null) return;
-    _retarget();
-    notifyListeners();
+    if (_retarget()) notifyListeners();
   }
 
   void pointerMove(Offset global, Size view) {
     _viewWidth = view.width;
+    var changed = false;
     if (_task == null) {
       final candidate = _candidate;
       if (candidate == null || (global - _downAt).distance < _slop) return;
       _task = candidate;
       _candidate = null;
+      changed = true;
+      layout.value++;
     }
+    if (_holding && (global - _downAt).distance > _holdSlop) _holding = false;
     _pointer = global;
-    _retarget();
-    _updateEdge();
-    notifyListeners();
+    ghost.value = global - _grab;
+    if (_retarget()) changed = true;
+    if (_updateEdge()) changed = true;
+    if (changed) notifyListeners();
   }
 
   void pointerUp() {
     _candidate = null;
     final task = _task;
     if (task == null) return;
+    final held = _holding;
     final slot = _targetSlot;
     final index = _targetIndex;
     _reset();
-    if (slot != null) onDrop(task, slot, index);
+    if (held) {
+      onHold?.call(task, _row);
+    } else if (slot != null) {
+      onDrop(task, slot, index);
+    }
   }
 
   void cancel() {
@@ -147,13 +187,16 @@ class DragController extends ChangeNotifier {
   void _reset() {
     _task = null;
     _targetSlot = null;
+    _holding = false;
     _edge = 0;
     _edgeTimer?.cancel();
     _edgeTimer = null;
+    layout.value++;
     notifyListeners();
   }
 
-  void _retarget() {
+  /// Finds the zone and row under the pointer. True if the target changed.
+  bool _retarget() {
     Slot? best;
     var bestIndex = 0;
     var bestDistance = double.infinity;
@@ -182,11 +225,16 @@ class DragController extends ChangeNotifier {
           .floor()
           .clamp(0, entry.value.count);
     }
-    _targetSlot = bestDistance < 160 ? best : null;
+    final slot = bestDistance < 160 ? best : null;
+    if (slot == _targetSlot && bestIndex == _targetIndex) return false;
+    if (slot != _targetSlot) layout.value++;
+    _targetSlot = slot;
     _targetIndex = bestIndex;
+    return true;
   }
 
-  void _updateEdge() {
+  /// True if the pointer entered or left an edge zone.
+  bool _updateEdge() {
     final edge = !edgesEnabled || _viewWidth <= 0
         ? 0
         : _pointer.dx < _edgeWidth
@@ -194,7 +242,7 @@ class DragController extends ChangeNotifier {
             : _pointer.dx > _viewWidth - _edgeWidth
                 ? 1
                 : 0;
-    if (edge == _edge) return;
+    if (edge == _edge) return false;
     _edge = edge;
     _edgeTimer?.cancel();
     _edgeTimer = edge == 0
@@ -202,25 +250,62 @@ class DragController extends ChangeNotifier {
         : Timer.periodic(_edgeDelay, (_) {
             if (_task != null && _edge != 0) onEdge(_edge);
           });
+    return true;
   }
 
   @override
   void dispose() {
     _edgeTimer?.cancel();
+    ghost.dispose();
+    layout.dispose();
     super.dispose();
   }
 }
 
 /// Makes the [DragController] available to rows and drop zones.
-class DragScope extends InheritedNotifier<DragController> {
-  const DragScope({super.key, required DragController controller, required super.child})
-      : super(notifier: controller);
+class DragScope extends StatelessWidget {
+  const DragScope({super.key, required this.controller, required this.child});
 
+  final DragController controller;
+  final Widget child;
+
+  /// The controller, rebuilding the caller whenever a drag starts or ends
+  /// or its target or edge changes.
   static DragController of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<DragScope>()!.notifier!;
+      context.dependOnInheritedWidgetOfExactType<_DragState>()!.notifier!;
 
+  /// The controller, rebuilding the caller only when the heights of days
+  /// and lists change; see [DragController.layout].
+  static DragController layoutOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_DragLayout>()!.controller;
+
+  /// The controller, without subscribing to anything.
   static DragController read(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<DragScope>()!.notifier!;
+      context.getInheritedWidgetOfExactType<_DragState>()!.notifier!;
+
+  @override
+  Widget build(BuildContext context) => _DragState(
+        notifier: controller,
+        child: _DragLayout(
+          controller: controller,
+          notifier: controller.layout,
+          child: child,
+        ),
+      );
+}
+
+class _DragState extends InheritedNotifier<DragController> {
+  const _DragState({required super.notifier, required super.child});
+}
+
+class _DragLayout extends InheritedNotifier<ValueNotifier<int>> {
+  const _DragLayout({
+    required this.controller,
+    required super.notifier,
+    required super.child,
+  });
+
+  final DragController controller;
 }
 
 /// Scrolls its child's list while a task is dragged near its top or bottom
@@ -252,13 +337,20 @@ class _DragAutoScrollState extends State<DragAutoScroll>
     super.didChangeDependencies();
     final drag = DragScope.read(context);
     if (drag == _drag) return;
+    _unlisten();
+    _drag = drag
+      ..addListener(_onDrag)
+      ..ghost.addListener(_onDrag);
+  }
+
+  void _unlisten() {
     _drag?.removeListener(_onDrag);
-    _drag = drag..addListener(_onDrag);
+    _drag?.ghost.removeListener(_onDrag);
   }
 
   @override
   void dispose() {
-    _drag?.removeListener(_onDrag);
+    _unlisten();
     _ticker.dispose();
     super.dispose();
   }
@@ -286,6 +378,7 @@ class _DragAutoScrollState extends State<DragAutoScroll>
   }
 
   void _onDrag() {
+    if (!mounted) return;
     final wanted = _speed() != 0;
     if (wanted && !_ticker.isActive) {
       _last = Duration.zero;

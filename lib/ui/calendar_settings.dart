@@ -1,15 +1,19 @@
 import 'package:flutter/widgets.dart';
+import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
 
 import '../app_state.dart';
+import '../calendar/calendar_service.dart';
 import '../platform.dart';
 import '../theme/app_theme.dart';
-import 'event_rows.dart';
 import 'icons.dart';
+import 'pickers.dart';
 import 'sync_settings.dart' show SettingsField;
+import 'task_list.dart' show calendarColor;
 import 'widgets/controls.dart';
 
-/// The "Calendars" part of the settings: calendars whose events the planner
-/// shows, and a form to subscribe to another.
+/// The "Calendars" part of the settings: the calendars whose events the
+/// planner shows, each with its colour, its name and a switch to show or
+/// hide it, and a form to subscribe to another.
 class CalendarSettings extends StatefulWidget {
   const CalendarSettings({super.key});
 
@@ -20,13 +24,26 @@ class CalendarSettings extends StatefulWidget {
 class _CalendarSettingsState extends State<CalendarSettings> {
   final _address = TextEditingController();
   final _name = TextEditingController();
+  final _rename = TextEditingController();
+  final _renameFocus = FocusNode();
+  String? _renaming;
   bool _adding = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _renameFocus.addListener(() {
+      if (!_renameFocus.hasFocus) _finishRename();
+    });
+  }
 
   @override
   void dispose() {
     _address.dispose();
     _name.dispose();
+    _rename.dispose();
+    _renameFocus.dispose();
     super.dispose();
   }
 
@@ -48,6 +65,38 @@ class _CalendarSettingsState extends State<CalendarSettings> {
     });
   }
 
+  void _startRename(CalendarSubscription calendar) {
+    _rename.text = calendar.name;
+    setState(() => _renaming = calendar.id);
+    _renameFocus.requestFocus();
+  }
+
+  void _finishRename() {
+    final id = _renaming;
+    if (id == null) return;
+    context.readCalendars.rename(id, _rename.text);
+    if (mounted) setState(() => _renaming = null);
+  }
+
+  Future<void> _pickColor(BuildContext anchor, CalendarSubscription calendar) async {
+    final calendars = context.readCalendars;
+    await showPopover<void>(
+      context: context,
+      anchor: globalRect(anchor),
+      align: -1,
+      builder: (popover) => PopoverSurface(
+        child: ColorPalette(
+          selected: calendar.color,
+          onPick: (color) {
+            // A calendar always has a colour; "none" is black.
+            calendars.setColor(calendar.id, color ?? 'black');
+            Navigator.of(popover).pop();
+          },
+        ),
+      ),
+    );
+  }
+
   static String _ago(DateTime then, DateTime now) {
     final minutes = now.difference(then).inMinutes;
     if (minutes < 1) return 'just now';
@@ -56,16 +105,21 @@ class _CalendarSettingsState extends State<CalendarSettings> {
     return 'on ${then.day}.${then.month}.${then.year}';
   }
 
-  /// The next palette colour after the calendar's current one.
-  static String _nextColor(String current) {
-    final keys = [for (final c in TaskColor.palette) c.key];
-    return keys[(keys.indexOf(current) + 1) % keys.length];
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
     final calendars = context.calendars;
+    return ListenableBuilder(
+      // Downloads come and go without the calendars changing; this part
+      // shows their progress and outcome.
+      listenable: calendars.status,
+      builder: (context, _) => _build(context, theme, calendars),
+    );
+  }
+
+  Widget _build(BuildContext context, AppTheme theme, CalendarService calendars) {
+    final subscriptions = calendars.subscriptions;
+    final elsewhere = calendars.elsewhere;
     final muted = context.text.caption14.copyWith(color: theme.ink(60));
     final now = DateTime.now();
 
@@ -73,73 +127,119 @@ class _CalendarSettingsState extends State<CalendarSettings> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Show the events of another calendar in your week. They are read '
-          'from the calendar\'s iCal address and cannot be changed here.',
+          'Show the events of another calendar in your week, read from the '
+          'calendar\'s iCal address. In the planner you can move, recolour, '
+          'annotate and hide them; the calendar itself is never changed.',
           style: muted,
         ),
         const SizedBox(height: 8),
-        for (final calendar in calendars.subscriptions)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Pressable(
-                  onTap: () =>
-                      calendars.setColor(calendar.id, _nextColor(calendar.color)),
-                  semanticLabel: 'Change the colour of ${calendar.name}',
-                  builder: (context, hovered, pressed) => SizedBox(
-                    width: 32,
-                    height: 36,
-                    child: Center(
-                      child: Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: calendarColor(context, calendar),
-                          shape: BoxShape.circle,
+        for (var i = 0; i < subscriptions.length; i++)
+          Builder(builder: (context) {
+            final calendar = subscriptions[i];
+            final shown = !calendar.hidden;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Builder(
+                    builder: (anchor) => Pressable(
+                      onTap: () => _pickColor(anchor, calendar),
+                      semanticLabel: 'Change the colour of ${calendar.name}',
+                      focusRadius: 18,
+                      builder: (context, hovered, pressed) => SizedBox(
+                        width: 36,
+                        height: 40,
+                        child: Center(
+                          child: AnimatedContainer(
+                            duration: Dim.fast,
+                            width: hovered ? 18 : 14,
+                            height: hovered ? 18 : 14,
+                            decoration: BoxDecoration(
+                              color: calendarColor(theme, calendar.color)
+                                  .withValues(alpha: shown ? 1 : 0.35),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        calendar.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.text.body17,
-                      ),
-                      Text(
-                        calendar.error ??
-                            [
-                              if (calendar.events != null)
-                                '${calendar.events} events',
-                              if (calendar.fetched != null)
-                                'read ${_ago(calendar.fetched!, now)}',
-                            ].join(' · '),
-                        style: calendar.error == null
-                            ? muted
-                            : muted.copyWith(color: AppTheme.danger),
-                      ),
-                    ],
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_renaming == calendar.id)
+                          TextField(
+                            controller: _rename,
+                            focusNode: _renameFocus,
+                            style: context.text.body17,
+                            cursorColor: theme.text,
+                            maxLines: 1,
+                            decoration: const InputDecoration.collapsed(hintText: 'Name'),
+                            onSubmitted: (_) => _renameFocus.unfocus(),
+                          )
+                        else
+                          Pressable(
+                            onTap: () => _startRename(calendar),
+                            cursor: SystemMouseCursors.text,
+                            semanticLabel: 'Rename ${calendar.name}',
+                            builder: (context, hovered, pressed) => Text(
+                              calendar.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.text.body17.copyWith(
+                                color: shown ? theme.text : theme.ink(40),
+                              ),
+                            ),
+                          ),
+                        Text(
+                          calendar.error ??
+                              [
+                                if (!shown) 'hidden',
+                                if (calendar.events != null)
+                                  '${calendar.events} events',
+                                if (calendar.fetched != null)
+                                  'read ${_ago(calendar.fetched!, now)}',
+                              ].join(' · '),
+                          style: calendar.error == null
+                              ? muted
+                              : muted.copyWith(color: AppTheme.danger),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                AppButton(
-                  icon: AppIcons.trash2,
-                  kind: ButtonKind.ghost,
-                  size: Dim.controlSmall,
-                  iconSize: 16,
-                  tooltip: 'Remove ${calendar.name}',
-                  onTap: () => calendars.remove(calendar.id),
-                ),
-              ],
-            ),
-          ),
-        if (calendars.subscriptions.isNotEmpty) ...[
+                  AppButton(
+                    icon: shown ? AppIcons.eye : AppIcons.eyeOff,
+                    kind: ButtonKind.ghost,
+                    size: isMobile ? Dim.controlLarge : Dim.controlSmall,
+                    iconSize: 18,
+                    foreground: shown ? theme.text : theme.ink(40),
+                    tooltip: shown ? 'Hide ${calendar.name}' : 'Show ${calendar.name}',
+                    onTap: () => calendars.setHidden(calendar.id, shown),
+                  ),
+                  if (subscriptions.length > 1)
+                    AppButton(
+                      icon: AppIcons.arrowUp,
+                      kind: ButtonKind.ghost,
+                      size: isMobile ? Dim.controlLarge : Dim.controlSmall,
+                      iconSize: 16,
+                      tooltip: 'Move ${calendar.name} up',
+                      onTap: i == 0 ? null : () => calendars.move(calendar.id, -1),
+                    ),
+                  AppButton(
+                    icon: AppIcons.trash2,
+                    kind: ButtonKind.ghost,
+                    size: isMobile ? Dim.controlLarge : Dim.controlSmall,
+                    iconSize: 16,
+                    tooltip: 'Remove ${calendar.name}',
+                    onTap: () => calendars.remove(calendar.id),
+                  ),
+                ],
+              ),
+            );
+          }),
+        if (subscriptions.isNotEmpty) ...[
           const SizedBox(height: 6),
           Align(
             alignment: Alignment.centerLeft,
@@ -151,6 +251,53 @@ class _CalendarSettingsState extends State<CalendarSettings> {
               onTap: calendars.refreshing ? null : calendars.refresh,
             ),
           ),
+          const SizedBox(height: 14),
+        ],
+        if (elsewhere.isNotEmpty) ...[
+          Text('On your other devices', style: context.text.small15),
+          const SizedBox(height: 2),
+          Text(
+            'Known from another device. To show one here too, add its '
+            'address below.',
+            style: muted,
+          ),
+          for (final row in elsewhere)
+            Row(
+              children: [
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: Center(
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: calendarColor(theme, row.color ?? 'black')
+                            .withValues(alpha: 0.5),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    row.name.isEmpty ? 'Calendar' : row.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.body17.copyWith(color: theme.ink(60)),
+                  ),
+                ),
+                AppButton(
+                  icon: AppIcons.x,
+                  kind: ButtonKind.ghost,
+                  size: Dim.controlSmall,
+                  iconSize: 16,
+                  tooltip: 'Forget ${row.name}',
+                  onTap: () => calendars.forget(row.id),
+                ),
+              ],
+            ),
           const SizedBox(height: 14),
         ],
         SettingsField(
@@ -173,7 +320,10 @@ class _CalendarSettingsState extends State<CalendarSettings> {
           '"Secret address in iCal format". Anyone who has this address can '
           'read the calendar, so it is kept '
           '${isMobile ? 'encrypted on this device' : 'in the system keyring'} '
-          'and is not synced: add it on each device.',
+          'and is never synced: add it on each device. Neither are the '
+          'calendar\'s events. What does sync with your planner is what you '
+          'arrange here: a calendar\'s name, colour and whether it is shown, '
+          'and your changes to single events.',
           style: muted,
         ),
         if (_error != null) ...[

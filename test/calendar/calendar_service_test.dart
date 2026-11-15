@@ -69,22 +69,24 @@ void main() {
   final friday = Day(2026, 11, 13);
   late FakeCalendarServer server;
   late PlannerDatabase db;
+  late PlannerStore store;
   late MemorySecretStore secrets;
   late MemoryCalendarCache cache;
 
   CalendarService service() {
-    final s = CalendarService(db, secrets, cache);
+    final s = CalendarService(store, secrets, cache);
     addTearDown(s.dispose);
     return s;
   }
 
   List<String> titles(CalendarService s, Day day) =>
-      [for (final e in s.eventsBetween(day, day)[day] ?? const <CalendarEvent>[]) e.occurrence.title];
+      [for (final e in s.eventsBetween(day, day).on(day)) e.title];
 
   setUp(() async {
     server = FakeCalendarServer();
     await server.start();
     db = PlannerDatabase.inMemory();
+    store = PlannerStore(db, today: () => friday);
     secrets = MemorySecretStore();
     cache = MemoryCalendarCache();
   });
@@ -145,13 +147,16 @@ void main() {
     expect(stored, isNot(contains('basic.ics')));
   });
 
-  test('nothing of a calendar is synced or put in a backup', () async {
-    final store = PlannerStore(db, today: () => friday);
+  test('the address and the events never leave the device; what the user arranges does', () async {
     store.addTask(DaySlot(friday), 'Buy oat milk');
     final s = service();
     await s.add(address: server.address);
     s.setColor(s.subscriptions.single.id, 'green');
     s.rename(s.subscriptions.single.id, 'Renamed diary');
+    // The user annotates and hides the one event there is.
+    final event = s.eventsBetween(friday, friday).on(friday).single;
+    store.updateTask(event.id, note: 'Ask about the crown');
+    store.setEventHidden(event.id, true);
 
     final folder = MemoryStorage();
     await SyncEngine(store, folder, folder: 'WeekToDo').sync();
@@ -166,17 +171,24 @@ void main() {
       Export.ics(store),
       Export.text(store),
       jsonEncode([for (final c in db.changesSince(null)) c.toJson()]),
+      db.meta('local.calendars')!,
     ].join('\n');
+    // The calendar's own: its address, its events, their identifiers.
     for (final private in [
       FakeCalendarServer.secret,
       'basic.ics',
       'Dentist appointment',
-      'Private diary',
-      'Renamed diary',
-      'calendars',
+      'event-0@test',
     ]) {
       expect(outgoing, isNot(contains(private)), reason: '"$private" must stay on the device');
     }
+    // The user's own: how the calendar is named and shown (it starts out
+    // under the name its feed gives), and the note.
+    expect(uploaded, contains('Private diary'));
+    expect(uploaded, contains('Renamed diary'));
+    expect(uploaded, contains('green'));
+    expect(uploaded, contains('Ask about the crown'));
+    expect(Export.backup(store), contains('Ask about the crown'));
   });
 
   test('a refresh asks only for changes, and picks them up', () async {
@@ -259,7 +271,7 @@ void main() {
         'END:VEVENT',
       ],
     ].join('\r\n')}\r\nEND:VCALENDAR');
-    expect(server.body.length, greaterThan(200 * 1024));
+    expect(server.body.length, greaterThan(200 * 1024)); // far over the limit
     final s = service();
     expect(await s.add(address: server.address), isNull);
     expect(s.subscriptions.single.events, 4001);

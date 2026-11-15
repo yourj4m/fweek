@@ -250,21 +250,27 @@ void main() {
     Finder field(String label) => find.descendant(
         of: find.ancestor(of: find.text(label), matching: find.byType(Row)).first,
         matching: find.byType(TextField));
-    await tester.tap(find.text('Connect'));
-    await tester.pumpAndSettle();
+    // The settings are longer than the window; bring the button into view
+    // before each press.
+    Future<void> press(String label) async {
+      await tester.ensureVisible(find.text(label));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+    }
+
+    await press('Connect');
     expect(find.text('Enter the server address.'), findsOneWidget);
 
     await tester.enterText(field('Server'), 'cloud.example.com');
     await tester.enterText(field('Login name'), 'jonas');
     await tester.enterText(field('App password'), 'wrong');
-    await tester.tap(find.text('Connect'));
-    await tester.pumpAndSettle();
+    await press('Connect');
     expect(find.text('The connection was lost.'), findsOneWidget);
     expect(service.configured, isFalse);
 
     await tester.enterText(field('App password'), 'right');
-    await tester.tap(find.text('Connect'));
-    await tester.pumpAndSettle();
+    await press('Connect');
     expect(service.configured, isTrue);
     expect(find.text('jonas on cloud.example.com, folder WeekToDo'), findsOneWidget);
     expect(find.text('Synced just now.'), findsOneWidget);
@@ -272,8 +278,7 @@ void main() {
     expect(secrets.values.values.single, 'right');
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/settings_sync_on.png'));
 
-    await tester.tap(find.text('Disconnect'));
-    await tester.pumpAndSettle();
+    await press('Disconnect');
     expect(find.text('Connect'), findsOneWidget);
     expect(service.configured, isFalse);
     service.dispose();
@@ -291,7 +296,7 @@ void main() {
     await tester.tap(find.text('Sunday'));
     await tester.pumpAndSettle();
     expect(store.weekStart, 7);
-    await tester.tap(find.text('Dark'));
+    await tester.tap(find.bySemanticsLabel(RegExp('^Dark theme')));
     await tester.pumpAndSettle();
     expect(store.setting<String>(Settings.theme), 'dark');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);

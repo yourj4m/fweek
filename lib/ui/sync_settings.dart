@@ -202,6 +202,7 @@ class SettingsField extends StatelessWidget {
     this.obscure = false,
     this.enabled = true,
     this.onSubmitted,
+    this.onBlur,
   });
 
   final String label;
@@ -210,6 +211,9 @@ class SettingsField extends StatelessWidget {
   final bool obscure;
   final bool enabled;
   final VoidCallback? onSubmitted;
+
+  /// Called when the field is left.
+  final VoidCallback? onBlur;
 
   @override
   Widget build(BuildContext context) {
@@ -233,19 +237,25 @@ class SettingsField extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: TextField(
-                controller: controller,
-                enabled: enabled,
-                obscureText: obscure,
-                autocorrect: false,
-                enableSuggestions: false,
-                style: context.text.body17,
-                cursorColor: theme.text,
-                decoration: InputDecoration.collapsed(
-                  hintText: hint ?? '',
-                  hintStyle: context.text.body17.copyWith(color: theme.ink(25)),
+              child: Focus(
+                skipTraversal: true,
+                onFocusChange: (focused) {
+                  if (!focused) onBlur?.call();
+                },
+                child: TextField(
+                  controller: controller,
+                  enabled: enabled,
+                  obscureText: obscure,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  style: context.text.body17,
+                  cursorColor: theme.text,
+                  decoration: InputDecoration.collapsed(
+                    hintText: hint ?? '',
+                    hintStyle: context.text.body17.copyWith(color: theme.ink(25)),
+                  ),
+                  onSubmitted: (_) => onSubmitted?.call(),
                 ),
-                onSubmitted: (_) => onSubmitted?.call(),
               ),
             ),
           ],

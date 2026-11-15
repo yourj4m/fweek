@@ -1,18 +1,41 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import 'calendar/calendar_service.dart';
 import 'data/day.dart';
 import 'data/planner_store.dart';
 import 'services/android_bridge.dart';
+import 'services/opener.dart';
+import 'services/places.dart';
 import 'sync/sync_service.dart';
 
+/// A short message at the bottom of the window, with at most one action
+/// (usually Undo).
+class Toast {
+  const Toast(this.message, {this.action, this.onAction});
+
+  final String message;
+  final String? action;
+  final VoidCallback? onAction;
+}
+
 /// What the window is showing: which week or month, and in which view.
+///
+/// Listeners are told when the visible week or month, or the view, changes.
+/// Things that change more often or concern fewer widgets have notifiers of
+/// their own ([highlight], [focus], [toast]), so that, say, a search result
+/// lighting up does not rebuild the week.
 class AppController extends ChangeNotifier {
-  AppController(this.store) : _anchor = store.today;
+  AppController(this.store) : _anchor = store.today {
+    _month = monthView;
+    store.addListener(_onStore);
+  }
 
   final PlannerStore store;
 
   Day _anchor;
+  late bool _month;
 
   /// A day inside the visible week or month.
   Day get anchor => _anchor;
@@ -22,30 +45,42 @@ class AppController extends ChangeNotifier {
   /// First day of the visible week.
   Day get weekStart => _anchor.startOfWeek(store.weekStart);
 
-  /// The task to draw attention to after a jump (from search), cleared once
-  /// the highlight has played.
-  String? highlightedTask;
+  void _onStore() {
+    // The view is a setting; whoever follows this controller follows it too.
+    if (monthView != _month) {
+      _month = monthView;
+      notifyListeners();
+    }
+  }
+
+  /// The task to draw attention to after a jump (from search).
+  final highlight = ValueNotifier<String?>(null);
+
+  String? get highlightedTask => highlight.value;
 
   void setMonthView(bool month) =>
       store.setSetting(Settings.view, month ? 'month' : 'week');
 
-  /// The day a list of days should scroll to, and a count of the times one
-  /// was asked for (so that asking for the same day twice still scrolls).
+  /// Counts the requests to scroll a list of days to [focusDay] (so that
+  /// asking for the same day twice still scrolls).
+  final focus = ValueNotifier<int>(0);
+
+  /// The day a list of days should scroll to.
   Day get focusDay => _focusDay;
   late Day _focusDay = store.today;
-  int get focusRequests => _focusRequests;
-  int _focusRequests = 0;
+  int get focusRequests => focus.value;
 
   /// Shows the week or month holding [day]. With [focus], lists also scroll
   /// to that day.
   void show(Day day, {String? highlight, bool focus = false}) {
+    final moved = day != _anchor;
     _anchor = day;
-    highlightedTask = highlight;
+    this.highlight.value = highlight;
     if (focus || highlight != null) {
       _focusDay = day;
-      _focusRequests++;
+      this.focus.value++;
     }
-    notifyListeners();
+    if (moved) notifyListeners();
   }
 
   void goToday() => show(store.today, focus: true);
@@ -55,20 +90,59 @@ class AppController extends ChangeNotifier {
 
   void next() =>
       show(monthView ? _anchor.startOfMonth.addMonths(1) : _anchor.addDays(7));
+
+  /// The message on show, if any.
+  final toast = ValueNotifier<Toast?>(null);
+  Timer? _toastTimer;
+
+  /// Shows [message] for a few seconds, with an optional action.
+  void say(String message, {String? action, VoidCallback? onAction}) {
+    _toastTimer?.cancel();
+    toast.value = Toast(message, action: action, onAction: onAction);
+    _toastTimer = Timer(const Duration(seconds: 6), dismissToast);
+  }
+
+  void dismissToast() {
+    _toastTimer?.cancel();
+    _toastTimer = null;
+    toast.value = null;
+  }
+
+  /// Asks the list with the given id to start naming itself (a list just
+  /// created from the menu).
+  final renameList = ValueNotifier<String?>(null);
+
+  @override
+  void dispose() {
+    _toastTimer?.cancel();
+    store.removeListener(_onStore);
+    highlight.dispose();
+    focus.dispose();
+    toast.dispose();
+    renameList.dispose();
+    super.dispose();
+  }
 }
 
-/// Gives the widget tree the store and view state, and rebuilds dependants
-/// when either changes.
-class AppScope extends InheritedNotifier<Listenable> {
-  AppScope({
+/// Gives the widget tree the planner's parts.
+///
+/// Each part that changes has an inherited scope of its own, so a widget is
+/// rebuilt only by what it reads: `context.store` by the data, `context.app`
+/// by the visible week, `context.sync` by the sync status and
+/// `context.calendars` by the calendars. The `read…` getters subscribe to
+/// nothing; they are for event handlers.
+class AppScope extends StatelessWidget {
+  const AppScope({
     super.key,
     required this.store,
     required this.controller,
     required this.sync,
     required this.calendars,
+    required this.opener,
+    required this.places,
     this.android,
-    required super.child,
-  }) : super(notifier: Listenable.merge([store, controller, sync, calendars]));
+    required this.child,
+  });
 
   final PlannerStore store;
   final AppController controller;
@@ -77,23 +151,71 @@ class AppScope extends InheritedNotifier<Listenable> {
   /// Subscribed calendars and their events.
   final CalendarService calendars;
 
+  /// Opens links and places in the system's programs.
+  final Opener opener;
+
+  /// The online place search.
+  final PlaceSearch places;
+
   /// Android's own services (reminders, file saving); null elsewhere.
   final AndroidBridge? android;
 
-  static AppScope of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<AppScope>()!;
+  final Widget child;
 
   /// Access without subscribing to changes (for event handlers).
   static AppScope read(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<AppScope>()!;
+      context.getInheritedWidgetOfExactType<_Parts>()!.scope;
+
+  @override
+  Widget build(BuildContext context) => _Parts(
+        scope: this,
+        child: _StoreScope(
+          notifier: store,
+          child: _ViewScope(
+            notifier: controller,
+            child: _SyncScope(
+              notifier: sync,
+              child: _CalendarScope(notifier: calendars, child: child),
+            ),
+          ),
+        ),
+      );
+}
+
+class _Parts extends InheritedWidget {
+  const _Parts({required this.scope, required super.child});
+
+  final AppScope scope;
+
+  @override
+  bool updateShouldNotify(_Parts old) => false;
+}
+
+class _StoreScope extends InheritedNotifier<PlannerStore> {
+  const _StoreScope({required super.notifier, required super.child});
+}
+
+class _ViewScope extends InheritedNotifier<AppController> {
+  const _ViewScope({required super.notifier, required super.child});
+}
+
+class _SyncScope extends InheritedNotifier<SyncService> {
+  const _SyncScope({required super.notifier, required super.child});
+}
+
+class _CalendarScope extends InheritedNotifier<CalendarService> {
+  const _CalendarScope({required super.notifier, required super.child});
 }
 
 extension AppContext on BuildContext {
   /// The store, rebuilding this widget when data changes.
-  PlannerStore get store => AppScope.of(this).store;
+  PlannerStore get store =>
+      dependOnInheritedWidgetOfExactType<_StoreScope>()!.notifier!;
 
-  /// The view state, rebuilding this widget when it changes.
-  AppController get app => AppScope.of(this).controller;
+  /// The view state, rebuilding this widget when the visible week or month
+  /// or the view changes.
+  AppController get app =>
+      dependOnInheritedWidgetOfExactType<_ViewScope>()!.notifier!;
 
   /// The store, for use in callbacks.
   PlannerStore get readStore => AppScope.read(this).store;
@@ -102,17 +224,25 @@ extension AppContext on BuildContext {
   AppController get readApp => AppScope.read(this).controller;
 
   /// The sync service, rebuilding this widget when its status changes.
-  SyncService get sync => AppScope.of(this).sync;
+  SyncService get sync =>
+      dependOnInheritedWidgetOfExactType<_SyncScope>()!.notifier!;
 
   /// The sync service, for use in callbacks.
   SyncService get readSync => AppScope.read(this).sync;
 
   /// Subscribed calendars, rebuilding this widget when their events change.
-  CalendarService get calendars => AppScope.of(this).calendars;
+  CalendarService get calendars =>
+      dependOnInheritedWidgetOfExactType<_CalendarScope>()!.notifier!;
 
   /// Subscribed calendars, for use in callbacks.
   CalendarService get readCalendars => AppScope.read(this).calendars;
 
   /// Android's own services, or null on other systems.
   AndroidBridge? get readAndroid => AppScope.read(this).android;
+
+  /// Opens links and places outside the app.
+  Opener get readOpener => AppScope.read(this).opener;
+
+  /// The online place search.
+  PlaceSearch get readPlaces => AppScope.read(this).places;
 }

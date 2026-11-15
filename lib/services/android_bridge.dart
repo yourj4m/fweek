@@ -61,6 +61,11 @@ class AndroidBridge {
   Future<void> openNotificationSettings() =>
       _channel.invokeMethod<void>('openNotificationSettings');
 
+  /// Asks Android to show [uri] (a web or mail address, a `geo:` place) in
+  /// whichever app handles it. False when none does.
+  Future<bool> openUri(String uri) async =>
+      await _channel.invokeMethod<bool>('openUri', uri) ?? false;
+
   /// The task whose reminder notification started the app, once.
   Future<String?> takeLaunchTask() =>
       _channel.invokeMethod<String>('takeLaunchTask');

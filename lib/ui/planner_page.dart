@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'icons.dart';
@@ -10,12 +13,15 @@ import '../data/models.dart';
 import '../platform.dart';
 import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
+import 'composer.dart';
+import 'context_menu.dart';
 import 'drag.dart';
 import 'event_rows.dart';
 import 'month_view.dart';
 import 'search_dialog.dart';
 import 'settings_dialog.dart';
 import 'strings.dart';
+import 'task_actions.dart';
 import 'task_dialog.dart';
 import 'task_list.dart';
 import 'widgets/controls.dart';
@@ -31,26 +37,42 @@ class PlannerPage extends StatefulWidget {
 class _PlannerPageState extends State<PlannerPage> {
   final _focus = FocusNode(debugLabel: 'planner');
   late final DragController _drag;
+  final _composer = Composer();
 
-  /// Height of the on-screen keyboard at the last build.
-  double _keyboard = 0;
+  // Built once and handed to the tree again and again: a widget that is the
+  // very same object as last time is not rebuilt, so what happens around
+  // the layouts (the keyboard sliding in, a window resize within one
+  // layout) leaves the week itself alone.
+  late final Widget _narrow = _NarrowLayout(onOpen: _open);
+  late final Widget _wide = _WideLayout(onOpen: _open);
 
   @override
   void initState() {
     super.initState();
     _drag = DragController(
-      onDrop: (task, slot, index) =>
-          context.readStore.moveTask(task.id, slot, index: index),
+      onDrop: _drop,
       onEdge: (direction) =>
           direction < 0 ? context.readApp.previous() : context.readApp.next(),
-    );
+      onHold: (task, row) =>
+          showTaskMenu(context, task, anchor: row, onOpen: _open),
+    )..edges = () => !context.readApp.monthView;
   }
 
   @override
   void dispose() {
     _drag.dispose();
+    _composer.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  void _drop(Task task, Slot slot, int index) {
+    if (task.isEvent && slot is ListSlot) {
+      // An event has no place in a list; a task made of it does.
+      makeTaskOf(context, task, slot: slot);
+      return;
+    }
+    context.readStore.moveTask(task.id, slot, index: index);
   }
 
   bool get _typing {
@@ -99,58 +121,175 @@ class _PlannerPageState extends State<PlannerPage> {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    final app = context.app;
     return DragScope(
       controller: _drag,
-      child: Focus(
-        focusNode: _focus,
-        autofocus: true,
-        onKeyEvent: _onKey,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final size = constraints.biggest;
-            final narrow = size.width < Dim.breakpoint;
-            _drag.edgesEnabled = !app.monthView;
-            // An on-screen keyboard covers the bottom of the window. The
-            // planner ends above it, so the row being typed in can scroll
-            // into view.
-            final keyboard = MediaQuery.viewInsetsOf(context).bottom;
-            if (isMobile && _keyboard > 0 && keyboard == 0) {
-              // The keyboard was put away (the back gesture does that):
-              // typing is over, so the field lets go as well. Android
-              // would otherwise leave it focused, with its text unsaved.
-              WidgetsBinding.instance.addPostFrameCallback(
-                  (_) => FocusManager.instance.primaryFocus?.unfocus());
-            }
-            _keyboard = keyboard;
-            return Listener(
-              onPointerMove: (e) => _drag.pointerMove(e.position, size),
-              onPointerUp: (_) => _drag.pointerUp(),
-              onPointerCancel: (_) => _drag.cancel(),
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: _focus.requestFocus,
-                child: ColoredBox(
-                  color: theme.background,
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: keyboard),
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: narrow
-                              ? _NarrowLayout(onOpen: _open)
-                              : _WideLayout(onOpen: _open),
-                        ),
-                        _EdgeEar(direction: -1),
-                        _EdgeEar(direction: 1),
-                        const _DragGhost(),
-                      ],
+      child: ComposerScope(
+        composer: _composer,
+        child: Focus(
+          focusNode: _focus,
+          autofocus: true,
+          onKeyEvent: _onKey,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final size = constraints.biggest;
+              final narrow = size.width < Dim.breakpoint;
+              return Listener(
+                onPointerMove: (e) => _drag.pointerMove(e.position, size),
+                onPointerUp: (_) => _drag.pointerUp(),
+                onPointerCancel: (_) => _drag.cancel(),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: _focus.requestFocus,
+                  child: ColoredBox(
+                    color: theme.background,
+                    child: _KeyboardInset(
+                      child: Stack(
+                        children: [
+                          Positioned.fill(child: narrow ? _narrow : _wide),
+                          const _EdgeEar(direction: -1),
+                          const _EdgeEar(direction: 1),
+                          const _DragGhost(),
+                          const _ToastHost(),
+                        ],
+                      ),
                     ),
                   ),
                 ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Ends the planner above the on-screen keyboard, so the row being typed in
+/// can scroll into view. This is the only widget that follows the keyboard
+/// as it slides: [child] is the same object throughout and is not rebuilt.
+class _KeyboardInset extends StatefulWidget {
+  const _KeyboardInset({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeyboardInset> createState() => _KeyboardInsetState();
+}
+
+class _KeyboardInsetState extends State<_KeyboardInset> {
+  /// Height of the keyboard at the last build.
+  double _keyboard = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    if (isMobile && _keyboard > 0 && keyboard == 0) {
+      // The keyboard was put away (the back gesture does that): typing is
+      // over, so the field lets go as well. Android would otherwise leave
+      // it focused, with its text unsaved.
+      WidgetsBinding.instance.addPostFrameCallback(
+          (_) => FocusManager.instance.primaryFocus?.unfocus());
+    }
+    _keyboard = keyboard;
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: widget.child,
+    );
+  }
+}
+
+/// Shows the app's short messages ("Task deleted · Undo") at the bottom.
+class _ToastHost extends StatelessWidget {
+  const _ToastHost();
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.readApp;
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 16 + bottom,
+      child: ValueListenableBuilder<Toast?>(
+        valueListenable: app.toast,
+        builder: (context, toast, _) => AnimatedSwitcher(
+          duration: Dim.medium,
+          child: toast == null
+              ? const SizedBox(width: double.infinity)
+              : Center(
+                  key: ObjectKey(toast),
+                  child: _ToastCard(toast: toast, onClose: app.dismissToast),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ToastCard extends StatelessWidget {
+  const _ToastCard({required this.toast, required this.onClose});
+
+  final Toast toast;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    // The message reads against the page: light on dark where the page is
+    // light, and the other way round.
+    final ink = theme.isDark ? const Color(0xFF111111) : const Color(0xFFFFFFFF);
+    final surface = theme.isDark ? const Color(0xFFF2F2F2) : const Color(0xFF222226);
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 420, minHeight: 48),
+        padding: const EdgeInsets.only(left: 18, right: 6),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 6)),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                toast.message,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: context.text.small15.copyWith(color: ink),
               ),
-            );
-          },
+            ),
+            if (toast.action != null)
+              Pressable(
+                onTap: () {
+                  onClose();
+                  toast.onAction?.call();
+                },
+                semanticLabel: toast.action,
+                focusRadius: 20,
+                builder: (context, hovered, pressed) => Container(
+                  height: 40,
+                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: hovered || pressed ? ink.withValues(alpha: 0.12) : null,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    toast.action!,
+                    style: context.text.small15
+                        .copyWith(color: ink, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              )
+            else
+              const SizedBox(width: 12),
+          ],
         ),
       ),
     );
@@ -165,77 +304,11 @@ class _Header extends StatelessWidget {
   final bool narrow;
 
   void _menu(BuildContext context) {
-    final app = context.readApp;
-    final sync = context.readSync;
     showPopover<void>(
       context: context,
       anchor: globalRect(context),
       align: 1,
-      builder: (popover) {
-        void run(VoidCallback action) {
-          Navigator.of(popover).pop();
-          action();
-        }
-
-        return PopoverSurface(
-          padding: const EdgeInsets.all(8),
-          child: SizedBox(
-            width: 232,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                MenuRow(
-                  icon: AppIcons.calendarCheck,
-                  label: 'Today',
-                  hint: isMobile ? null : 'T',
-                  onTap: () => run(app.goToday),
-                ),
-                MenuRow(
-                  icon: AppIcons.search,
-                  label: 'Search',
-                  hint: isMobile ? null : 'Ctrl F',
-                  onTap: () => run(() => showSearchDialog(context)),
-                ),
-                const _Divider(),
-                MenuRow(
-                  icon: AppIcons.columns3,
-                  label: 'Week',
-                  checked: !app.monthView,
-                  onTap: () => run(() => app.setMonthView(false)),
-                ),
-                MenuRow(
-                  icon: AppIcons.layoutGrid,
-                  label: 'Month',
-                  checked: app.monthView,
-                  hint: isMobile ? null : 'M',
-                  onTap: () => run(() => app.setMonthView(true)),
-                ),
-                const _Divider(),
-                if (sync.configured)
-                  MenuRow(
-                    icon: sync.state == SyncState.error
-                        ? AppIcons.cloudAlert
-                        : AppIcons.refreshCw,
-                    label: 'Sync now',
-                    hint: switch (sync.state) {
-                      SyncState.syncing => 'syncing',
-                      SyncState.error => 'failed',
-                      _ => null,
-                    },
-                    danger: sync.state == SyncState.error,
-                    onTap: () => run(() => sync.syncNow()),
-                  ),
-                MenuRow(
-                  icon: AppIcons.settings,
-                  label: 'Settings',
-                  hint: isMobile ? null : 'Ctrl ,',
-                  onTap: () => run(() => showSettingsDialog(context)),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      builder: (popover) => _MainMenu(page: context),
     );
   }
 
@@ -284,15 +357,14 @@ class _Header extends StatelessWidget {
                     Flexible(
                       // The title keeps its room; the week number yields.
                       flex: 0,
-                      child: Opacity(
-                        opacity: hovered ? 0.75 : 1,
-                        child: Text(
-                          '$month ${titled.year}',
-                          style: style,
-                          maxLines: 1,
-                          softWrap: false,
-                          overflow: TextOverflow.clip,
-                        ),
+                      child: Text(
+                        '$month ${titled.year}',
+                        style: hovered
+                            ? style.copyWith(color: theme.text.withValues(alpha: 0.75))
+                            : style,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.clip,
                       ),
                     ),
                     if (!app.monthView) ...[
@@ -344,6 +416,235 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// The header's menu. Its second page lists the calendars with a switch
+/// each: one tap shows or hides a whole calendar.
+class _MainMenu extends StatefulWidget {
+  const _MainMenu({required this.page});
+
+  /// The planner page's context, for what outlives the menu.
+  final BuildContext page;
+
+  @override
+  State<_MainMenu> createState() => _MainMenuState();
+}
+
+class _MainMenuState extends State<_MainMenu> {
+  bool _calendars = false;
+
+  void _run(VoidCallback action) {
+    Navigator.of(context).pop();
+    if (widget.page.mounted) action();
+  }
+
+  /// How many events of the visible week or month are hidden one by one.
+  int _hiddenInView(AppController app, CalendarService calendars) {
+    final Day first, last;
+    if (app.monthView) {
+      first = app.anchor.startOfMonth.startOfWeek(app.store.weekStart);
+      last = first.addDays(41);
+    } else {
+      first = app.weekStart;
+      last = first.addDays(6);
+    }
+    return calendars.eventsBetween(first, last).hidden;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final page = widget.page;
+    final theme = context.theme;
+    final app = context.readApp;
+    final sync = context.sync;
+    final calendars = context.calendars;
+    final subscriptions = calendars.subscriptions;
+
+    if (_calendars) {
+      return PopoverSurface(
+        padding: const EdgeInsets.all(8),
+        child: SizedBox(
+          width: 264,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              MenuRow(
+                icon: AppIcons.chevronLeft,
+                label: 'Calendars',
+                onTap: () => setState(() => _calendars = false),
+              ),
+              const _Divider(),
+              for (final calendar in subscriptions)
+                _CalendarToggle(
+                  name: calendar.name,
+                  color: calendarColor(theme, calendar.color),
+                  shown: !calendar.hidden,
+                  onTap: () => calendars.setHidden(calendar.id, !calendar.hidden),
+                ),
+              const _Divider(),
+              MenuRow(
+                icon: AppIcons.settings,
+                label: 'Manage calendars…',
+                onTap: () => _run(() => showSettingsDialog(page)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final hidden = subscriptions.isEmpty ? 0 : _hiddenInView(app, calendars);
+    return PopoverSurface(
+      padding: const EdgeInsets.all(8),
+      child: SizedBox(
+        width: 248,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            MenuRow(
+              icon: AppIcons.calendarCheck,
+              label: 'Today',
+              hint: isMobile ? null : 'T',
+              onTap: () => _run(app.goToday),
+            ),
+            MenuRow(
+              icon: AppIcons.search,
+              label: 'Search',
+              hint: isMobile ? null : 'Ctrl F',
+              onTap: () => _run(() => showSearchDialog(page)),
+            ),
+            const _Divider(),
+            MenuRow(
+              icon: AppIcons.columns3,
+              label: 'Week',
+              checked: !app.monthView,
+              onTap: () => _run(() => app.setMonthView(false)),
+            ),
+            MenuRow(
+              icon: AppIcons.layoutGrid,
+              label: 'Month',
+              checked: app.monthView,
+              hint: isMobile ? null : 'M',
+              onTap: () => _run(() => app.setMonthView(true)),
+            ),
+            const _Divider(),
+            MenuRow(
+              icon: AppIcons.listPlus,
+              label: 'New list',
+              onTap: () => _run(() {
+                // Lists live under the week; show it, then name the list.
+                if (app.monthView) app.setMonthView(false);
+                app.renameList.value = page.readStore.addList();
+              }),
+            ),
+            if (subscriptions.isNotEmpty)
+              MenuRow(
+                icon: AppIcons.calendarDays,
+                label: 'Calendars',
+                hint: subscriptions.any((c) => c.hidden)
+                    ? '${subscriptions.where((c) => !c.hidden).length}/${subscriptions.length}'
+                    : null,
+                trailing: Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Icon(AppIcons.chevronRight, size: 16, color: theme.ink(60)),
+                ),
+                onTap: () => setState(() => _calendars = true),
+              ),
+            if (hidden > 0 || calendars.showHidden)
+              MenuRow(
+                icon: calendars.showHidden ? AppIcons.eyeOff : AppIcons.eye,
+                label: calendars.showHidden
+                    ? 'Stop showing hidden events'
+                    : 'Show hidden events',
+                hint: hidden > 0 ? '$hidden' : null,
+                onTap: () =>
+                    _run(() => calendars.showHidden = !calendars.showHidden),
+              ),
+            const _Divider(),
+            if (sync.configured)
+              MenuRow(
+                icon: sync.state == SyncState.error
+                    ? AppIcons.cloudAlert
+                    : AppIcons.refreshCw,
+                label: 'Sync now',
+                hint: switch (sync.state) {
+                  SyncState.syncing => 'syncing',
+                  SyncState.error => 'failed',
+                  _ => null,
+                },
+                danger: sync.state == SyncState.error,
+                onTap: () => _run(() => sync.syncNow()),
+              ),
+            MenuRow(
+              icon: AppIcons.settings,
+              label: 'Settings',
+              hint: isMobile ? null : 'Ctrl ,',
+              onTap: () => _run(() => showSettingsDialog(page)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One calendar in the menu: its colour, its name, and whether it is shown.
+class _CalendarToggle extends StatelessWidget {
+  const _CalendarToggle({
+    required this.name,
+    required this.color,
+    required this.shown,
+    required this.onTap,
+  });
+
+  final String name;
+  final Color color;
+  final bool shown;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    return Pressable(
+      onTap: onTap,
+      semanticLabel: shown ? 'Hide $name' : 'Show $name',
+      builder: (context, hovered, pressed) => Container(
+        height: isMobile ? Dim.controlLarge : Dim.controlInline,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: hovered ? theme.ink(5) : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: shown ? 1 : 0.3),
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.text.body17
+                    .copyWith(color: shown ? theme.text : theme.ink(40)),
+              ),
+            ),
+            Icon(
+              shown ? AppIcons.eye : AppIcons.eyeOff,
+              size: 18,
+              color: shown ? theme.text : theme.ink(40),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Divider extends StatelessWidget {
   const _Divider();
 
@@ -373,35 +674,125 @@ class _DayHeader extends StatelessWidget {
     final small = narrow && !isMobile;
     final bold = small ? context.text.heading18 : context.text.heading21;
     final regular = small ? context.text.label18 : context.text.label21;
-    return Container(
+    final texts = Row(
+      children: [
+        Expanded(
+          child: Text(
+            Strings.dayMonth(day),
+            style: bold.copyWith(color: color),
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.clip,
+          ),
+        ),
+        Text(
+          today ? 'Today' : Strings.weekdayShort(day),
+          style: regular.copyWith(
+            color: today ? theme.accent : theme.text.withValues(alpha: 0.3),
+          ),
+        ),
+      ],
+    );
+    return SizedBox(
       height: Dim.dayHeader,
-      padding: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: color, width: 2)),
-      ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Text(
-              Strings.dayMonth(day),
-              style: bold.copyWith(color: color),
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.clip,
-            ),
-          ),
-          Text(
-            today ? 'Today' : Strings.weekdayShort(day),
-            style: regular.copyWith(
-              color: today ? theme.accent : theme.text.withValues(alpha: 0.3),
-            ),
-          ),
+          // On a phone the week is swiped sideways; text that could be
+          // selected there would take the swipe for itself.
+          Expanded(child: isMobile ? texts : Selectable(child: texts)),
+          if (today)
+            // The rule under today's heading fills from left to right as
+            // the day goes by.
+            DayProgress(day: day, height: 3)
+          else
+            Container(height: 2, color: color),
         ],
       ),
     );
   }
 }
 
+/// A thin bar that fills from left to right over the course of [day], from
+/// midnight to midnight. Nothing else: no clock, no number.
+class DayProgress extends StatefulWidget {
+  const DayProgress({super.key, required this.day, this.height = 3});
+
+  final Day day;
+  final double height;
+
+  @override
+  State<DayProgress> createState() => _DayProgressState();
+}
+
+class _DayProgressState extends State<DayProgress> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _arm();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  /// Wakes at the start of the next minute.
+  void _arm() {
+    final now = context.readStore.clock;
+    _timer?.cancel();
+    _timer = Timer(
+      Duration(seconds: 60 - now.second, milliseconds: 50),
+      () {
+        if (!mounted) return;
+        final store = context.readStore;
+        if (store.today != widget.day) {
+          // Midnight: another day is today now.
+          store.dayTurned();
+        } else {
+          setState(() {});
+        }
+        _arm();
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final now = context.readStore.clock;
+    final fraction =
+        ((now.hour * 60 + now.minute) * 60 + now.second) / Duration.secondsPerDay;
+    return RepaintBoundary(
+      child: Semantics(
+        label: 'Progress of the day',
+        child: SizedBox(
+          height: widget.height,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(widget.height / 2),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ColoredBox(color: theme.accent.withValues(alpha: 0.22)),
+                FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: fraction.clamp(0.0, 1.0),
+                  child: ColoredBox(color: theme.accent),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One day: its heading (unless drawn elsewhere), the imported events that
+/// cover it, and its tasks.
 class _DayColumn extends StatelessWidget {
   const _DayColumn({
     super.key,
@@ -411,6 +802,9 @@ class _DayColumn extends StatelessWidget {
     required this.narrow,
     required this.onOpen,
     this.events = const [],
+    this.spans = const [],
+    this.spanRow,
+    this.heading = true,
   });
 
   final Day day;
@@ -421,16 +815,29 @@ class _DayColumn extends StatelessWidget {
   final bool narrow;
   final ValueChanged<Task> onOpen;
 
-  /// Events from subscribed calendars on this day.
-  final List<CalendarEvent> events;
+  /// Events from subscribed calendars within this day.
+  final List<Task> events;
+
+  /// Events over several days that cover this day, when they are shown per
+  /// day rather than in a band across the week.
+  final List<Task> spans;
+
+  /// Height of the slot each of [spans] takes, when they must keep to the
+  /// ruled grid.
+  final double? spanRow;
+
+  final bool heading;
 
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          _DayHeader(day: day, narrow: narrow),
-          if (events.isNotEmpty) EventRows(events: events, compact: narrow),
+          if (heading) _DayHeader(day: day, narrow: narrow),
+          if (spans.isNotEmpty)
+            DaySpans(day: day, spans: spans, onOpen: onOpen, rowHeight: spanRow),
+          if (events.isNotEmpty)
+            EventRows(events: events, compact: narrow, onOpen: onOpen),
           TaskListBody(
             slot: DaySlot(day),
             tasks: tasks,
@@ -444,8 +851,7 @@ class _DayColumn extends StatelessWidget {
 
 /// How many rows a body needs right now: its tasks (minus one being dragged
 /// away), a gap if it is the drop target, and the add row.
-int _rowsNeeded(BuildContext context, Slot slot, List<Task> tasks, int minimum) {
-  final drag = DragScope.of(context);
+int _rowsNeeded(DragController drag, Slot slot, List<Task> tasks, int minimum) {
   var count = tasks.length;
   if (drag.active) {
     if (tasks.any((t) => t.id == drag.task!.id)) count--;
@@ -494,33 +900,40 @@ class _WeekGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.store;
+    final drag = DragScope.layoutOf(context);
     final first = context.app.weekStart;
     final days = [for (var i = 0; i < 7; i++) first.addDays(i)];
     final byDay = store.tasksBetween(days.first, days.last);
     List<Task> tasks(Day d) => byDay[d] ?? const [];
 
-    final events = context.calendars.eventsBetween(days.first, days.last);
-    List<CalendarEvent> eventsOn(Day d) => events[d] ?? const [];
+    final range = context.calendars.eventsBetween(days.first, days.last);
+    List<Task> eventsOn(Day d) => range.on(d);
+    int eventLines(Day d) => EventRows.shownCount(eventsOn(d), drag);
+
+    // Five single columns, then the last two days stacked in the sixth.
+    // Events over several days lie in a band across the six columns, right
+    // under the headings; those reaching the seventh day show again under
+    // its heading, each on a ruled row of its own.
+    final upper = days[5], lower = days[6];
+    final band = SpanLanes.pack(range.spans, days.first, upper);
+    final lowerSpans = range.spansOn(lower).toList();
 
     /// Lines a day takes in all: its events, its tasks and the line to type
     /// on, but no fewer than [minimum].
     int lines(Day d, int minimum) {
-      final needed = eventsOn(d).length +
-          _rowsNeeded(context, DaySlot(d), tasks(d), 1);
+      final needed = eventLines(d) + _rowsNeeded(drag, DaySlot(d), tasks(d), 1);
       return needed > minimum ? needed : minimum;
     }
 
-    // Five single columns, then the last two days stacked in the sixth.
     var rows = Dim.weekdayRows;
     for (final d in days.take(5)) {
       final needed = lines(d, Dim.weekdayRows);
       if (needed > rows) rows = needed;
     }
-    final upper = days[5], lower = days[6];
     final upperRows = lines(upper, Dim.weekendRows);
-    var lowerRows = lines(lower, Dim.weekendRows);
-    // Both stacks share a height in rows: weekday = header + rows; weekend =
-    // two headers, a one-row gap, and both bodies.
+    var lowerRows = lines(lower, Dim.weekendRows) + lowerSpans.length;
+    // Both stacks share a height in rows: a weekday is its rows; the
+    // weekend is both bodies, a one-row gap and the second heading.
     final stacked = upperRows + lowerRows + 2;
     if (stacked > rows) {
       rows = stacked;
@@ -528,44 +941,68 @@ class _WeekGrid extends StatelessWidget {
       lowerRows = rows - upperRows - 2;
     }
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      spacing: Dim.columnGap,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final d in days.take(5))
-          Expanded(
-            child: _DayColumn(
-              day: d,
-              tasks: tasks(d),
-              events: eventsOn(d),
-              rows: rows - eventsOn(d).length,
-              narrow: false,
-              onOpen: onOpen,
+        Row(
+          spacing: Dim.columnGap,
+          children: [
+            for (final d in days.take(6))
+              Expanded(child: _DayHeader(day: d, narrow: false)),
+          ],
+        ),
+        if (!band.isEmpty)
+          SpanBand(
+            first: days.first,
+            columns: 6,
+            lanes: band,
+            gap: Dim.columnGap,
+            onOpen: onOpen,
+          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: Dim.columnGap,
+          children: [
+            for (final d in days.take(5))
+              Expanded(
+                child: _DayColumn(
+                  day: d,
+                  heading: false,
+                  tasks: tasks(d),
+                  events: eventsOn(d),
+                  rows: rows - eventLines(d),
+                  narrow: false,
+                  onOpen: onOpen,
+                ),
+              ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _DayColumn(
+                    day: upper,
+                    heading: false,
+                    tasks: tasks(upper),
+                    events: eventsOn(upper),
+                    rows: upperRows - eventLines(upper),
+                    narrow: false,
+                    onOpen: onOpen,
+                  ),
+                  SizedBox(height: Dim.row),
+                  _DayColumn(
+                    day: lower,
+                    tasks: tasks(lower),
+                    events: eventsOn(lower),
+                    spans: lowerSpans,
+                    spanRow: Dim.row,
+                    rows: lowerRows - lowerSpans.length - eventLines(lower),
+                    narrow: false,
+                    onOpen: onOpen,
+                  ),
+                ],
+              ),
             ),
-          ),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _DayColumn(
-                day: upper,
-                tasks: tasks(upper),
-                events: eventsOn(upper),
-                rows: upperRows - eventsOn(upper).length,
-                narrow: false,
-                onOpen: onOpen,
-              ),
-              SizedBox(height: Dim.row),
-              _DayColumn(
-                day: lower,
-                tasks: tasks(lower),
-                events: eventsOn(lower),
-                rows: lowerRows - eventsOn(lower).length,
-                narrow: false,
-                onOpen: onOpen,
-              ),
-            ],
-          ),
+          ],
         ),
       ],
     );
@@ -588,56 +1025,80 @@ class _SomedayGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.store;
+    final drag = DragScope.layoutOf(context);
     final lists = store.lists;
-    // Pad with blank columns to a full row; typing in one creates a list.
-    final cells = lists.length + (columns - lists.length % columns) % columns;
-    final total = cells < columns ? columns : cells;
-    final rowsOfCells = <List<TaskList?>>[];
-    for (var i = 0; i < total; i += columns) {
-      rowsOfCells.add([
-        for (var j = i; j < i + columns; j++) j < lists.length ? lists[j] : null,
-      ]);
+
+    if (narrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 24,
+        children: [
+          for (var i = 0; i < lists.length; i++)
+            _ListColumn(
+              key: ValueKey(lists[i].id),
+              list: lists[i],
+              index: i,
+              count: lists.length,
+              rows: _rowsNeeded(drag, ListSlot(lists[i].id),
+                  store.tasksIn(lists[i].id), Dim.somedayRows),
+              narrow: true,
+              onOpen: onOpen,
+            ),
+          // One column has no blank neighbour to type a new list into; it
+          // gets a button instead.
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AppButton(
+              icon: AppIcons.plus,
+              label: 'New list',
+              size: Dim.controlMedium,
+              iconSize: 18,
+              onTap: () =>
+                  context.readApp.renameList.value = context.readStore.addList(),
+            ),
+          ),
+        ],
+      );
     }
+
+    // There is always at least one blank column after the lists: typing in
+    // it creates a list. A full row therefore starts a new one.
+    final total = ((lists.length + 1 + columns - 1) ~/ columns) * columns;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: narrow ? 24 : Dim.somedayGap,
+      spacing: Dim.somedayGap,
       children: [
-        for (final cellRow in rowsOfCells)
-          if (narrow)
-            for (final list in cellRow.whereType<TaskList>())
-              _ListColumn(
-                list: list,
-                first: list.id == lists.first.id,
-                rows: _rowsNeeded(context, ListSlot(list.id),
-                    store.tasksIn(list.id), Dim.somedayRows),
-                narrow: true,
-                onOpen: onOpen,
-              )
-          else
-            Builder(builder: (context) {
-              var rows = Dim.somedayRows;
-              for (final list in cellRow.whereType<TaskList>()) {
-                final needed = _rowsNeeded(context, ListSlot(list.id),
-                    store.tasksIn(list.id), Dim.somedayRows);
-                if (needed > rows) rows = needed;
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                spacing: Dim.columnGap,
-                children: [
-                  for (final list in cellRow)
-                    Expanded(
-                      child: _ListColumn(
-                        list: list,
-                        first: list != null && list.id == lists.first.id,
-                        rows: rows,
-                        narrow: false,
-                        onOpen: onOpen,
-                      ),
+        for (var start = 0; start < total; start += columns)
+          Builder(builder: (context) {
+            var rows = Dim.somedayRows;
+            for (var j = start; j < start + columns && j < lists.length; j++) {
+              final needed = _rowsNeeded(drag, ListSlot(lists[j].id),
+                  store.tasksIn(lists[j].id), Dim.somedayRows);
+              if (needed > rows) rows = needed;
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: Dim.columnGap,
+              children: [
+                for (var j = start; j < start + columns; j++)
+                  Expanded(
+                    child: _ListColumn(
+                      // A blank column that becomes a list keeps its state
+                      // (and with it the keyboard) through the change.
+                      key: ValueKey(j < lists.length ? lists[j].id : 'blank$j'),
+                      list: j < lists.length ? lists[j] : null,
+                      index: j,
+                      count: lists.length,
+                      // Only the first blank column invites a new list.
+                      inviting: j == lists.length,
+                      rows: rows,
+                      narrow: false,
+                      onOpen: onOpen,
                     ),
-                ],
-              );
-            }),
+                  ),
+              ],
+            );
+          }),
       ],
     );
   }
@@ -646,17 +1107,25 @@ class _SomedayGrid extends StatelessWidget {
 /// One Someday list, or a blank column that becomes a list when used.
 class _ListColumn extends StatefulWidget {
   const _ListColumn({
+    super.key,
     required this.list,
-    required this.first,
+    required this.index,
+    required this.count,
     required this.rows,
     required this.narrow,
     required this.onOpen,
+    this.inviting = false,
   });
 
   final TaskList? list;
 
-  /// The first list is titled "Someday" until renamed.
-  final bool first;
+  /// Place among the lists (the first one is titled "Someday" until
+  /// renamed), and how many lists there are.
+  final int index;
+  final int count;
+
+  /// A blank column that says "New list".
+  final bool inviting;
   final int rows;
   final bool narrow;
   final ValueChanged<Task> onOpen;
@@ -671,6 +1140,7 @@ class _ListColumnState extends State<_ListColumn> {
   bool _editing = false;
   bool _hovered = false;
   String? _pendingListId;
+  late final AppController _app = context.readApp;
 
   @override
   void initState() {
@@ -678,19 +1148,32 @@ class _ListColumnState extends State<_ListColumn> {
     _titleFocus.addListener(() {
       if (!_titleFocus.hasFocus && _editing) _finish();
     });
+    _app.renameList.addListener(_onRenameAsked);
+    // A list made from the menu a moment ago asks for its name right away.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onRenameAsked());
   }
 
   @override
   void dispose() {
+    _app.renameList.removeListener(_onRenameAsked);
     _title.dispose();
     _titleFocus.dispose();
     super.dispose();
   }
 
+  void _onRenameAsked() {
+    final id = widget.list?.id;
+    if (!mounted || id == null || _app.renameList.value != id) return;
+    _app.renameList.value = null;
+    _edit();
+    Scrollable.ensureVisible(context,
+        alignment: 0.3, duration: Dim.medium, curve: Curves.ease);
+  }
+
   String get _shownTitle {
     final title = widget.list?.title ?? '';
     if (title.isNotEmpty) return title;
-    return widget.first ? 'Someday' : '';
+    return widget.list != null && widget.index == 0 ? 'Someday' : '';
   }
 
   void _edit() {
@@ -711,42 +1194,75 @@ class _ListColumnState extends State<_ListColumn> {
     if (mounted) setState(() => _editing = false);
   }
 
-  void _menu(BuildContext anchor) {
+  void _delete() {
+    final list = widget.list!;
+    final store = context.readStore;
+    final name = listTitle(store, list);
+    final tasks = store.deleteList(list.id);
+    context.readApp.say(
+      tasks.isEmpty
+          ? '$name deleted'
+          : '$name and ${tasks.length} ${tasks.length == 1 ? 'task' : 'tasks'} deleted',
+      action: 'Undo',
+      onAction: () => store.restoreList(list.id, tasks),
+    );
+  }
+
+  void _menu(Rect anchor) {
     final list = widget.list!;
     final store = context.readStore;
     final count = store.tasksIn(list.id).length;
     showPopover<void>(
       context: context,
-      anchor: globalRect(anchor),
-      align: 1,
-      builder: (popover) => PopoverSurface(
-        padding: const EdgeInsets.all(8),
-        child: SizedBox(
-          width: 220,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              MenuRow(
-                icon: AppIcons.pencil,
-                label: 'Rename',
-                onTap: () {
-                  Navigator.of(popover).pop();
-                  _edit();
-                },
-              ),
-              MenuRow(
-                icon: AppIcons.trash2,
-                label: count == 0 ? 'Delete list' : 'Delete list and $count tasks',
-                danger: true,
-                onTap: () {
-                  Navigator.of(popover).pop();
-                  store.deleteList(list.id);
-                },
-              ),
-            ],
+      anchor: anchor,
+      align: anchor.width == 0 ? -1 : 1,
+      builder: (popover) {
+        void run(VoidCallback action) {
+          Navigator.of(popover).pop();
+          if (mounted) action();
+        }
+
+        return PopoverSurface(
+          padding: const EdgeInsets.all(8),
+          child: SizedBox(
+            width: 232,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                MenuRow(
+                  icon: AppIcons.pencil,
+                  label: 'Rename',
+                  onTap: () => run(_edit),
+                ),
+                if (widget.index > 0)
+                  MenuRow(
+                    icon: widget.narrow ? AppIcons.arrowUp : AppIcons.arrowLeft,
+                    label: widget.narrow ? 'Move up' : 'Move left',
+                    onTap: () => run(() => store.moveList(list.id, -1)),
+                  ),
+                if (widget.index < widget.count - 1)
+                  MenuRow(
+                    icon: widget.narrow ? AppIcons.arrowDown : AppIcons.arrowRight,
+                    label: widget.narrow ? 'Move down' : 'Move right',
+                    onTap: () => run(() => store.moveList(list.id, 1)),
+                  ),
+                MenuRow(
+                  icon: AppIcons.listPlus,
+                  label: 'New list',
+                  onTap: () => run(
+                      () => context.readApp.renameList.value = store.addList()),
+                ),
+                MenuRow(
+                  icon: AppIcons.trash2,
+                  label: count == 0 ? 'Delete list' : 'Delete list and $count tasks',
+                  danger: true,
+                  onTap: () => run(_delete),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -757,6 +1273,7 @@ class _ListColumnState extends State<_ListColumn> {
     final list = widget.list;
     final style = context.text.heading21.copyWith(height: 52 / 21);
     final title = _shownTitle;
+    final blank = title.isEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -779,24 +1296,55 @@ class _ListColumnState extends State<_ListColumn> {
                           style: style,
                           cursorColor: theme.text,
                           maxLines: 1,
+                          textCapitalization: TextCapitalization.sentences,
                           decoration: InputDecoration.collapsed(
                             hintText: 'List name',
                             hintStyle: style.copyWith(color: theme.ink(20)),
                           ),
                           onSubmitted: (_) => _titleFocus.unfocus(),
                         )
-                      : GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _edit,
-                          child: MouseRegion(
-                            cursor: SystemMouseCursors.text,
-                            child: Text(
-                              title.isEmpty && _hovered ? 'New list' : title,
-                              style: style.copyWith(
-                                color: title.isEmpty ? theme.ink(20) : theme.text,
+                      : Semantics(
+                          button: true,
+                          label: blank && list == null ? 'New list' : 'Rename $title',
+                          excludeSemantics: true,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _edit,
+                            onSecondaryTapUp: list == null
+                                ? null
+                                : (details) =>
+                                    _menu(details.globalPosition & Size.zero),
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.text,
+                              child: Row(
+                                children: [
+                                  // The first blank column says what it is
+                                  // for; before, that showed only under the
+                                  // mouse, and lists went undiscovered.
+                                  if (blank && widget.inviting) ...[
+                                    Icon(AppIcons.plus,
+                                        size: 18,
+                                        color: theme.ink(_hovered ? 60 : 30)),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  Expanded(
+                                    child: Text(
+                                      !blank
+                                          ? title
+                                          : widget.inviting || _hovered
+                                              ? 'New list'
+                                              : '',
+                                      style: style.copyWith(
+                                        color: !blank
+                                            ? theme.text
+                                            : theme.ink(_hovered ? 60 : 30),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ),
@@ -809,7 +1357,7 @@ class _ListColumnState extends State<_ListColumn> {
                       size: Dim.controlSmall,
                       iconSize: 18,
                       tooltip: 'List options',
-                      onTap: () => _menu(anchor),
+                      onTap: () => _menu(globalRect(anchor)),
                     ),
                   ),
               ],
@@ -828,7 +1376,7 @@ class _ListColumnState extends State<_ListColumn> {
               : (text) {
                   final store = context.readStore;
                   final id = _pendingListId ??= store.addList();
-                  store.addTask(ListSlot(id), text);
+                  return store.addTask(ListSlot(id), text);
                 },
         ),
       ],
@@ -848,6 +1396,7 @@ class _NarrowLayout extends StatelessWidget {
     final theme = context.theme;
     // Status bar, display cutout, rounded corners.
     final bars = MediaQuery.paddingOf(context);
+    final composer = ComposerScope.maybeOf(context);
     return Column(
       children: [
         Container(
@@ -857,6 +1406,9 @@ class _NarrowLayout extends StatelessWidget {
           child: const _Header(narrow: true),
         ),
         Expanded(child: _Pager(onOpen: onOpen)),
+        // While a task is typed on a phone: a bar right above the keyboard
+        // to give it a time, a place, a note, a colour.
+        if (isMobile && composer != null) ComposerBar(composer: composer),
       ],
     );
   }
@@ -879,6 +1431,7 @@ class _PagerState extends State<_Pager> {
   static final _origin = Day(2000, 1, 3);
 
   PageController? _pages;
+  AppController? _app;
 
   /// What page numbers currently mean: month or week, and the week's first
   /// day. A change renumbers every page.
@@ -888,7 +1441,18 @@ class _PagerState extends State<_Pager> {
   int _shown = 0;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final app = context.readApp;
+    if (app != _app) {
+      _app?.removeListener(_onApp);
+      _app = app..addListener(_onApp);
+    }
+  }
+
+  @override
   void dispose() {
+    _app?.removeListener(_onApp);
     _pages?.dispose();
     super.dispose();
   }
@@ -897,15 +1461,50 @@ class _PagerState extends State<_Pager> {
       ? Day(page ~/ 12, page % 12 + 1, 1)
       : _origin.startOfWeek(weekStart).addDays(page * 7);
 
+  static int _pageOf(AppController app, bool month, int weekStart) => month
+      ? app.anchor.year * 12 + app.anchor.month - 1
+      : app.weekStart.difference(_origin.startOfWeek(weekStart)) ~/ 7;
+
+  /// The visible week or month changed. The pager follows by turning its
+  /// pages, not by being rebuilt: the pages themselves stay as they are.
+  void _onApp() {
+    if (!mounted) return;
+    final app = _app!;
+    final mode = (app.monthView, app.store.weekStart);
+    if (mode != _mode) {
+      setState(() {});
+      return;
+    }
+    final page = _pageOf(app, mode.$1, mode.$2);
+    if (page == _shown) return;
+    // Turned from outside: the arrows, Today, a search result.
+    _shown = page;
+    final pages = _pages;
+    if (pages == null || !pages.hasClients) return;
+    final still = context
+            .getInheritedWidgetOfExactType<MediaQuery>()
+            ?.data
+            .disableAnimations ??
+        false;
+    final from = pages.page ?? page.toDouble();
+    if (!still && (from - page).abs() < 1.5) {
+      pages.animateToPage(
+        page,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      pages.jumpToPage(page);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final app = context.app;
-    final month = app.monthView;
+    // The first day of the week is a setting; follow it.
     final weekStart = context.store.weekStart;
+    final app = _app!;
+    final month = app.monthView;
     final mode = (month, weekStart);
-    final page = month
-        ? app.anchor.year * 12 + app.anchor.month - 1
-        : app.weekStart.difference(_origin.startOfWeek(weekStart)) ~/ 7;
 
     if (_pages == null || mode != _mode) {
       final old = _pages;
@@ -913,35 +1512,20 @@ class _PagerState extends State<_Pager> {
         // Still attached to the view being replaced in this build.
         WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
       }
-      _pages = PageController(initialPage: page);
+      _shown = _pageOf(app, month, weekStart);
+      _pages = PageController(initialPage: _shown);
       _mode = mode;
-      _shown = page;
-    } else if (page != _shown) {
-      // Turned from outside: the arrows, Today, a search result.
-      _shown = page;
-      final pages = _pages!;
-      final animate = !MediaQuery.disableAnimationsOf(context);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!pages.hasClients) return;
-        final from = pages.page ?? page.toDouble();
-        if (animate && (from - page).abs() < 1.5) {
-          pages.animateToPage(
-            page,
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeOutCubic,
-          );
-        } else {
-          pages.jumpToPage(page);
-        }
-      });
     }
 
     return PageView.builder(
       key: ValueKey(mode),
       controller: _pages,
+      // The neighbouring pages are built ahead, in idle time, rather than
+      // in the first frame of the swipe that brings them in.
+      allowImplicitScrolling: true,
       onPageChanged: (index) {
         if (index == _shown) return;
-        // Turned by hand: the header and everything else follow.
+        // Turned by hand: the header follows.
         _shown = index;
         context.readApp.show(_firstDay(index, month, weekStart));
       },
@@ -978,42 +1562,61 @@ class _WeekPage extends StatefulWidget {
 
 class _WeekPageState extends State<_WeekPage> {
   final Map<Day, GlobalKey> _dayKeys = {};
+  final _scroll = ScrollController();
+  late final AppController _app = context.readApp;
 
-  /// The request to show a particular day that was last acted on.
-  int? _seenFocus;
+  @override
+  void initState() {
+    super.initState();
+    _app.focus.addListener(_onFocusAsked);
+    // A week is longer than a phone screen. Start at the day that was asked
+    // for (today when the app opens) rather than at the week's first day.
+    if (isMobile && _holds(_app.focusDay)) _reveal(_app.focusDay, animate: false);
+  }
 
-  /// Scrolls so that [day] heads the page.
+  @override
+  void dispose() {
+    _app.focus.removeListener(_onFocusAsked);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  bool _holds(Day day) =>
+      day >= widget.first && day.difference(widget.first) < 7;
+
+  void _onFocusAsked() {
+    if (mounted && _holds(_app.focusDay)) _reveal(_app.focusDay, animate: true);
+  }
+
+  /// Scrolls this page so that [day] heads it. Only this page's own list is
+  /// moved: a neighbouring page built ahead must not pull the pager over.
   void _reveal(Day day, {required bool animate}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final target = _dayKeys[day]?.currentContext;
-      if (target == null || !target.mounted) return;
-      Scrollable.ensureVisible(
-        target,
-        duration: animate ? Dim.medium : Duration.zero,
-        curve: Curves.ease,
-      );
+      final target = _dayKeys[day]?.currentContext?.findRenderObject();
+      if (target == null || !target.attached || !_scroll.hasClients) return;
+      final position = _scroll.position;
+      final offset = RenderAbstractViewport.of(target)
+          .getOffsetToReveal(target, 0)
+          .offset
+          .clamp(position.minScrollExtent, position.maxScrollExtent);
+      if (animate) {
+        _scroll.animateTo(offset, duration: Dim.medium, curve: Curves.ease);
+      } else {
+        _scroll.jumpTo(offset);
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final store = context.store;
-    final app = context.app;
+    final drag = DragScope.layoutOf(context);
     final days = [for (var i = 0; i < 7; i++) widget.first.addDays(i)];
     final byDay = store.tasksBetween(days.first, days.last);
-    final events = context.calendars.eventsBetween(days.first, days.last);
-
-    // A week is longer than a phone screen. Start at the day that was asked
-    // for (today when the app opens, or the day of a search result) rather
-    // than at the week's first day.
-    final focus = app.focusDay;
-    if (_seenFocus != app.focusRequests && days.contains(focus)) {
-      final first = _seenFocus == null;
-      _seenFocus = app.focusRequests;
-      if (isMobile || !first) _reveal(focus, animate: !first);
-    }
+    final range = context.calendars.eventsBetween(days.first, days.last);
 
     return _ScrollArea(
+      controller: _scroll,
       padding: _pagePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1024,8 +1627,9 @@ class _WeekPageState extends State<_WeekPage> {
               key: _dayKeys.putIfAbsent(d, GlobalKey.new),
               day: d,
               tasks: byDay[d] ?? const [],
-              events: events[d] ?? const [],
-              rows: _rowsNeeded(context, DaySlot(d), byDay[d] ?? const [],
+              events: range.on(d),
+              spans: range.spans.isEmpty ? const [] : range.spansOn(d).toList(),
+              rows: _rowsNeeded(drag, DaySlot(d), byDay[d] ?? const [],
                   d == store.today ? 2 : 1),
               narrow: true,
               onOpen: widget.onOpen,
@@ -1040,21 +1644,22 @@ class _WeekPageState extends State<_WeekPage> {
 /// A vertically scrolling area that also scrolls by itself while a task is
 /// dragged near its top or bottom edge.
 class _ScrollArea extends StatefulWidget {
-  const _ScrollArea({required this.padding, required this.child});
+  const _ScrollArea({required this.padding, required this.child, this.controller});
 
   final EdgeInsetsGeometry padding;
   final Widget child;
+  final ScrollController? controller;
 
   @override
   State<_ScrollArea> createState() => _ScrollAreaState();
 }
 
 class _ScrollAreaState extends State<_ScrollArea> {
-  final _controller = ScrollController();
+  late final ScrollController _controller = widget.controller ?? ScrollController();
 
   @override
   void dispose() {
-    _controller.dispose();
+    if (widget.controller == null) _controller.dispose();
     super.dispose();
   }
 
@@ -1064,14 +1669,16 @@ class _ScrollAreaState extends State<_ScrollArea> {
         child: SingleChildScrollView(
           controller: _controller,
           padding: widget.padding,
-          child: widget.child,
+          // Drawn once and then only moved while scrolling, instead of
+          // being drawn anew for every frame of it.
+          child: RepaintBoundary(child: widget.child),
         ),
       );
 }
 
 // ------------------------------------------------------------ drag chrome
 
-/// The dragged task, following the pointer.
+/// The dragged task, lifted off the page and following the pointer.
 class _DragGhost extends StatelessWidget {
   const _DragGhost();
 
@@ -1080,26 +1687,57 @@ class _DragGhost extends StatelessWidget {
     final drag = DragScope.of(context);
     final task = drag.task;
     if (task == null) return const SizedBox.shrink();
+    final theme = context.theme;
     final narrow = MediaQuery.sizeOf(context).width < Dim.breakpoint;
-    return Positioned(
-      left: drag.position.dx,
-      top: drag.position.dy,
-      width: drag.width,
-      height: Dim.row,
-      child: IgnorePointer(
-        child: MouseRegion(
-          cursor: SystemMouseCursors.grabbing,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 35),
-              child: TaskPill(
-                task: task,
-                style: narrow ? context.text.taskCompact : context.text.task14,
+    final source = task.event;
+    final lifted = IgnorePointer(
+      child: MouseRegion(
+        cursor: SystemMouseCursors.grabbing,
+        // A card with a shadow: the row is plainly off the page, in hand.
+        child: Container(
+          padding: const EdgeInsets.only(left: 8, right: 27),
+          decoration: BoxDecoration(
+            color: theme.isDark ? theme.dialog : theme.background,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: const [
+              BoxShadow(color: Color(0x33000000), blurRadius: 14, offset: Offset(0, 6)),
+            ],
+          ),
+          child: Row(
+            children: [
+              if (source != null) ...[
+                Container(
+                  width: 3,
+                  height: Dim.pill - 6,
+                  decoration: BoxDecoration(
+                    color: calendarColor(theme, source.calendarColor),
+                    borderRadius: BorderRadius.circular(1.5),
+                  ),
+                ),
+                const SizedBox(width: 3),
+              ],
+              Flexible(
+                child: TaskPill(
+                  task: task,
+                  style: narrow ? context.text.taskCompact : context.text.task14,
+                ),
               ),
-            ),
+            ],
           ),
         ),
+      ),
+    );
+    // Only this follows the pointer; nothing else is redrawn as it moves.
+    return ValueListenableBuilder<Offset>(
+      valueListenable: drag.ghost,
+      child: lifted,
+      // The card reaches a little beyond the row it lifts, on both sides.
+      builder: (context, position, child) => Positioned(
+        left: position.dx - 8,
+        top: position.dy,
+        width: drag.width + 16,
+        height: Dim.row,
+        child: child!,
       ),
     );
   }

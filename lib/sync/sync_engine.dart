@@ -89,9 +89,10 @@ class SyncEngine {
   }
 
   /// Whether this device has changes that are not in the folder yet.
-  bool get hasPending => _db
-      .changesSince(_db.meta(_key('uploaded_hlc')), fromDevice: _db.deviceId)
-      .isNotEmpty;
+  bool get hasPending => _db.hasChangesSince(
+        _db.meta(_key('uploaded_hlc')),
+        fromDevice: _db.deviceId,
+      );
 
   /// Forgets what has been exchanged with the folder. The next sync reads
   /// everything again (harmless) and uploads this device's full history.

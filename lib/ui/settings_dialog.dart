@@ -11,6 +11,7 @@ import '../data/export.dart';
 import '../data/planner_store.dart';
 import '../platform.dart';
 import '../services/android_bridge.dart';
+import '../services/places.dart';
 import '../theme/app_theme.dart';
 import 'calendar_settings.dart';
 import 'sync_settings.dart';
@@ -32,6 +33,30 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   /// Result of the last export or import, shown under the buttons.
   String? _message;
   bool _failed = false;
+
+  late final _placeServer = TextEditingController(
+      text: context.readStore.setting<String>(Settings.placeServer));
+  String? _placeServerError;
+
+  @override
+  void dispose() {
+    _placeServer.dispose();
+    super.dispose();
+  }
+
+  void _savePlaceServer() {
+    final store = context.readStore;
+    final typed = _placeServer.text.trim();
+    try {
+      // Checked now, so that a mistyped address is said here and not found
+      // out by suggestions silently staying away.
+      final address = typed.isEmpty ? '' : placeServer(typed).toString();
+      store.setSetting(Settings.placeServer, address);
+      setState(() => _placeServerError = null);
+    } on FormatException catch (error) {
+      setState(() => _placeServerError = error.message);
+    }
+  }
 
   void _report(String message, {bool failed = false}) {
     if (!mounted) return;
@@ -175,30 +200,47 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                       ],
                     ),
                     section('Theme'),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _ThemeTile(
-                          label: 'System',
-                          background: AppTheme.light.background,
-                          text: AppTheme.light.text,
-                          accent: AppTheme.dark.background,
-                          split: true,
-                          selected: themeId == 'system',
-                          onTap: () => store.setSetting(Settings.theme, 'system'),
+                    // One row per kind: light, dark, and the semi-dark
+                    // themes in deep, muted colours.
+                    for (final group in ThemeGroup.values) ...[
+                      if (group != ThemeGroup.light) const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          group.label,
+                          style: context.text.caption14
+                              .copyWith(color: theme.ink(60)),
                         ),
-                        for (final t in AppTheme.all)
-                          _ThemeTile(
-                            label: t.name,
-                            background: t.background,
-                            text: t.text,
-                            accent: t.accent,
-                            selected: themeId == t.id,
-                            onTap: () => store.setSetting(Settings.theme, t.id),
-                          ),
-                      ],
-                    ),
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (group == ThemeGroup.light)
+                            _ThemeTile(
+                              label: 'System',
+                              background: AppTheme.light.background,
+                              text: AppTheme.light.text,
+                              accent: AppTheme.dark.background,
+                              split: true,
+                              selected: themeId == 'system',
+                              onTap: () =>
+                                  store.setSetting(Settings.theme, 'system'),
+                            ),
+                          for (final t in AppTheme.all)
+                            if (t.group == group)
+                              _ThemeTile(
+                                label: t.name,
+                                background: t.background,
+                                text: t.text,
+                                accent: t.accent,
+                                selected: themeId == t.id,
+                                onTap: () =>
+                                    store.setSetting(Settings.theme, t.id),
+                              ),
+                        ],
+                      ),
+                    ],
                     section('Week starts on'),
                     Segmented<int>(
                       value: store.weekStart,
@@ -228,6 +270,35 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     const SyncSettings(),
                     section('Calendars'),
                     const CalendarSettings(),
+                    section('Places'),
+                    toggle(
+                      'Suggest places while typing',
+                      Settings.placeSearch,
+                      detail: 'What you type into a place field is sent to a '
+                          'search server to find matching places in '
+                          'OpenStreetMap\'s data. Nothing else is sent. '
+                          'Without it, a place is kept exactly as typed.',
+                    ),
+                    if (store.setting<bool>(Settings.placeSearch)) ...[
+                      const SizedBox(height: 4),
+                      SettingsField(
+                        label: 'Search server',
+                        hint: PlaceSearch.defaultServer,
+                        controller: _placeServer,
+                        onSubmitted: _savePlaceServer,
+                        onBlur: _savePlaceServer,
+                      ),
+                      Text(
+                        _placeServerError ??
+                            'A Photon server. Leave empty for the public one, '
+                                'which asks for fair use.',
+                        style: context.text.caption14.copyWith(
+                          color: _placeServerError == null
+                              ? theme.ink(60)
+                              : AppTheme.danger,
+                        ),
+                      ),
+                    ],
                     section('Your data'),
                     Wrap(
                       spacing: 8,
@@ -278,6 +349,15 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                           ),
                         ),
                       ),
+                    section('Advanced'),
+                    toggle(
+                      'Show frame timing',
+                      Settings.frameTiming,
+                      detail: 'Draws two graphs over the app: time spent '
+                          'preparing each frame (below) and drawing it '
+                          '(above). Bars over the line are frames that came '
+                          'late. For checking smoothness on this device.',
+                    ),
                     const SizedBox(height: 20),
                     Text(
                       isMobile
@@ -406,12 +486,14 @@ class _ThemeTile extends StatelessWidget {
       onTap: onTap,
       semanticLabel: '$label theme',
       builder: (context, hovered, pressed) => SizedBox(
-        width: 100,
+        // Six to a row in the settings card, so that each kind of theme
+        // keeps to one row.
+        width: 68,
         child: Column(
           spacing: 6,
           children: [
             Container(
-              height: 56,
+              height: 48,
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 color: background,
@@ -425,25 +507,25 @@ class _ThemeTile extends StatelessWidget {
                 children: [
                   if (split)
                     Positioned.fill(
-                      left: 50,
+                      left: 34,
                       child: ColoredBox(color: accent),
                     ),
                   Positioned(
-                    left: 10,
-                    top: 12,
-                    child: Container(width: 34, height: 5, color: text),
+                    left: 9,
+                    top: 10,
+                    child: Container(width: 22, height: 5, color: text),
                   ),
                   Positioned(
-                    left: 10,
-                    top: 24,
+                    left: 9,
+                    top: 21,
                     child: Container(
-                        width: 54, height: 2, color: text.withValues(alpha: 0.2)),
+                        width: 20, height: 2, color: text.withValues(alpha: 0.2)),
                   ),
                   Positioned(
-                    left: 10,
-                    top: 34,
+                    left: 9,
+                    top: 29,
                     child: Container(
-                      width: 24,
+                      width: 18,
                       height: 8,
                       decoration: BoxDecoration(
                         color: split ? const Color(0xFF5167F4) : accent,

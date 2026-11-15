@@ -66,17 +66,20 @@ class TaskColor {
   Color get onFill =>
       lightText ? const Color(0xFFFFFFFF) : const Color(0xFF000000);
 
+  /// The highlight colours. The keys are what tasks store, so they stay;
+  /// the tones are kept at a similar, moderate strength so that no colour
+  /// shouts over the others, in light and dark themes alike.
   static const palette = <TaskColor>[
-    TaskColor('red', 'Red', Color(0xFFCD2C54), lightText: true),
-    TaskColor('yellow', 'Yellow', Color(0xFFFEEE5D)),
-    TaskColor('blue', 'Blue', Color(0xFF5167F4), lightText: true),
-    TaskColor('green', 'Green', Color(0xFF23FFA1)),
-    TaskColor('orange', 'Orange', Color(0xFFFFB022)),
-    TaskColor('purple', 'Purple', Color(0xFFBE9CF3)),
-    TaskColor('lilac', 'Lilac', Color(0xFFD85DFD)),
-    TaskColor('cyan', 'Cyan', Color(0xFF98F4F9)),
-    TaskColor('lavender', 'Lavender', Color(0xFFDCE1FD)),
-    TaskColor('grey', 'Grey', Color(0xFFC2C2C2)),
+    TaskColor('red', 'Red', Color(0xFFC8405C), lightText: true),
+    TaskColor('yellow', 'Yellow', Color(0xFFF3DC6B)),
+    TaskColor('blue', 'Blue', Color(0xFF5568D8), lightText: true),
+    TaskColor('green', 'Green', Color(0xFF7FD8A6)),
+    TaskColor('orange', 'Orange', Color(0xFFF1A85B)),
+    TaskColor('purple', 'Purple', Color(0xFFB8A3EC)),
+    TaskColor('lilac', 'Lilac', Color(0xFFD98BD3)),
+    TaskColor('cyan', 'Cyan', Color(0xFF9BDCE5)),
+    TaskColor('lavender', 'Lavender', Color(0xFFD9DEFA)),
+    TaskColor('grey', 'Grey', Color(0xFFC6C6CA)),
     TaskColor('black', 'Black', Color(0xFF000000), lightText: true),
   ];
 
@@ -104,6 +107,16 @@ class TaskColor {
   }
 }
 
+/// The rows themes are offered in.
+enum ThemeGroup {
+  light('Light'),
+  dark('Dark'),
+  semiDark('Semi-dark');
+
+  const ThemeGroup(this.label);
+  final String label;
+}
+
 /// One whole-app colour theme.
 class AppTheme {
   const AppTheme({
@@ -115,13 +128,15 @@ class AppTheme {
     this.accent = const Color(0xFF5167F4),
     required this.dialog,
     required this.popover,
-    this.menuButton = const Color(0xFFBE9CF3),
+    this.menuButton = const Color(0xFFB8A3EC),
     this.navButton = const Color(0xFF000000),
     this.navButtonIcon = const Color(0xFFFFFFFF),
+    this.group = ThemeGroup.light,
   });
 
   final String id;
   final String name;
+  final ThemeGroup group;
   final Brightness brightness;
   final Color background;
   final Color text;
@@ -155,7 +170,16 @@ class AppTheme {
         menuButton: menuButton,
         navButton: content,
         navButtonIcon: surface,
+        group: group,
       );
+
+  /// Black or white, whichever reads better on [color].
+  static Color on(Color color) => color.computeLuminance() > 0.35
+      ? const Color(0xFF000000)
+      : const Color(0xFFFFFFFF);
+
+  /// Text and icons on the accent colour.
+  Color get onAccent => on(accent);
 
   static const danger = Color(0xFFDF525F);
   static const dangerPressed = Color(0xFFCD2C54);
@@ -195,6 +219,7 @@ class AppTheme {
     dialog: Color(0xFF202023),
     popover: Color(0xF2202023),
     navButton: Color(0xFF27282B),
+    group: ThemeGroup.dark,
   );
 
   static const paper = AppTheme(
@@ -202,12 +227,12 @@ class AppTheme {
     name: 'Paper',
     brightness: Brightness.light,
     background: Color(0xFFF6F2E9),
-    text: Color(0xFF1B1A17),
+    text: Color(0xFF100F0D),
     accent: Color(0xFFB4532A),
     dialog: Color(0xFFFFFDF8),
     popover: Color(0xF2ECE7DB),
-    menuButton: Color(0xFFE6C9A8),
-    navButton: Color(0xFF1B1A17),
+    menuButton: Color(0xFFDDBB94),
+    navButton: Color(0xFF100F0D),
   );
 
   static const ice = AppTheme(
@@ -215,12 +240,12 @@ class AppTheme {
     name: 'Ice',
     brightness: Brightness.light,
     background: Color(0xFFEAF1FB),
-    text: Color(0xFF0D1B2E),
+    text: Color(0xFF07111E),
     accent: Color(0xFF2563EB),
     dialog: Color(0xFFF8FBFF),
     popover: Color(0xF2DDE7F5),
     menuButton: Color(0xFFA9C7F5),
-    navButton: Color(0xFF0D1B2E),
+    navButton: Color(0xFF07111E),
   );
 
   static const rose = AppTheme(
@@ -228,12 +253,12 @@ class AppTheme {
     name: 'Rose',
     brightness: Brightness.light,
     background: Color(0xFFFBEDEE),
-    text: Color(0xFF2A1215),
+    text: Color(0xFF1B0A0C),
     accent: Color(0xFFC2264D),
     dialog: Color(0xFFFFF8F8),
     popover: Color(0xF2F3DFE1),
     menuButton: Color(0xFFF2B5BF),
-    navButton: Color(0xFF2A1215),
+    navButton: Color(0xFF1B0A0C),
   );
 
   static const sage = AppTheme(
@@ -241,12 +266,12 @@ class AppTheme {
     name: 'Sage',
     brightness: Brightness.light,
     background: Color(0xFFEDF3EA),
-    text: Color(0xFF14201A),
+    text: Color(0xFF0B140F),
     accent: Color(0xFF2F7D4F),
     dialog: Color(0xFFF9FCF7),
     popover: Color(0xF2E0E8DC),
-    menuButton: Color(0xFFB7D8BE),
-    navButton: Color(0xFF14201A),
+    menuButton: Color(0xFF9CC9A6),
+    navButton: Color(0xFF0B140F),
   );
 
   static const slate = AppTheme(
@@ -260,9 +285,88 @@ class AppTheme {
     popover: Color(0xF2242833),
     menuButton: Color(0xFF8B9BFF),
     navButton: Color(0xFF2E3340),
+    group: ThemeGroup.dark,
   );
 
-  static const all = [light, dark, paper, ice, rose, sage, slate];
+  // The semi-dark themes: a deep, muted colour instead of black, an
+  // off-white tinted the same way for text, and a soft accent of the same
+  // family. Rich rather than bright.
+
+  static const wine = AppTheme(
+    id: 'wine',
+    name: 'Wine',
+    brightness: Brightness.dark,
+    background: Color(0xFF2A1519),
+    text: Color(0xFFF5E9EA),
+    accent: Color(0xFFE58A9B),
+    dialog: Color(0xFF3A2025),
+    popover: Color(0xF23A2025),
+    menuButton: Color(0xFFE3A0AC),
+    navButton: Color(0xFF4A2A31),
+    group: ThemeGroup.semiDark,
+  );
+
+  static const plum = AppTheme(
+    id: 'plum',
+    name: 'Plum',
+    brightness: Brightness.dark,
+    background: Color(0xFF221A2E),
+    text: Color(0xFFEFEAF6),
+    accent: Color(0xFFB9A2EA),
+    dialog: Color(0xFF312641),
+    popover: Color(0xF2312641),
+    menuButton: Color(0xFFC4B0EE),
+    navButton: Color(0xFF3F3254),
+    group: ThemeGroup.semiDark,
+  );
+
+  static const forest = AppTheme(
+    id: 'forest',
+    name: 'Forest',
+    brightness: Brightness.dark,
+    background: Color(0xFF14231C),
+    text: Color(0xFFE8F1EA),
+    accent: Color(0xFF86C9A0),
+    dialog: Color(0xFF1F3329),
+    popover: Color(0xF21F3329),
+    menuButton: Color(0xFF9AD3AF),
+    navButton: Color(0xFF2B4538),
+    group: ThemeGroup.semiDark,
+  );
+
+  static const midnight = AppTheme(
+    id: 'midnight',
+    name: 'Midnight',
+    brightness: Brightness.dark,
+    background: Color(0xFF121B2B),
+    text: Color(0xFFE8EDF6),
+    accent: Color(0xFF8FB0F0),
+    dialog: Color(0xFF1D2A40),
+    popover: Color(0xF21D2A40),
+    menuButton: Color(0xFFA9C2F2),
+    navButton: Color(0xFF2A3B58),
+    group: ThemeGroup.semiDark,
+  );
+
+  static const cocoa = AppTheme(
+    id: 'cocoa',
+    name: 'Cocoa',
+    brightness: Brightness.dark,
+    background: Color(0xFF261D17),
+    text: Color(0xFFF3EBE3),
+    accent: Color(0xFFE0A873),
+    dialog: Color(0xFF362A21),
+    popover: Color(0xF2362A21),
+    menuButton: Color(0xFFE3B98F),
+    navButton: Color(0xFF48392C),
+    group: ThemeGroup.semiDark,
+  );
+
+  static const all = [
+    light, paper, ice, rose, sage, //
+    dark, slate,
+    wine, plum, forest, midnight, cocoa,
+  ];
 
   /// Resolves the stored theme setting. `system` follows the desktop's
   /// light/dark preference.

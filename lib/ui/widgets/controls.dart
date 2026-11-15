@@ -4,9 +4,23 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:material_ui/material_ui.dart' show SelectionArea;
 import '../icons.dart';
 
+import '../../platform.dart';
 import '../../theme/app_theme.dart';
+
+/// Makes the text below it selectable with the mouse or by a long press.
+/// Whatever can be clicked ([Pressable] and the like) takes itself out, so
+/// clicking, dragging and long presses on those behave as without this.
+class Selectable extends StatelessWidget {
+  const Selectable({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => SelectionArea(child: child);
+}
 
 /// Tracks hover and press for a tappable area and rebuilds with both.
 class Pressable extends StatefulWidget {
@@ -17,13 +31,36 @@ class Pressable extends StatefulWidget {
     this.cursor = SystemMouseCursors.click,
     this.semanticLabel,
     this.behavior = HitTestBehavior.opaque,
+    this.onSecondaryTap,
+    this.focusable = true,
+    this.autofocus = false,
+    this.focusRadius = 8,
+    this.labelOnly = false,
   });
 
+  /// Whether [semanticLabel] is all a screen reader is told, rather than
+  /// that label followed by what the child says itself. For a button whose
+  /// child is its own label, which would otherwise be read twice.
+  final bool labelOnly;
+
+  /// Called with `hovered` true under the pointer and also while the
+  /// control holds the keyboard focus.
   final Widget Function(BuildContext context, bool hovered, bool pressed) builder;
   final VoidCallback? onTap;
   final MouseCursor cursor;
   final String? semanticLabel;
   final HitTestBehavior behavior;
+
+  /// A click with the secondary mouse button, at a global position.
+  final ValueChanged<Offset>? onSecondaryTap;
+
+  /// Whether the Tab and arrow keys reach this control; Enter and Space
+  /// then press it.
+  final bool focusable;
+  final bool autofocus;
+
+  /// Corner radius of the ring drawn while it holds the keyboard focus.
+  final double focusRadius;
 
   @override
   State<Pressable> createState() => _PressableState();
@@ -32,14 +69,33 @@ class Pressable extends StatefulWidget {
 class _PressableState extends State<Pressable> {
   bool _hovered = false;
   bool _pressed = false;
+  bool _focused = false;
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.space) {
+      widget.onTap?.call();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
 
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
-    return Semantics(
+    // Focus shows only when it was moved there with the keyboard.
+    final keyed = enabled &&
+        _focused &&
+        FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
+    final secondary = widget.onSecondaryTap;
+    Widget child = Semantics(
       button: true,
       enabled: enabled,
       label: widget.semanticLabel,
+      excludeSemantics: widget.labelOnly && widget.semanticLabel != null,
       child: MouseRegion(
         cursor: enabled ? widget.cursor : SystemMouseCursors.basic,
         onEnter: (_) => setState(() => _hovered = true),
@@ -50,9 +106,31 @@ class _PressableState extends State<Pressable> {
           onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
           onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
           onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
-          child: widget.builder(context, enabled && _hovered, enabled && _pressed),
+          onSecondaryTapUp:
+              secondary == null ? null : (details) => secondary(details.globalPosition),
+          child: widget.builder(
+              context, enabled && (_hovered || keyed), enabled && _pressed),
         ),
       ),
+    );
+    if (keyed) {
+      child = DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(widget.focusRadius),
+          border: Border.all(color: context.theme.accent, width: 2),
+        ),
+        child: child,
+      );
+    }
+    // What can be pressed is not text to select.
+    child = SelectionContainer.disabled(child: child);
+    if (!widget.focusable || !enabled) return child;
+    return Focus(
+      autofocus: widget.autofocus,
+      onFocusChange: (focused) => setState(() => _focused = focused),
+      onKeyEvent: _onKey,
+      child: child,
     );
   }
 }
@@ -104,6 +182,8 @@ class AppButton extends StatelessWidget {
     return Pressable(
       onTap: onTap,
       semanticLabel: tooltip ?? label,
+      labelOnly: true,
+      focusRadius: 256,
       builder: (context, hovered, pressed) {
         Color background;
         Color content;
@@ -276,6 +356,24 @@ class PopoverSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
+    final content = Padding(padding: padding ?? EdgeInsets.zero, child: child);
+    if (isMobile) {
+      // Blurring what lies behind is among the costliest things a phone's
+      // graphics chip can be asked for; there the surface is simply opaque.
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.popover.withValues(alpha: 1),
+          borderRadius: BorderRadius.circular(Dim.radiusL),
+          boxShadow: const [
+            BoxShadow(color: Color(0x26000000), blurRadius: 16, offset: Offset(0, 8)),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(Dim.radiusL),
+          child: content,
+        ),
+      );
+    }
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(Dim.radiusL),
@@ -287,10 +385,7 @@ class PopoverSurface extends StatelessWidget {
         borderRadius: BorderRadius.circular(Dim.radiusL),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-          child: ColoredBox(
-            color: theme.popover,
-            child: Padding(padding: padding ?? EdgeInsets.zero, child: child),
-          ),
+          child: ColoredBox(color: theme.popover, child: content),
         ),
       ),
     );
@@ -308,7 +403,11 @@ class MenuRow extends StatelessWidget {
     this.danger = false,
     this.checked,
     this.hint,
+    this.autofocus = false,
   });
+
+  /// Takes the keyboard focus when the menu opens.
+  final bool autofocus;
 
   final IconData? icon;
   final String label;
@@ -333,8 +432,9 @@ class MenuRow extends StatelessWidget {
             : theme.text;
     return Pressable(
       onTap: onTap,
+      autofocus: autofocus,
       builder: (context, hovered, pressed) => Container(
-        height: Dim.controlInline,
+        height: isMobile ? Dim.controlLarge : Dim.controlInline,
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: hovered ? theme.ink(5) : const Color(0x00000000),
@@ -445,7 +545,11 @@ class _PopoverRoute<T> extends PopupRoute<T> {
       delegate: _PopoverLayout(anchor, side, gap, align, safe),
       child: FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Curves.ease),
-        child: builder(context),
+        // The arrow keys move through a menu's rows; text in it (an event's
+        // details) can be selected.
+        child: FocusTraversalGroup(
+          child: Selectable(child: Builder(builder: builder)),
+        ),
       ),
     );
   }

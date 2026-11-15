@@ -9,9 +9,13 @@ import 'app_state.dart';
 import 'calendar/calendar_service.dart';
 import 'data/database.dart';
 import 'data/planner_store.dart';
+import 'perf_log.dart';
 import 'platform.dart';
 import 'services/android_bridge.dart';
+import 'data/models.dart';
 import 'services/notifications.dart';
+import 'services/opener.dart';
+import 'services/places.dart';
 import 'services/reminders.dart';
 import 'sync/secrets.dart';
 import 'sync/sync_service.dart';
@@ -31,10 +35,12 @@ Future<void> main() async {
   final store = PlannerStore(
     PlannerDatabase.open(p.join(directory.path, 'planner.db')),
   );
+  seedForPerf(store, directory);
+  startPerfLog();
   runApp(WeekToDoApp(
     store: store,
     calendars: CalendarService(
-      store.db,
+      store,
       const KeyringSecretStore(),
       FileCalendarCache(directory),
     ),
@@ -48,7 +54,16 @@ class WeekToDoApp extends StatefulWidget {
     this.notifications = true,
     this.sync,
     this.calendars,
+    this.opener,
+    this.places,
   });
+
+  /// Opens links and places; by default through the system (tests record
+  /// what would be opened instead).
+  final Opener? opener;
+
+  /// The place search; by default the online one.
+  final PlaceSearch? places;
 
   final PlannerStore store;
 
@@ -71,11 +86,18 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
       widget.sync ?? SyncService(widget.store, const KeyringSecretStore());
   late final ReminderService _reminders;
   late final CalendarService _calendars = widget.calendars ??
-      CalendarService(widget.store.db, MemorySecretStore(), MemoryCalendarCache());
+      CalendarService(widget.store, MemorySecretStore(), MemoryCalendarCache());
   final _navigator = GlobalKey<NavigatorState>();
   AndroidBridge? _android;
   DesktopNotifications? _desktop;
   AppLifecycleListener? _lifecycle;
+  late final Opener _opener =
+      widget.opener ?? Opener(android: _android?.openUri);
+  late final PlaceSearch _places = widget.places ?? PlaceSearch();
+
+  /// Resolves once the calendars' saved events are in memory.
+  late final Future<void> _calendarsLoaded;
+  late bool _frameTiming = widget.store.setting<bool>(Settings.frameTiming);
 
   static const _askedKey = 'local.notifications_asked';
 
@@ -95,11 +117,18 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
       widget.store,
       notify: _notifyNow,
       schedule: _android == null ? null : _handOver,
+      events: () => _calendars.eventsWithReminders,
     );
+    widget.store.addListener(_onStore);
     _sync.load();
     // Saved events first, so the week is complete at once; then the news.
-    _calendars.load().then((_) {
-      if (live) _calendars.refresh();
+    _calendarsLoaded = _calendars.load().then((_) {
+      if (!mounted) return;
+      if (live) {
+        _calendars.refresh();
+        // Reminders set on events can be worked out now.
+        _reminders.check();
+      }
     });
     // Tests run without the reminder timer; they still get the rollover.
     if (live) {
@@ -121,8 +150,15 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
     }
   }
 
+  void _onStore() {
+    final frameTiming = widget.store.setting<bool>(Settings.frameTiming);
+    if (frameTiming != _frameTiming) setState(() => _frameTiming = frameTiming);
+  }
+
   @override
   void dispose() {
+    widget.store.removeListener(_onStore);
+    if (widget.places == null) _places.dispose();
     _lifecycle?.dispose();
     _reminders.dispose();
     if (widget.sync == null) _sync.dispose();
@@ -168,8 +204,12 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
     }
   }
 
-  /// A reminder notification was tapped: show that task.
-  void _openTask(String id) {
+  /// A reminder notification was tapped: show that task (or event).
+  Future<void> _openTask(String id) async {
+    // An event is only known once its calendar has been read from disk,
+    // which may still be under way when a notification starts the app.
+    if (Task.isEventId(id)) await _calendarsLoaded;
+    if (!mounted) return;
     final task = widget.store.task(id);
     if (task == null) return;
     final date = task.date;
@@ -186,12 +226,15 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
       title: 'WeekToDo',
       navigatorKey: _navigator,
       debugShowCheckedModeBanner: false,
+      showPerformanceOverlay: _frameTiming,
       theme: ThemeData(useMaterial3: true, fontFamily: AppText.family),
       builder: (context, child) => AppScope(
         store: widget.store,
         controller: _controller,
         sync: _sync,
         calendars: _calendars,
+        opener: _opener,
+        places: _places,
         android: _android,
         child: _Themed(child: child!),
       ),
@@ -213,14 +256,12 @@ class _Themed extends StatelessWidget {
       store.setting<String>(Settings.theme),
       MediaQuery.platformBrightnessOf(context),
     );
+    final ink = theme.isDark ? Brightness.light : Brightness.dark;
     // Text follows the system's font size, within what ruled rows of a fixed
     // height can hold.
-    final media = MediaQuery.of(context);
-    final ink = theme.isDark ? Brightness.light : Brightness.dark;
-    return MediaQuery(
-      data: media.copyWith(
-        textScaler: media.textScaler.clamp(minScaleFactor: 0.85, maxScaleFactor: 1.3),
-      ),
+    return MediaQuery.withClampedTextScaling(
+      minScaleFactor: 0.85,
+      maxScaleFactor: 1.3,
       // The planner draws behind the system bars; their icons take its tone.
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle(

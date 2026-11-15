@@ -7,6 +7,7 @@ import '../app_state.dart';
 import '../data/day.dart';
 import '../data/planner_store.dart';
 import '../data/recurrence.dart';
+import '../platform.dart';
 import '../theme/app_theme.dart';
 import 'strings.dart';
 import 'task_list.dart' show formatTime;
@@ -176,8 +177,137 @@ int? parseTime(String input) {
   return hour * 60 + minute;
 }
 
-/// A field to type a time plus a scrolling list in half-hour steps.
-class TimePicker extends StatefulWidget {
+/// Hours and minutes on two wheels, for choosing a time with a finger.
+class TimeWheels extends StatefulWidget {
+  const TimeWheels({super.key, required this.minutes, required this.onChanged});
+
+  /// Minutes after midnight.
+  final int minutes;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<TimeWheels> createState() => _TimeWheelsState();
+}
+
+class _TimeWheelsState extends State<TimeWheels> {
+  static const _extent = 40.0;
+
+  late int _hour = widget.minutes ~/ 60;
+  late int _minute = widget.minutes % 60;
+  late final _hours = FixedExtentScrollController(initialItem: _hour);
+  late final _minutes = FixedExtentScrollController(initialItem: _minute);
+  late final _halves = FixedExtentScrollController(initialItem: _hour < 12 ? 0 : 1);
+
+  @override
+  void dispose() {
+    _hours.dispose();
+    _minutes.dispose();
+    _halves.dispose();
+    super.dispose();
+  }
+
+  void _set({int? hour, int? minute}) {
+    _hour = hour ?? _hour;
+    _minute = minute ?? _minute;
+    widget.onChanged(_hour * 60 + _minute);
+  }
+
+  Widget _wheel({
+    required FixedExtentScrollController controller,
+    required int count,
+    required String Function(int index) label,
+    required ValueChanged<int> onSelected,
+    required String name,
+    bool loop = true,
+  }) {
+    final style = context.text.title28.copyWith(fontWeight: FontWeight.w400, fontSize: 24);
+    Widget item(int index) => Center(child: Text(label(index % count), style: style));
+    return SizedBox(
+      width: 64,
+      child: Semantics(
+        label: name,
+        child: ListWheelScrollView.useDelegate(
+          controller: controller,
+          itemExtent: _extent,
+          physics: const FixedExtentScrollPhysics(),
+          diameterRatio: 1.6,
+          overAndUnderCenterOpacity: 0.35,
+          onSelectedItemChanged: (index) => onSelected(index % count),
+          childDelegate: loop
+              ? ListWheelChildLoopingListDelegate(
+                  children: [for (var i = 0; i < count; i++) item(i)])
+              : ListWheelChildListDelegate(
+                  children: [for (var i = 0; i < count; i++) item(i)]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final use24h = context.store.setting<bool>(Settings.use24h);
+    return SizedBox(
+      height: _extent * 4,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // The band the chosen values rest in.
+          Container(
+            height: _extent,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: theme.ink(5),
+              borderRadius: BorderRadius.circular(Dim.radiusM),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (use24h)
+                _wheel(
+                  controller: _hours,
+                  count: 24,
+                  name: 'Hours',
+                  label: (i) => '$i',
+                  onSelected: (i) => _set(hour: i),
+                )
+              else
+                _wheel(
+                  controller: _hours,
+                  count: 12,
+                  name: 'Hours',
+                  label: (i) => '${i == 0 ? 12 : i}',
+                  onSelected: (i) => _set(hour: i + (_hour < 12 ? 0 : 12)),
+                ),
+              Text(':', style: context.text.title28.copyWith(fontSize: 24)),
+              _wheel(
+                controller: _minutes,
+                count: 60,
+                name: 'Minutes',
+                label: (i) => i.toString().padLeft(2, '0'),
+                onSelected: (i) => _set(minute: i),
+              ),
+              if (!use24h)
+                _wheel(
+                  controller: _halves,
+                  count: 2,
+                  loop: false,
+                  name: 'AM or PM',
+                  label: (i) => i == 0 ? 'AM' : 'PM',
+                  onSelected: (i) => _set(hour: _hour % 12 + i * 12),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Chooses a time: on a phone with wheels for hours and minutes, on a
+/// desktop by typing it or picking from a list.
+class TimePicker extends StatelessWidget {
   const TimePicker({super.key, required this.selected, required this.onPick});
 
   final int? selected;
@@ -186,10 +316,79 @@ class TimePicker extends StatefulWidget {
   final ValueChanged<int?> onPick;
 
   @override
-  State<TimePicker> createState() => _TimePickerState();
+  Widget build(BuildContext context) => isMobile
+      ? _WheelTimePicker(selected: selected, onPick: onPick)
+      : _ListTimePicker(selected: selected, onPick: onPick);
 }
 
-class _TimePickerState extends State<TimePicker> {
+class _WheelTimePicker extends StatefulWidget {
+  const _WheelTimePicker({required this.selected, required this.onPick});
+
+  final int? selected;
+  final ValueChanged<int?> onPick;
+
+  @override
+  State<_WheelTimePicker> createState() => _WheelTimePickerState();
+}
+
+class _WheelTimePickerState extends State<_WheelTimePicker> {
+  // Without a time yet, start from the next full hour.
+  late int _minutes =
+      widget.selected ?? ((context.readStore.clock.hour + 1) % 24) * 60;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 264,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TimeWheels(
+                minutes: _minutes,
+                onChanged: (minutes) => _minutes = minutes,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                spacing: 8,
+                children: [
+                  Expanded(
+                    child: AppButton(
+                      label: 'No time',
+                      expand: true,
+                      onTap: () => widget.onPick(null),
+                    ),
+                  ),
+                  Expanded(
+                    child: AppButton(
+                      label: 'Set',
+                      kind: ButtonKind.primary,
+                      expand: true,
+                      onTap: () => widget.onPick(_minutes),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+/// A field to type a time plus a scrolling list in half-hour steps.
+class _ListTimePicker extends StatefulWidget {
+  const _ListTimePicker({required this.selected, required this.onPick});
+
+  final int? selected;
+
+  /// Called with minutes after midnight, or null for "no time".
+  final ValueChanged<int?> onPick;
+
+  @override
+  State<_ListTimePicker> createState() => _ListTimePickerState();
+}
+
+class _ListTimePickerState extends State<_ListTimePicker> {
   final _field = TextEditingController();
   late final ScrollController _scroll;
 
@@ -249,19 +448,28 @@ class _TimePickerState extends State<TimePicker> {
             child: ListView(
               controller: _scroll,
               padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-              itemExtent: 36,
+              itemExtent: Dim.controlInline,
               children: [
                 MenuRow(
                   label: 'No time',
                   checked: widget.selected == null,
                   onTap: () => widget.onPick(null),
                 ),
-                for (var t = 0; t < 24 * 60; t += 30)
+                for (var t = 0; t < 24 * 60; t += 30) ...[
                   MenuRow(
                     label: formatTime(t, use24h: use24h),
                     checked: widget.selected == t,
                     onTap: () => widget.onPick(t),
                   ),
+                  // A time typed to the minute keeps its place in the list.
+                  if (widget.selected case final exact?
+                      when exact > t && exact < t + 30)
+                    MenuRow(
+                      label: formatTime(exact, use24h: use24h),
+                      checked: true,
+                      onTap: () => widget.onPick(exact),
+                    ),
+                ],
               ],
             ),
           ),

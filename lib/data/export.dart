@@ -9,7 +9,7 @@ import 'recurrence.dart';
 /// Export and backup formats.
 abstract final class Export {
   static const backupFormat = 'weektodo-backup';
-  static const backupVersion = 1;
+  static const backupVersion = 2;
 
   static List<Task> _ordered(PlannerStore store) => store.allTasks.toList()
     ..sort((a, b) {
@@ -65,7 +65,44 @@ abstract final class Export {
             if (t.seriesId != null) 'series_id': t.seriesId,
             if (t.seriesDate != null) 'series_date': t.seriesDate!.iso,
             if (t.reminder != null) 'reminder': _localStamp(t.reminder!),
+            if (t.location.isNotEmpty) 'location': t.location,
+            if (t.geo != null) 'geo': t.geo,
             'created_at': t.createdAt,
+          },
+      ],
+      // The calendars as arranged, and what was changed about their events.
+      // Never a calendar's address, nor an event that was left as it is:
+      // those are the calendar's, not the planner's.
+      'calendars': [
+        for (final c in store.calendarRows)
+          {
+            'id': c.id,
+            'name': c.name,
+            if (c.color != null) 'color': c.color,
+            if (c.hidden) 'hidden': true,
+            'position': c.position,
+            if (c.ids != null) 'ids': c.ids,
+          },
+      ],
+      'events': [
+        for (final e in store.eventOverrides)
+          {
+            'id': e.id,
+            if (e.calendar != null) 'cal': e.calendar,
+            if (e.origin != null) 'origin': e.origin!.iso,
+            if (e.hidden) 'hidden': true,
+            if (e.color != null) 'color': e.color,
+            if (e.title != null) 'title': e.title,
+            if (e.note != null) 'note': e.note,
+            if (e.location != null) 'location': e.location,
+            if (e.geo != null) 'geo': e.geo,
+            if (e.date != null) 'date': e.date!.iso,
+            if (e.time != null) 'time': e.time,
+            if (e.done) 'done': true,
+            if (e.doneAt != null) 'done_at': e.doneAt,
+            if (e.reminder != null) 'reminder': _localStamp(e.reminder!),
+            if (e.subtasks.isNotEmpty)
+              'subtasks': [for (final s in e.subtasks) s.toJson()],
           },
       ],
       'settings': settings,
@@ -126,8 +163,46 @@ abstract final class Export {
           'series_id': t['series_id'],
           'series_date': t['series_date'],
           'reminder': t['reminder'],
+          'location': t['location'],
+          'geo': t['geo'],
           'created_at': t['created_at'] ?? 0,
           'deleted': false,
+        }));
+      }
+    }
+    final calendars = json['calendars'];
+    if (calendars is List) {
+      for (final c in calendars) {
+        if (c is! Map || c['id'] is! String) continue;
+        changes.addAll(db.stamp('calendars', c['id'] as String, {
+          'name': c['name'],
+          'color': c['color'],
+          'hidden': c['hidden'] == true,
+          'position': c['position'] ?? '',
+          'ids': c['ids'],
+          'deleted': false,
+        }));
+      }
+    }
+    final events = json['events'];
+    if (events is List) {
+      for (final e in events) {
+        if (e is! Map || e['id'] is! String) continue;
+        changes.addAll(db.stamp('events', e['id'] as String, {
+          'cal': e['cal'],
+          'origin': e['origin'],
+          'hidden': e['hidden'] == true,
+          'color': e['color'],
+          'title': e['title'],
+          'note': e['note'],
+          'location': e['location'],
+          'geo': e['geo'],
+          'date': e['date'],
+          'time': e['time'],
+          'done': e['done'] == true,
+          'done_at': e['done_at'],
+          'reminder': e['reminder'],
+          'subtasks': e['subtasks'],
         }));
       }
     }
@@ -167,7 +242,7 @@ abstract final class Export {
     }
 
     final lines = [
-      'date,list,time,title,done,color,repeats,note,subtasks',
+      'date,list,time,title,done,color,repeats,note,subtasks,location',
       for (final t in _ordered(store))
         [
           t.date?.iso ?? '',
@@ -179,6 +254,7 @@ abstract final class Export {
           t.recurrence == null ? '' : t.recurrence!.frequency.name,
           t.note,
           t.subtasks.map((s) => '${s.done ? '[x]' : '[ ]'} ${s.text}').join('; '),
+          t.location,
         ].map(cell).join(','),
     ];
     return '${lines.join('\r\n')}\r\n';
@@ -202,6 +278,7 @@ abstract final class Export {
             ? '      ${s.text}'
             : '    ${s.done ? '[x]' : '[ ]'} ${s.text}');
       }
+      if (t.hasLocation) out.writeln('    @ ${t.location.trim().replaceAll('\n', ', ')}');
       if (t.note.trim().isNotEmpty) {
         for (final line in t.note.trim().split('\n')) {
           out.writeln('    > $line');
@@ -254,6 +331,9 @@ abstract final class Export {
         'DTSTAMP:$stamp',
         'SUMMARY:${escape(t.title)}',
         if (t.note.trim().isNotEmpty) 'DESCRIPTION:${escape(t.note.trim())}',
+        if (t.hasLocation) 'LOCATION:${escape(t.location.trim())}',
+        if (t.geo case final geo? when geo.contains(','))
+          'GEO:${geo.replaceFirst(',', ';')}',
         if (t.date != null && t.time == null) 'DUE;VALUE=DATE:${date(t.date!)}',
         if (t.date != null && t.time != null)
           'DUE:${date(t.date!)}T${_clock(t.time!).replaceAll(':', '')}00',

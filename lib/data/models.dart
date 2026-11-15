@@ -64,10 +64,157 @@ class Subtask {
   }
 }
 
+/// What a subscribed calendar says about one of its events, kept beside the
+/// planner's own view of it (a [Task] whose [Task.event] is this).
+class EventSource {
+  const EventSource({
+    required this.key,
+    required this.calendar,
+    required this.calendarName,
+    required this.calendarColor,
+    required this.title,
+    required this.location,
+    required this.description,
+    required this.allDay,
+    required this.start,
+    required this.end,
+    required this.originalDay,
+    required this.lastDay,
+    required this.repeats,
+    this.edited = false,
+    this.hidden = false,
+  });
+
+  /// Names the event in synced data; see `calendar/identity.dart`.
+  final String key;
+
+  /// The calendar's synced id and how the user shows it.
+  final String calendar;
+  final String calendarName;
+  final String calendarColor;
+
+  /// Title, place and description as the calendar has them.
+  final String title;
+  final String location;
+  final String description;
+
+  final bool allDay;
+
+  /// Start and end as the calendar has them, in this device's clock; null
+  /// for an all-day event.
+  final DateTime? start;
+  final DateTime? end;
+
+  /// The first day the calendar puts the event on.
+  final Day originalDay;
+
+  /// The last day shown, after any move made here. With the task's date
+  /// this is the span of an event over several days.
+  final Day lastDay;
+
+  /// One occurrence of a repeating event.
+  final bool repeats;
+
+  /// Whether anything about the event was changed here.
+  final bool edited;
+
+  /// Hidden by the user; such an event is only handed out on request.
+  final bool hidden;
+}
+
+/// What the user changed about one event of a subscribed calendar. A null
+/// field follows the calendar.
+class EventOverride {
+  const EventOverride({
+    required this.id,
+    this.calendar,
+    this.origin,
+    this.hidden = false,
+    this.color,
+    this.title,
+    this.note,
+    this.location,
+    this.geo,
+    this.date,
+    this.time,
+    this.done = false,
+    this.doneAt,
+    this.reminder,
+    this.subtasks = const [],
+  });
+
+  final String id;
+
+  /// The calendar the event is in (its synced id), and the day the calendar
+  /// had it on when it was first changed: where to look for it.
+  final String? calendar;
+  final Day? origin;
+
+  final bool hidden;
+  final String? color;
+  final String? title;
+  final String? note;
+  final String? location;
+  final String? geo;
+
+  /// The day the event was moved to.
+  final Day? date;
+
+  /// Start in minutes after midnight; [noTime] shows a timed event without
+  /// its time.
+  final int? time;
+  static const noTime = -1;
+
+  final bool done;
+  final int? doneAt;
+  final DateTime? reminder;
+  final List<Subtask> subtasks;
+
+  /// Whether this changes how the event reads (hiding aside).
+  bool get edits =>
+      color != null ||
+      title != null ||
+      (note != null && note!.isNotEmpty) ||
+      location != null ||
+      date != null ||
+      time != null ||
+      done ||
+      reminder != null ||
+      subtasks.isNotEmpty;
+}
+
+/// A subscribed calendar as the user arranged it, shared between devices.
+class CalendarRow {
+  const CalendarRow({
+    required this.id,
+    this.name = '',
+    this.color,
+    this.hidden = false,
+    this.position = '',
+    this.ids,
+    this.deleted = false,
+  });
+
+  final String id;
+  final String name;
+  final String? color;
+  final bool hidden;
+  final String position;
+
+  /// `content` when the calendar's event identifiers are not stable and its
+  /// events are named by what they say instead.
+  final String? ids;
+  final bool deleted;
+}
+
 /// A task on a day or in a Someday list.
 ///
 /// Exactly one of [date] and [listId] places the task: a dated task belongs
 /// to a day, an undated one to a list.
+///
+/// An event of a subscribed calendar is handed around as a task too, with
+/// [event] set: it reads and edits like one, but what is stored is only
+/// what the user changed about it.
 class Task {
   const Task({
     required this.id,
@@ -89,9 +236,32 @@ class Task {
     this.createdAt = 0,
     this.deleted = false,
     this.occurrenceOf,
+    this.location = '',
+    this.geo,
+    this.event,
   });
 
+  /// Ids of imported events start with this.
+  static const eventPrefix = 'ev:';
+
+  static bool isEventId(String id) => id.startsWith(eventPrefix);
+
   final String id;
+
+  /// Where the task takes place, as free text.
+  final String location;
+
+  /// Its position as `lat,lon`, when the place was picked from a search.
+  final String? geo;
+
+  /// Set when this is an event of a subscribed calendar.
+  final EventSource? event;
+
+  bool get isEvent => event != null;
+  bool get hasLocation => location.trim().isNotEmpty;
+
+  /// An event shown over several days.
+  bool get spansDays => event != null && date != null && event!.lastDay > date!;
 
   /// The Someday list holding this task, or null for a dated task.
   final String? listId;
@@ -169,6 +339,9 @@ class Task {
     int? createdAt,
     bool? deleted,
     String? Function()? occurrenceOf,
+    String? location,
+    String? Function()? geo,
+    EventSource? Function()? event,
   }) =>
       Task(
         id: id ?? this.id,
@@ -190,6 +363,9 @@ class Task {
         createdAt: createdAt ?? this.createdAt,
         deleted: deleted ?? this.deleted,
         occurrenceOf: occurrenceOf != null ? occurrenceOf() : this.occurrenceOf,
+        location: location ?? this.location,
+        geo: geo != null ? geo() : this.geo,
+        event: event != null ? event() : this.event,
       );
 }
 

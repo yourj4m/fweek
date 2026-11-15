@@ -76,6 +76,23 @@ class IcsCalendar {
     final days = <int, Day>{};
     return [for (final entry in entries) entry.placed.on(entry.day, days)];
   }
+
+  /// The identifiers of every event in the feed.
+  Set<String> get uids => {
+        for (final placed in _short) placed.event.uid,
+        for (final placed in _long) placed.event.uid,
+        for (final series in _series) series.event.uid,
+      };
+
+  /// Every event that happens once, as shown on its first day, in no
+  /// particular order. Together with [occurrencesBetween] for repeating
+  /// events this finds an event wherever its calendar has moved it.
+  Iterable<EventOccurrence> get standalone sync* {
+    final days = <int, Day>{};
+    for (final placed in _short.followedBy(_long)) {
+      if (placed.instance.isEmpty) yield placed.on(placed.firstDay, days);
+    }
+  }
 }
 
 /// An event as shown on one day.
@@ -91,9 +108,19 @@ class EventOccurrence {
     this.end,
     this.location = '',
     this.description = '',
+    this.instance = '',
   });
 
   final String uid;
+
+  /// Which occurrence of a repeating event this is: a key made from the
+  /// occurrence's original start, the same on every device whatever its
+  /// time zone. An occurrence that the calendar changed on its own (moved,
+  /// retitled) keeps the key of the one it replaces. Empty for an event
+  /// that happens once.
+  final String instance;
+
+  bool get recurring => instance.isNotEmpty;
 
   /// SUMMARY, unescaped; empty if the event has none.
   final String title;
@@ -1202,11 +1229,17 @@ class _Event {
     return known.toUtc(wall).millisecondsSinceEpoch;
   }
 
+  /// [keyOf] as text, marked with what kind of number it is.
+  String instanceOf(DateTime wall, _Zone zone, _Device device) =>
+      '${allDay ? 'D' : this.zone.isDevice ? 'L' : 'U'}${keyOf(wall, zone, device)}';
+
   /// The occurrence starting at [wall] in [zone], in the device's time.
-  _Placed at(DateTime wall, _Zone zone, _Device device) {
+  /// With [keyed] it is one of several occurrences and carries its key.
+  _Placed at(DateTime wall, _Zone zone, _Device device, {bool keyed = false}) {
+    final instance = keyed ? instanceOf(wall, zone, device) : '';
     if (allDay) {
       final first = _dayOfWall(wall);
-      return _Placed(this, first, first + days - 1, null, null, first);
+      return _Placed(this, first, first + days - 1, null, null, first, instance);
     }
     DateTime startWall;
     DateTime endWall;
@@ -1241,6 +1274,7 @@ class _Event {
       start,
       end,
       startWall.millisecondsSinceEpoch,
+      instance,
     );
   }
 }
@@ -1253,8 +1287,16 @@ class _Placed {
     this.lastDay,
     this.start,
     this.end,
-    this.order,
-  );
+    this.order, [
+    this.instance = '',
+  ]);
+
+  /// See [EventOccurrence.instance].
+  final String instance;
+
+  /// This occurrence under another key.
+  _Placed keyed(String instance) =>
+      _Placed(event, firstDay, lastDay, start, end, order, instance);
 
   final _Event event;
   final int firstDay;
@@ -1290,6 +1332,7 @@ class _Placed {
         lastDay: days[lastDay] ??= _toDay(lastDay),
         location: event.location,
         description: event.description,
+        instance: instance,
       );
 }
 
@@ -1337,7 +1380,7 @@ class _Series {
           final key = event.keyOf(wall, event.zone, device);
           if (removedKeys.contains(key) || addedKeys.contains(key)) continue;
         }
-        event.at(wall, event.zone, device).addTo(out, from, to);
+        event.at(wall, event.zone, device, keyed: true).addTo(out, from, to);
       }
     } catch (_) {
       // A feed is outside input. Dates beyond what DateTime can hold fail
@@ -1517,7 +1560,20 @@ class _Reader {
       }
       // A cancelled instance only takes its original out of the series.
       if (change.cancelled) continue;
-      fixed.add(change.first);
+      // It answers to the key of the occurrence it replaces, worked out
+      // the way its series would, so that the two always agree.
+      final id = change.recurrenceId!;
+      final owner = owners == null ? change : owners.first;
+      var wall = id.wall;
+      var zone = id.zone;
+      if (id.isDate && !owner.event.allDay) {
+        // A bare date naming an occurrence of a timed series: that day, at
+        // the series' usual time.
+        final start = owner.start;
+        wall = wall.add(start.wall.difference(_dateOf(_dayOfWall(start.wall))));
+        zone = start.zone;
+      }
+      fixed.add(change.first.keyed(owner.event.instanceOf(wall, zone, device)));
       // Without its series in the feed it stands as an event of its own.
       if (owners == null) eventCount++;
     }
@@ -1800,7 +1856,9 @@ class _Reader {
       }
       final key = event.keyOf(wall, zone, device);
       if (key == startKey || !addedKeys.add(key)) continue;
-      if (!removed(wall, zone)) placed.add(event.at(wall, zone, device));
+      if (!removed(wall, zone)) {
+        placed.add(event.at(wall, zone, device, keyed: true));
+      }
     }
 
     final rule = master.rule == null
@@ -1823,8 +1881,11 @@ class _Reader {
         addedKeys,
       ));
     } else if (!removed(start.wall, start.zone)) {
-      // No rule, or one that is not understood: the first occurrence.
-      placed.add(master.first);
+      // No rule, or one that is not understood: the first occurrence. With
+      // added dates beside it, it is one of several and needs its key.
+      placed.add(addedKeys.isEmpty
+          ? master.first
+          : event.at(start.wall, start.zone, device, keyed: true));
     }
     fixed.addAll(placed);
   }

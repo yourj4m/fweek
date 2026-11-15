@@ -64,6 +64,37 @@ const _schema = <String, Map<String, _Kind>>{
     'reminder': _Kind.text,
     'created_at': _Kind.integer,
     'deleted': _Kind.boolean,
+    'location': _Kind.text,
+    'geo': _Kind.text,
+  },
+  // What the user changed about an event of a subscribed calendar. The row
+  // id is a fingerprint of the calendar and the event (see
+  // calendar/identity.dart); a column left null follows the calendar.
+  'events': {
+    'cal': _Kind.text,
+    'origin': _Kind.text,
+    'hidden': _Kind.boolean,
+    'color': _Kind.text,
+    'title': _Kind.text,
+    'note': _Kind.text,
+    'location': _Kind.text,
+    'geo': _Kind.text,
+    'date': _Kind.text,
+    'time': _Kind.integer,
+    'done': _Kind.boolean,
+    'done_at': _Kind.integer,
+    'reminder': _Kind.text,
+    'subtasks': _Kind.json,
+  },
+  // Subscribed calendars as the user arranged them: the row id is a
+  // fingerprint of the calendar's address, which itself is never stored here.
+  'calendars': {
+    'name': _Kind.text,
+    'color': _Kind.text,
+    'hidden': _Kind.boolean,
+    'position': _Kind.text,
+    'ids': _Kind.text,
+    'deleted': _Kind.boolean,
   },
   'lists': {
     'title': _Kind.text,
@@ -79,9 +110,10 @@ const _schema = <String, Map<String, _Kind>>{
 /// produced them.
 class PlannerDatabase {
   PlannerDatabase._(this._db) {
-    _migrate();
+    final before = _migrate();
     deviceId = _meta('device_id') ?? _newDeviceId();
     clock = Hlc(deviceId: deviceId, last: _meta('last_hlc'));
+    if (before >= 1 && before < _schemaVersion) _replay(before);
   }
 
   factory PlannerDatabase.open(String path) =>
@@ -96,9 +128,21 @@ class PlannerDatabase {
   late final String deviceId;
   late final Hlc clock;
 
-  static const _schemaVersion = 1;
+  static const _schemaVersion = 2;
 
-  void _migrate() {
+  /// Tables and columns each schema version added, for [_replay]. A null
+  /// column set means the whole table is new.
+  static const _added = <int, Map<String, Set<String>?>>{
+    2: {
+      'tasks': {'location', 'geo'},
+      'events': null,
+      'calendars': null,
+    },
+  };
+
+  /// Brings the tables up to this build's schema and returns the version
+  /// found (0 for a new file).
+  int _migrate() {
     _db.execute('pragma journal_mode = wal');
     _db.execute('pragma foreign_keys = off');
     final version = _db.select('pragma user_version').first.columnAt(0) as int;
@@ -162,6 +206,77 @@ class PlannerDatabase {
         pragma user_version = 1;
       ''');
     }
+    if (version < 2) {
+      _db.execute('''
+        alter table tasks add column location text;
+        alter table tasks add column geo text;
+        create table events(
+          id text primary key,
+          cal text,
+          origin text,
+          hidden integer not null default 0,
+          color text,
+          title text,
+          note text,
+          location text,
+          geo text,
+          date text,
+          time integer,
+          done integer not null default 0,
+          done_at integer,
+          reminder text,
+          subtasks text
+        );
+        create table calendars(
+          id text primary key,
+          name text,
+          color text,
+          hidden integer not null default 0,
+          position text,
+          ids text,
+          deleted integer not null default 0
+        );
+        pragma user_version = 2;
+      ''');
+    }
+    return version;
+  }
+
+  /// Applies changes that an older build of the app received from a newer
+  /// one and kept in the log without understanding them (see [apply]): now
+  /// that their tables and columns exist, they take effect.
+  void _replay(int from) {
+    final clauses = <String>[];
+    final values = <Object?>[];
+    for (var v = from + 1; v <= _schemaVersion; v++) {
+      for (final entry in (_added[v] ?? const {}).entries) {
+        final columns = entry.value;
+        if (columns == null) {
+          clauses.add('tbl = ?');
+          values.add(entry.key);
+        } else {
+          clauses.add('(tbl = ? and col in (${List.filled(columns.length, '?').join(', ')}))');
+          values..add(entry.key)..addAll(columns);
+        }
+      }
+    }
+    if (clauses.isEmpty) return;
+    final rows = _db.select(
+      'select hlc, tbl, row, col, value from changes '
+      'where ${clauses.join(' or ')} order by hlc',
+      values,
+    );
+    if (rows.isEmpty) return;
+    apply([
+      for (final r in rows)
+        Change(
+          hlc: r['hlc'] as String,
+          table: r['tbl'] as String,
+          row: r['row'] as String,
+          column: r['col'] as String,
+          value: jsonDecode(r['value'] as String),
+        ),
+    ]);
   }
 
   String _newDeviceId() {
@@ -312,6 +427,13 @@ class PlannerDatabase {
         ),
     ];
   }
+
+  /// Whether [changesSince] would return anything, without reading it.
+  bool hasChangesSince(String? after, {String? fromDevice}) => _db.select(
+        'select 1 from changes '
+        'where hlc > ? ${fromDevice == null ? '' : "and hlc like '%-' || ?"} limit 1',
+        [after ?? '', ?fromDevice],
+      ).isNotEmpty;
 
   int get changeCount =>
       _db.select('select count(*) from changes').first.columnAt(0) as int;

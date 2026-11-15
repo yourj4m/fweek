@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:weektodo/calendar/calendar_service.dart';
@@ -10,6 +11,8 @@ import 'package:weektodo/data/day.dart';
 import 'package:weektodo/data/models.dart';
 import 'package:weektodo/data/planner_store.dart';
 import 'package:weektodo/main.dart';
+import 'package:weektodo/services/opener.dart';
+import 'package:weektodo/services/places.dart';
 import 'package:weektodo/sync/secrets.dart';
 
 /// The day the reference captures were taken, so renders line up with them.
@@ -46,7 +49,10 @@ Future<void> loadFonts() async {
 /// A store holding tasks comparable to the reference demo week.
 PlannerStore seededStore({Day? today}) {
   final now = today ?? referenceToday;
-  final store = PlannerStore(PlannerDatabase.inMemory(), today: () => now)
+  // Twenty to ten in the morning: two fifths of the day are over, which is
+  // how far the bar under today's heading is filled in every render.
+  final clock = DateTime(now.year, now.month, now.day, 9, 36).millisecondsSinceEpoch;
+  final store = PlannerStore(PlannerDatabase.inMemory(), today: () => now, now: () => clock)
     ..setSetting(Settings.rollover, false);
   final monday = now.startOfWeek();
   store.addTask(DaySlot(monday), 'Buy oat milk and a very long task title that should be cut off');
@@ -89,15 +95,60 @@ Future<void> pumpApp(
   Size size = const Size(1440, 900),
   Brightness brightness = Brightness.light,
   CalendarService? calendars,
+  Opener? opener,
+  PlaceSearch? places,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   tester.platformDispatcher.platformBrightnessTestValue = brightness;
   addTearDown(tester.view.reset);
   addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
-  await tester.pumpWidget(
-      WeekToDoApp(store: store, notifications: false, calendars: calendars));
+  await tester.pumpWidget(WeekToDoApp(
+    store: store,
+    notifications: false,
+    calendars: calendars,
+    // Nothing leaves a test: links are recorded, places come from a list.
+    opener: opener ?? Opener(android: (uri) async => true),
+    places: places ?? FakePlaces(),
+  ));
   await tester.pumpAndSettle();
+}
+
+/// A click with the secondary mouse button on the centre of [target].
+Future<void> rightClick(WidgetTester tester, Finder target) async {
+  final mouse = await tester.startGesture(tester.getCenter(target),
+      kind: PointerDeviceKind.mouse, buttons: kSecondaryButton);
+  await mouse.up();
+  await tester.pumpAndSettle();
+}
+
+/// An [Opener] that records what it was asked to open.
+Opener recordingOpener(List<String> opened) => Opener(android: (uri) async {
+      opened.add(uri);
+      return true;
+    });
+
+/// A place search that answers from a fixed list, without a network.
+class FakePlaces extends PlaceSearch {
+  FakePlaces([this.places = const []]);
+
+  final List<Place> places;
+  final List<String> asked = [];
+
+  @override
+  Future<List<Place>> search(
+    String query, {
+    String server = PlaceSearch.defaultServer,
+    String? language,
+    (double, double)? near,
+  }) async {
+    asked.add(query);
+    final needle = query.trim().toLowerCase();
+    return [
+      for (final place in places)
+        if (place.label.toLowerCase().contains(needle)) place,
+    ];
+  }
 }
 
 /// A calendar feed for the reference week (9 to 15 November 2026): a timed
@@ -158,7 +209,7 @@ Future<CalendarService> calendarWith(
   // mistaken for one the test left behind.
   await tester.runAsync(() async {
     service = CalendarService(
-      store.db,
+      store,
       MemorySecretStore(),
       cache,
       parse: (text) async => IcsCalendar.parse(
