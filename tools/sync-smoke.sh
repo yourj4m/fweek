@@ -180,6 +180,15 @@ what="after a restart"
 [ "$(stored "$data_a" 'Reply from device B')" -ge 1 ] && pass "device A received B's task $what, without re-entering the password" || fail "device A did not receive B's task $what"
 stop_app
 
+# An update that changed the planner's file keeps the file as it was.
+if [ "$old_bin" != "$bin" ]; then
+  if ls "$data_a"/planner.db.v* >/dev/null 2>&1; then
+    pass "the planner as the earlier build left it is kept beside the updated one ($(basename "$(ls "$data_a"/planner.db.v* | head -1)"))"
+  else
+    echo "note: no copy of the earlier planner file (the earlier build writes the same file version)"
+  fi
+fi
+
 # The secure-storage plugin files its entry under this account name.
 if secret-tool search --all account "$app_id.secureStorage" 2>&1 | grep -q "secret = "; then
   pass "the password is in the keyring"

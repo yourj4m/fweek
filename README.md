@@ -348,6 +348,13 @@ understand yet and applies it once it is updated. A build older than the
 file refuses to open it rather than damage it, so update all devices before
 relying on what is new.
 
+Before a file is brought up to date, a copy of it as it was is kept beside
+it (`planner.db.v1` for a file of the first version). To go back to the
+earlier build, close the app, put that copy in the place of `planner.db`
+(and delete `planner.db-wal` and `planner.db-shm`), and start the earlier
+build; what was changed since the update is then missing on that device
+until it syncs.
+
 Both are tested by setting a device up with an earlier build and continuing
 with the current one: `WEEKTODO_OLD_BIN=/path/to/old/weektodo tools/dev
 tools/sync-smoke.sh ...` on Linux, and `adb install -r` over the older APK on

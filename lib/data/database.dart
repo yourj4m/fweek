@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:sqlite3/sqlite3.dart';
@@ -116,8 +117,26 @@ class PlannerDatabase {
     if (before >= 1 && before < _schemaVersion) _replay(before);
   }
 
-  factory PlannerDatabase.open(String path) =>
-      PlannerDatabase._(sqlite3.open(path));
+  factory PlannerDatabase.open(String path) {
+    final db = sqlite3.open(path);
+    _keepCopy(db, path);
+    return PlannerDatabase._(db);
+  }
+
+  /// Before a file written by an earlier version is brought up to date, a
+  /// copy of it as it was is put beside it (`planner.db.v1`): the earlier
+  /// version cannot open the file afterwards, and with the copy it can.
+  static void _keepCopy(Database db, String path) {
+    try {
+      final version = db.select('pragma user_version').first.columnAt(0) as int;
+      if (version < 1 || version >= _schemaVersion) return;
+      final copy = File('$path.v$version');
+      if (copy.existsSync()) copy.deleteSync();
+      db.execute("vacuum into '${copy.path.replaceAll("'", "''")}'");
+    } catch (_) {
+      // A precaution only: a full disk must not keep the planner shut.
+    }
+  }
 
   factory PlannerDatabase.inMemory() =>
       PlannerDatabase._(sqlite3.openInMemory());

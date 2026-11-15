@@ -92,6 +92,27 @@ void main() {
       expect(store.calendarRow('k1')!.hidden, isTrue);
     });
 
+    test('a copy of the file as it was is kept beside it', () {
+      final path = oldFile();
+      final store = PlannerStore(PlannerDatabase.open(path), today: () => friday);
+      store.addTask(DaySlot(friday), 'Written by the new version');
+      store.db.close();
+
+      final copy = sqlite3.open('$path.v1');
+      expect(copy.select('pragma user_version').first.columnAt(0), 1);
+      expect(copy.select('select title from tasks').map((r) => r.columnAt(0)), ['Buy oat milk']);
+      // As the first version wrote it: none of what the new one added.
+      final columns = copy.select('pragma table_info(tasks)').map((r) => r['name']);
+      expect(columns, isNot(contains('location')));
+      expect(copy.select("select value from meta where key = 'sync.config'"), hasLength(1));
+      copy.close();
+
+      // Opening the upgraded file again leaves the copy alone.
+      final before = File('$path.v1').lastModifiedSync();
+      PlannerDatabase.open(path).close();
+      expect(File('$path.v1').lastModifiedSync(), before);
+    });
+
     test('opening it again changes nothing more', () {
       final path = oldFile();
       PlannerDatabase.open(path).close();
