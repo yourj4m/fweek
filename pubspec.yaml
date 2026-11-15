@@ -44,6 +44,7 @@ dependencies:
   flutter_local_notifications_linux: ^9.0.0
   flutter_secure_storage: ^11.2.0
   xml: ^7.1.0
+  crypto: ^3.0.6
 
 dev_dependencies:
   flutter_test:
