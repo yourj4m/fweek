@@ -612,16 +612,21 @@ class _TaskListBodyState extends State<TaskListBody> {
   final _addFocus = FocusNode();
   DragController? _drag;
 
-  /// What of the drag this list shows: whether one is on, whether the
-  /// dragged task is one of its own, and where its gap is.
-  (bool, bool, int)? _shown;
+  /// What of the drag this list shows: whether the dragged task is one of
+  /// its own (and so missing from it), and where its gap is (−1: none). A
+  /// drag that neither took a task from this list nor points at it changes
+  /// nothing here.
+  (bool, int)? _shown;
 
-  (bool, bool, int) _view(DragController drag) {
+  /// Whether the gaps of this list exist yet at their resting height, so
+  /// that the one under the pointer can open with a movement.
+  bool _gapsReady = false;
+
+  (bool, int) _view(DragController drag) {
     final dragged = drag.task;
-    if (dragged == null) return (false, false, -1);
+    if (dragged == null) return (false, -1);
     final target = drag.targetSlot == widget.slot;
     return (
-      true,
       widget.tasks.any((t) => t.id == dragged.id),
       // An event has no place among the tasks; its gap opens at the top.
       !target ? -1 : dragged.isEvent ? 0 : drag.targetIndex,
@@ -666,15 +671,33 @@ class _TaskListBodyState extends State<TaskListBody> {
     final drag = _drag!;
     final view = _shown = _view(drag);
     final draggedId = drag.task?.id;
-    final shown = view.$2
+    final shown = view.$1
         ? [
             for (final t in widget.tasks)
               if (t.id != draggedId) t,
           ]
         : widget.tasks;
     drag.register(widget.slot, _zoneKey, shown.length);
-    final active = view.$1;
-    final gapAt = view.$3 < 0 ? -1 : view.$3.clamp(0, shown.length);
+    // Gaps exist only in the list the dragged task is over: a week has
+    // hundreds of places a gap could open, and making them all the moment a
+    // task is picked up cost a long frame.
+    final target = view.$2 >= 0;
+    if (!target) {
+      _gapsReady = false;
+    } else if (!_gapsReady) {
+      if (view.$1) {
+        // Picked up from this very list: the gap takes the lifted row's
+        // place at once.
+        _gapsReady = true;
+      } else {
+        // Just arrived over this list: first the gaps closed, then (next
+        // frame) the one under the pointer opens with a movement.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_gapsReady) setState(() => _gapsReady = true);
+        });
+      }
+    }
+    final gapAt = target && _gapsReady ? view.$2.clamp(0, shown.length) : -1;
 
     // A gap opens smoothly but closes at once. The body is sized for its
     // rows as they will be, so a gap still closing (beside the task just
@@ -703,8 +726,7 @@ class _TaskListBodyState extends State<TaskListBody> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (var i = 0; i < shown.length; i++) ...[
-                    // Gaps exist only while something is being dragged.
-                    if (active) gap(i),
+                    if (target) gap(i),
                     TaskRow(
                       key: ValueKey(shown[i].id),
                       task: shown[i],
@@ -712,7 +734,7 @@ class _TaskListBodyState extends State<TaskListBody> {
                       onOpen: widget.onOpen,
                     ),
                   ],
-                  if (active) gap(shown.length),
+                  if (target) gap(shown.length),
                   AddRow(
                     compact: widget.compact,
                     focusNode: _addFocus,

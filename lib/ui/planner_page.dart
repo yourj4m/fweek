@@ -796,7 +796,6 @@ class _DayProgressState extends State<DayProgress> {
 /// cover it, and its tasks.
 class _DayColumn extends StatelessWidget {
   const _DayColumn({
-    super.key,
     required this.day,
     required this.tasks,
     required this.rows,
@@ -859,6 +858,71 @@ int _rowsNeeded(DragController drag, Slot slot, List<Task> tasks, int minimum) {
     if (drag.targetSlot == slot) count++;
   }
   return TaskListBody.rowsFor(count, minimum);
+}
+
+/// Gives one day or list of the single-column layout its number of rows,
+/// and builds it again only when that number changes.
+///
+/// While a task is dragged, the day it is over grows by a row and the day
+/// it left shrinks by one. In the wide week all columns share a height, so
+/// the grid works that out as a whole; here each day stands alone, and a
+/// task crossing from one day to the next concerns those two days only, not
+/// the three weeks the pager holds.
+class _LocalRows extends StatefulWidget {
+  const _LocalRows({
+    super.key,
+    required this.slot,
+    required this.tasks,
+    required this.minimum,
+    required this.builder,
+  });
+
+  final Slot slot;
+  final List<Task> tasks;
+  final int minimum;
+  final Widget Function(BuildContext context, int rows) builder;
+
+  @override
+  State<_LocalRows> createState() => _LocalRowsState();
+}
+
+class _LocalRowsState extends State<_LocalRows> {
+  DragController? _drag;
+  int _rows = 0;
+
+  int _needed() => _rowsNeeded(_drag!, widget.slot, widget.tasks, widget.minimum);
+
+  void _onDrag() {
+    if (!mounted) return;
+    final rows = _needed();
+    if (rows != _rows) setState(() => _rows = rows);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final drag = DragScope.read(context);
+    if (drag != _drag) {
+      _drag?.layout.removeListener(_onDrag);
+      _drag = drag..layout.addListener(_onDrag);
+    }
+    _rows = _needed();
+  }
+
+  @override
+  void didUpdateWidget(_LocalRows old) {
+    super.didUpdateWidget(old);
+    _rows = _needed();
+  }
+
+  @override
+  void dispose() {
+    _drag?.layout.removeListener(_onDrag);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _rows);
 }
 
 // ------------------------------------------------------------ wide layout
@@ -1026,7 +1090,6 @@ class _SomedayGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.store;
-    final drag = DragScope.layoutOf(context);
     final lists = store.lists;
 
     if (narrow) {
@@ -1035,15 +1098,19 @@ class _SomedayGrid extends StatelessWidget {
         spacing: 24,
         children: [
           for (var i = 0; i < lists.length; i++)
-            _ListColumn(
+            _LocalRows(
               key: ValueKey(lists[i].id),
-              list: lists[i],
-              index: i,
-              count: lists.length,
-              rows: _rowsNeeded(drag, ListSlot(lists[i].id),
-                  store.tasksIn(lists[i].id), Dim.somedayRows),
-              narrow: true,
-              onOpen: onOpen,
+              slot: ListSlot(lists[i].id),
+              tasks: store.tasksIn(lists[i].id),
+              minimum: Dim.somedayRows,
+              builder: (context, rows) => _ListColumn(
+                list: lists[i],
+                index: i,
+                count: lists.length,
+                rows: rows,
+                narrow: true,
+                onOpen: onOpen,
+              ),
             ),
           // One column has no blank neighbour to type a new list into; it
           // gets a button instead.
@@ -1062,6 +1129,7 @@ class _SomedayGrid extends StatelessWidget {
       );
     }
 
+    final drag = DragScope.layoutOf(context);
     // There is always at least one blank column after the lists: typing in
     // it creates a list. A full row therefore starts a new one.
     final total = ((lists.length + 1 + columns - 1) ~/ columns) * columns;
@@ -1721,7 +1789,6 @@ class _WeekPageState extends State<_WeekPage> {
   @override
   Widget build(BuildContext context) {
     final store = context.store;
-    final drag = DragScope.layoutOf(context);
     final days = [for (var i = 0; i < 7; i++) widget.first.addDays(i)];
     final byDay = store.tasksBetween(days.first, days.last);
     final range = context.calendars.eventsBetween(days.first, days.last);
@@ -1734,16 +1801,20 @@ class _WeekPageState extends State<_WeekPage> {
         spacing: Dim.narrowDayGap,
         children: [
           for (final d in days)
-            _DayColumn(
+            _LocalRows(
               key: _dayKeys.putIfAbsent(d, GlobalKey.new),
-              day: d,
+              slot: DaySlot(d),
               tasks: byDay[d] ?? const [],
-              events: range.on(d),
-              spans: range.spans.isEmpty ? const [] : range.spansOn(d).toList(),
-              rows: _rowsNeeded(drag, DaySlot(d), byDay[d] ?? const [],
-                  d == store.today ? 2 : 1),
-              narrow: true,
-              onOpen: widget.onOpen,
+              minimum: d == store.today ? 2 : 1,
+              builder: (context, rows) => _DayColumn(
+                day: d,
+                tasks: byDay[d] ?? const [],
+                events: range.on(d),
+                spans: range.spans.isEmpty ? const [] : range.spansOn(d).toList(),
+                rows: rows,
+                narrow: true,
+                onOpen: widget.onOpen,
+              ),
             ),
           _SomedayGrid(onOpen: widget.onOpen, columns: 1, narrow: true),
         ],

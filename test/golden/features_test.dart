@@ -706,6 +706,34 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    phoneTest('a task dragged to the next day redraws those two days, not the weeks',
+        (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store, size: const Size(411, 914));
+      // The weeks beside this one are in place, as on a phone at rest.
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      final finger =
+          await tester.startGesture(tester.getCenter(find.text('Water the plants')));
+      debugBuildCounts.clear();
+      await tester.pump(const Duration(milliseconds: 700));
+      // Picked up: only the list it was taken from is drawn again.
+      expect(built('TaskListBody'), 1);
+      debugBuildCounts.clear();
+      await finger.moveBy(const Offset(0, 30));
+      await tester.pump();
+      await finger.moveTo(tester.getCenter(find.text('Mark me complete')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      // Crossing into the next day: the day left and the day entered, each
+      // a few times over as the gap closes there and opens here. Three
+      // weeks of eight lists each would be dozens.
+      expect(built('TaskListBody'), lessThanOrEqualTo(8));
+      await finger.up();
+      await tester.pumpAndSettle();
+      expect(store.tasksOn(today.addDays(1)).map((t) => t.title), contains('Water the plants'));
+    });
+
     desktopTest('sync and calendar news redraw no row', (tester) async {
       final store = seededStore();
       final calendars = await calendarWith(tester, store);

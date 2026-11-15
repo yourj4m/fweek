@@ -227,9 +227,12 @@ class DragController extends ChangeNotifier {
     }
     final slot = bestDistance < 160 ? best : null;
     if (slot == _targetSlot && bestIndex == _targetIndex) return false;
-    if (slot != _targetSlot) layout.value++;
+    final moved = slot != _targetSlot;
     _targetSlot = slot;
     _targetIndex = bestIndex;
+    // Told only once the new target is in place: whoever listens works out
+    // its height from it right away.
+    if (moved) layout.value++;
     return true;
   }
 
