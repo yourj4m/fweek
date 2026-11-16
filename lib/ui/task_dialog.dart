@@ -64,7 +64,25 @@ class _CardRoute extends PopupRoute<void> {
             .animate(curved),
         // What a card says (details, descriptions, explanations) can be
         // selected; its buttons take themselves out of that.
-        child: DialogArea(child: Selectable(child: Builder(builder: builder))),
+        child: DialogArea(
+          child: Selectable(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // The backdrop: a click or tap beside the card closes it.
+                // The layer that selects text spans the whole page and
+                // would otherwise keep that click for itself, leaving the
+                // route's own barrier underneath without it.
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  excludeFromSemantics: true,
+                  onTap: () => Navigator.of(context).maybePop(),
+                ),
+                Builder(builder: builder),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -133,7 +151,12 @@ class _TaskDialogState extends State<_TaskDialog> {
   @override
   void dispose() {
     _saveTimer?.cancel();
-    _flush();
+    // Typing is saved when the card starts to close (see build). Should the
+    // card be taken away some other way, what is left is saved once the
+    // widgets are done being taken down: the planner may not change while
+    // they are.
+    final save = _pendingSave();
+    if (save != null) scheduleMicrotask(save);
     _title.dispose();
     _note.dispose();
     _titleFocus.dispose();
@@ -160,8 +183,16 @@ class _TaskDialogState extends State<_TaskDialog> {
   void _flush() {
     _saveTimer?.cancel();
     _saveTimer = null;
-    final task = _store.task(_id);
-    if (task == null) return;
+    _pendingSave()?.call();
+  }
+
+  /// What typing has changed and is not saved yet, as the step that saves
+  /// it; null when there is nothing.
+  VoidCallback? _pendingSave() {
+    final store = _store;
+    final id = _id;
+    final task = store.task(id);
+    if (task == null) return null;
     final title = _title.text.trim();
     final subtasks = [
       for (final s in task.subtasks)
@@ -174,13 +205,13 @@ class _TaskDialogState extends State<_TaskDialog> {
     // An emptied title keeps the previous one: a task needs some text.
     final newTitle = title.isNotEmpty && title != task.title ? title : null;
     final newNote = _note.text != task.note ? _note.text : null;
-    if (newTitle == null && newNote == null && !subtasksChanged) return;
-    _store.updateTask(
-      _id,
-      title: newTitle,
-      note: newNote,
-      subtasks: subtasksChanged ? subtasks : null,
-    );
+    if (newTitle == null && newNote == null && !subtasksChanged) return null;
+    return () => store.updateTask(
+          id,
+          title: newTitle,
+          note: newNote,
+          subtasks: subtasksChanged ? subtasks : null,
+        );
   }
 
   /// Runs a structural edit after saving pending text, and follows the task
@@ -665,7 +696,14 @@ class _TaskDialogState extends State<_TaskDialog> {
         ),
       );
     }
-    return EscapeToClose(child: placed);
+    return PopScope(
+      // Closing saves what was being typed, at once: the week behind the
+      // card shows it while the card fades.
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _flush();
+      },
+      child: EscapeToClose(child: placed),
+    );
   }
 
   Widget _surface(AppTheme theme, Widget child, {BorderRadius? radius}) =>

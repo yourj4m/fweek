@@ -93,6 +93,81 @@ void main() {
       handle.dispose();
     });
 
+    desktopTest('a click beside the card closes it; a click on the card does not',
+        (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store);
+      await tester.tap(find.text('Water the plants'));
+      await tester.pumpAndSettle();
+      final subtask = find.bySemanticsLabel('Add subtask');
+      expect(subtask, findsOneWidget);
+      // On the card, where nothing is: it stays.
+      await tester.tapAt(tester.getTopLeft(subtask) - const Offset(0, 30));
+      await tester.pumpAndSettle();
+      expect(subtask, findsOneWidget);
+      // Beside it, on the dimmed page.
+      await tester.tapAt(const Offset(30, 450));
+      await tester.pumpAndSettle();
+      expect(subtask, findsNothing);
+      // And the card can still be closed with the keyboard.
+      await tester.tap(find.text('Water the plants'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(subtask, findsNothing);
+    });
+
+    desktopTest('typing in the card is saved when a click beside it closes it', (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store);
+      await tester.tap(find.text('Water the plants'));
+      await tester.pumpAndSettle();
+      // The card's title is the one field holding the task's text.
+      final title = find.byWidgetPredicate(
+          (w) => w is EditableText && w.controller.text == 'Water the plants');
+      await tester.enterText(title, 'Water the ferns');
+      await tester.tapAt(const Offset(30, 450));
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Add subtask'), findsNothing);
+      expect(store.allTasks.where((t) => t.title == 'Water the ferns'), hasLength(1));
+    });
+
+    phoneTest('on a phone a tap above the sheet closes it', (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store);
+      await tester.tap(find.text('Water the plants'));
+      await tester.pumpAndSettle();
+      final subtask = find.bySemanticsLabel('Add subtask');
+      expect(subtask, findsOneWidget);
+      await tester.tapAt(const Offset(200, 60));
+      await tester.pumpAndSettle();
+      expect(subtask, findsNothing);
+    });
+
+    desktopTest('the settings and the search close on a click beside them too', (tester) async {
+      await pumpApp(tester, seededStore());
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.comma);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(find.text('Settings'), findsWidgets);
+      final open = find.text('Week starts on');
+      expect(open, findsOneWidget);
+      await tester.tapAt(const Offset(20, 450));
+      await tester.pumpAndSettle();
+      expect(open, findsNothing);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      final field = find.byType(EditableText);
+      final before = tester.widgetList(field).length;
+      await tester.tapAt(const Offset(20, 450));
+      await tester.pumpAndSettle();
+      expect(tester.widgetList(field).length, lessThan(before));
+    });
+
     desktopTest('a message goes away by itself', (tester) async {
       final store = seededStore();
       await pumpApp(tester, store);
