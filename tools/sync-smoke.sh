@@ -60,7 +60,7 @@ eval "$(printf 'smoke-test' | gnome-keyring-daemon --unlock --components=secrets
 sleep 0.5
 
 cat > "$XDG_RUNTIME_DIR/sway.conf" <<'CFG'
-output HEADLESS-1 mode 1440x1400 scale 1 position 0 0
+output HEADLESS-1 mode 1440x1700 scale 1 position 0 0
 default_border none
 focus_follows_mouse no
 CFG
@@ -83,7 +83,7 @@ bindings="$XDG_RUNTIME_DIR/bindings"
 python3 -m pywayland.scanner -i /usr/share/wayland/wayland.xml \
   "$root"/tools/wayland-protocols/*.xml -o "$bindings/protocols" >/dev/null 2>&1
 mkfifo "$XDG_RUNTIME_DIR/input"
-python3 "$root/tools/wl-input.py" --protocols "$bindings" --extent 1440 1400 \
+python3 "$root/tools/wl-input.py" --protocols "$bindings" --extent 1440 1700 \
   <"$XDG_RUNTIME_DIR/input" >"$out/input.log" 2>&1 &
 input=$!
 exec 3>"$XDG_RUNTIME_DIR/input"
@@ -107,18 +107,20 @@ start_app() {  # <data folder> [executable]
 }
 stop_app() { kill "$app"; wait "$app" 2>/dev/null; app=""; sleep 0.5; }
 
-# Where the sync form sits in the settings card of a 1440x1400 window: the
+# Where the sync form sits in the settings card of a 1440x1700 window: the
 # four fields (server, login name, app password, folder) and the Connect
 # button, top to bottom. It moves when the settings above it grow.
 #   1: builds up to the calendars release (one row of themes)
 #   2: three rows of themes
+#   3: with "New items are" above it
 form() {
   case "$1" in
     1) echo "921 973 1025 1077 1203" ;;
-    *) echo "1074 1126 1178 1230 1356" ;;
+    2) echo "1074 1126 1178 1230 1356" ;;
+    *) echo "1220 1272 1324 1376 1502" ;;
   esac
 }
-current_form=2
+current_form=3
 
 # Fills in the sync settings and connects.
 connect() {  # <data folder> [form]

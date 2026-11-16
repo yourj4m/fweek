@@ -262,11 +262,10 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        'A task has a circle to tick it off. An event has none '
-                        'and fades once it is over. While typing a new item, '
-                        '${isMobile ? 'the first button of the bar above the keyboard' : 'Ctrl+E or the mark at the end of the line'} '
-                        'makes it the other; what a calendar brings is an '
-                        'event until you turn it into a task.',
+                        'A task has a circle to tick it off; an event has none '
+                        'and fades once it is over. While typing, '
+                        '${isMobile ? 'the first button above the keyboard' : 'Ctrl+E'} '
+                        'makes an item the other.',
                         style: context.text.caption14.copyWith(color: theme.ink(60)),
                       ),
                     ),
