@@ -130,6 +130,13 @@ def main():
     ui.type_text("Read that paper")
     ui.key("ENTER")
     ui.back(pause=1.2)
+    # Early in the week, typing on the page's last line has scrolled today
+    # out of view: back up the page. (The title would not do: on the week
+    # of today it opens the month.)
+    for _ in range(8):
+        if ui.find(re.escape("Call the dentist")):
+            break
+        ui.swipe(width * 0.5, height * 0.35, width * 0.5, height * 0.8, 250, pause=0.6)
 
     # --- completing
     dentist = task("Call the dentist")

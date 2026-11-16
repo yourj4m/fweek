@@ -1190,7 +1190,9 @@ class _HeaderButton extends StatelessWidget {
     final theme = context.theme;
     return Pressable(
       onTap: onTap,
-      semanticLabel: tooltip ?? label,
+      // What it is for and what it shows, said once.
+      semanticLabel: tooltip == null || label == null ? (tooltip ?? label) : '$tooltip, $label',
+      labelOnly: true,
       builder: (context, hovered, pressed) {
         final color = muted ? theme.ink(hovered ? 75 : 40) : theme.text;
         return Container(
