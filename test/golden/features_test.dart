@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart' show MaterialApp, TextField;
 import 'package:weektodo/app_state.dart';
+import 'package:weektodo/data/database.dart';
 import 'package:weektodo/data/day.dart';
 import 'package:weektodo/data/models.dart';
 import 'package:weektodo/data/planner_store.dart';
@@ -706,6 +707,193 @@ void main() {
     });
   });
 
+  group('tasks and events', () {
+    Finder todaysLine() => find.descendant(
+          of: find.byWidgetPredicate((w) => w is TaskListBody && w.slot == DaySlot(referenceToday)),
+          matching: find.byType(TextField),
+        );
+    Finder rowOf(String label) =>
+        find.ancestor(of: find.text(label), matching: find.byType(TaskRow));
+    Future<void> type(WidgetTester tester, String text) async {
+      await tester.enterText(todaysLine(), text);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+    }
+
+    desktopTest('the line typed on says which is being made and switches: its mark, or Ctrl+E',
+        (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store);
+      expect(find.bySemanticsLabel(RegExp('switch to an event')), findsNothing);
+      await tester.tap(todaysLine());
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('A task; switch to an event (Ctrl+E)'), findsOneWidget);
+      await type(tester, 'Buy stamps');
+      expect(named(store, 'Buy stamps').kind, ItemKind.task);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('An event; switch to a task (Ctrl+E)'), findsOneWidget);
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/add_event.png'));
+      // Several in a row.
+      await type(tester, 'Seminar');
+      await type(tester, 'Lab meeting');
+      expect(named(store, 'Seminar').kind, ItemKind.event);
+      expect(named(store, 'Lab meeting').kind, ItemKind.event);
+      // An event's row has nothing to tick; a task's has.
+      expect(find.descendant(of: rowOf('Seminar'), matching: find.byType(CheckToggle)), findsNothing);
+      expect(find.descendant(of: rowOf('Buy stamps'), matching: find.byType(CheckToggle)),
+          findsOneWidget);
+
+      // The mark switches back, and the line keeps the keyboard.
+      await tester.tap(find.bySemanticsLabel('An event; switch to a task (Ctrl+E)'));
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('A task; switch to an event (Ctrl+E)'), findsOneWidget);
+      await type(tester, 'Post the letter');
+      expect(named(store, 'Post the letter').kind, ItemKind.task);
+    });
+
+    desktopTest('the switch is for the typing at hand: the next time, it is what the settings say',
+        (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store);
+      await tester.tap(todaysLine());
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await tester.tap(todaysLine());
+      await tester.pumpAndSettle();
+      await type(tester, 'Buy stamps');
+      expect(named(store, 'Buy stamps').kind, ItemKind.task);
+    });
+
+    desktopTest('the settings choose what new items are', (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.comma);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(find.text('New items are'), findsOneWidget);
+      await tester.ensureVisible(find.text('Events'));
+      await tester.tap(find.text('Events'));
+      await tester.pumpAndSettle();
+      expect(store.newItemKind, ItemKind.event);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      await tester.tap(todaysLine());
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('An event; switch to a task (Ctrl+E)'), findsOneWidget);
+      await type(tester, 'Seminar');
+      expect(named(store, 'Seminar').kind, ItemKind.event);
+      // And the other way for one item.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      await type(tester, 'Buy stamps');
+      expect(named(store, 'Buy stamps').kind, ItemKind.task);
+    });
+
+    phoneTest('on a phone the first button of the bar above the keyboard switches', (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store, size: const Size(411, 914));
+      await tester.tap(todaysLine());
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('A task; tap to make it an event'));
+      await tester.pumpAndSettle();
+      // The bar says so in a word while it is not the usual.
+      expect(find.text('Event'), findsOneWidget);
+      await type(tester, 'Seminar');
+      expect(named(store, 'Seminar').kind, ItemKind.event);
+      expect(find.descendant(of: rowOf('Seminar'), matching: find.byType(CheckToggle)), findsNothing);
+      // It holds for what is typed next, until typing ends.
+      await type(tester, 'Lab meeting');
+      expect(named(store, 'Lab meeting').kind, ItemKind.event);
+      // (Its label is followed by the word it shows.)
+      await tester.tap(find.bySemanticsLabel(RegExp('^An event; tap to make it a task')));
+      await tester.pumpAndSettle();
+      expect(find.text('Event'), findsNothing);
+      await type(tester, 'Buy stamps');
+      expect(named(store, 'Buy stamps').kind, ItemKind.task);
+    });
+
+    desktopTest('the card turns a task into an event and back, and gives it an end', (tester) async {
+      final store = seededStore();
+      await pumpApp(tester, store);
+      await tester.tap(find.text('Water the plants'));
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Mark as done'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('More'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Turn into an event'));
+      await tester.pumpAndSettle();
+      expect(named(store, 'Water the plants').kind, ItemKind.event);
+      expect(find.bySemanticsLabel('Mark as done'), findsNothing);
+
+      // No end without a start.
+      expect(find.bySemanticsLabel(RegExp('^Add an end time')), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Time'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('7:30'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel(RegExp('^Add an end time')));
+      await tester.pumpAndSettle();
+      // Only later times, each with how long that makes it.
+      expect(find.text('No end'), findsOneWidget);
+      expect(find.text('7:30'), findsOneWidget, reason: 'the start, on the card only');
+      expect(find.text('30 min'), findsOneWidget);
+      expect(find.text('1.5 h'), findsOneWidget);
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/dialog_end_time.png'));
+      await tester.tap(find.text('9:00'));
+      await tester.pumpAndSettle();
+      expect((named(store, 'Water the plants').time, named(store, 'Water the plants').end), (450, 540));
+      expect(find.text('– 9:00'), findsOneWidget);
+      // The week behind shows the start only.
+      expect(find.text('7:30 Water the plants'), findsOneWidget);
+
+      await tester.tap(find.bySemanticsLabel(RegExp('^End time')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('No end'));
+      await tester.pumpAndSettle();
+      expect(named(store, 'Water the plants').end, isNull);
+
+      await tester.tap(find.bySemanticsLabel('More'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Turn into a task'));
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Mark as done'), findsOneWidget);
+    });
+
+    desktopTest('an event of today turns faint the minute it ends', (tester) async {
+      var clock = DateTime(referenceToday.year, referenceToday.month, referenceToday.day, 9, 36);
+      final store = PlannerStore(PlannerDatabase.inMemory(),
+          today: () => referenceToday, now: () => clock.millisecondsSinceEpoch)
+        ..setSetting(Settings.rollover, false);
+      final id = store.addTask(DaySlot(referenceToday), 'Stand-up', kind: ItemKind.event)!;
+      store.updateTask(id, time: () => 9 * 60 + 40, end: () => 9 * 60 + 50);
+      store.addTask(DaySlot(referenceToday), 'Stays as it is');
+      await pumpApp(tester, store);
+      double ink(String label) => tester.widget<Text>(find.text(label)).style!.color!.a;
+      expect(ink('9:40 Stand-up'), 1);
+      clock = clock.add(const Duration(minutes: 13));
+      await tester.pump(const Duration(minutes: 13));
+      expect(ink('9:40 Stand-up'), 1, reason: 'a minute to go');
+      clock = clock.add(const Duration(minutes: 2));
+      await tester.pump(const Duration(minutes: 2));
+      await tester.pump();
+      expect(ink('9:40 Stand-up'), lessThan(0.5));
+      expect(ink('Stays as it is'), 1);
+    });
+  });
+
   group('search', () {
     desktopTest('finds events too and opens them', (tester) async {
       final store = seededStore();
@@ -720,7 +908,10 @@ void main() {
       expect(find.text('14:30 Thesis committee'), findsNWidgets(2));
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
-      expect(find.text('Work · 14:30 – 16:00'), findsOneWidget);
+      // Its card: from when to when, and from which calendar.
+      expect(find.text('14:30'), findsOneWidget);
+      expect(find.text('– 16:00'), findsOneWidget);
+      expect(find.text('Work'), findsOneWidget);
     });
   });
 

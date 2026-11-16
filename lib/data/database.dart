@@ -67,6 +67,8 @@ const _schema = <String, Map<String, _Kind>>{
     'deleted': _Kind.boolean,
     'location': _Kind.text,
     'geo': _Kind.text,
+    'kind': _Kind.text,
+    'end_time': _Kind.integer,
   },
   // What the user changed about an event of a subscribed calendar. The row
   // id is a fingerprint of the calendar and the event (see
@@ -86,6 +88,8 @@ const _schema = <String, Map<String, _Kind>>{
     'done_at': _Kind.integer,
     'reminder': _Kind.text,
     'subtasks': _Kind.json,
+    'kind': _Kind.text,
+    'end_time': _Kind.integer,
   },
   // Subscribed calendars as the user arranged them: the row id is a
   // fingerprint of the calendar's address, which itself is never stored here.
@@ -112,6 +116,7 @@ const _schema = <String, Map<String, _Kind>>{
 class PlannerDatabase {
   PlannerDatabase._(this._db) {
     final before = _migrate();
+    foundVersion = before;
     deviceId = _meta('device_id') ?? _newDeviceId();
     clock = Hlc(deviceId: deviceId, last: _meta('last_hlc'));
     if (before >= 1 && before < _schemaVersion) _replay(before);
@@ -124,7 +129,7 @@ class PlannerDatabase {
   }
 
   /// Before a file written by an earlier version is brought up to date, a
-  /// copy of it as it was is put beside it (`planner.db.v1`): the earlier
+  /// copy of it as it was is put beside it (`planner.db.v2`): the earlier
   /// version cannot open the file afterwards, and with the copy it can.
   static void _keepCopy(Database db, String path) {
     try {
@@ -143,11 +148,15 @@ class PlannerDatabase {
 
   final Database _db;
 
+  /// The schema version the file had when it was opened just now; 0 for a
+  /// new file, the current version unless an update came in between.
+  late final int foundVersion;
+
   /// Identifies this installation in change stamps.
   late final String deviceId;
   late final Hlc clock;
 
-  static const _schemaVersion = 2;
+  static const _schemaVersion = 3;
 
   /// Tables and columns each schema version added, for [_replay]. A null
   /// column set means the whole table is new.
@@ -156,6 +165,10 @@ class PlannerDatabase {
       'tasks': {'location', 'geo'},
       'events': null,
       'calendars': null,
+    },
+    3: {
+      'tasks': {'kind', 'end_time'},
+      'events': {'kind', 'end_time'},
     },
   };
 
@@ -256,6 +269,16 @@ class PlannerDatabase {
           deleted integer not null default 0
         );
         pragma user_version = 2;
+      ''');
+    }
+    if (version < 3) {
+      // Whether an item is a task or an event, and when it ends.
+      _db.execute('''
+        alter table tasks add column kind text;
+        alter table tasks add column end_time integer;
+        alter table events add column kind text;
+        alter table events add column end_time integer;
+        pragma user_version = 3;
       ''');
     }
     return version;

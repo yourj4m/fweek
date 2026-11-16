@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show kPrimaryButton, PointerDeviceKind;
 import 'package:flutter/services.dart';
@@ -46,7 +47,7 @@ Color calendarColor(AppTheme theme, String key) {
 
 /// What a row or chip says for [task]: its time, if any, and its title.
 String taskLabel(Task task, {required bool use24h}) {
-  final title = task.title.isEmpty && task.isEvent ? '(No title)' : task.title;
+  final title = task.title.isEmpty && task.fromCalendar ? '(No title)' : task.title;
   return task.time == null ? title : '${formatTime(task.time!, use24h: use24h)} $title';
 }
 
@@ -62,10 +63,15 @@ class TaskPill extends StatelessWidget {
     required this.style,
     this.height,
     this.selected = false,
+    this.over = false,
   });
 
   final Task task;
   final TextStyle style;
+
+  /// An event that lies in the past: drawn faint, like a done task, but not
+  /// struck through.
+  final bool over;
 
   /// Height of the pill; by default the one that fits a ruled row.
   final double? height;
@@ -78,7 +84,7 @@ class TaskPill extends StatelessWidget {
     // Done tasks and hidden events are drawn faint. The faintness is in the
     // colours themselves: fading the finished drawing instead would cost an
     // extra drawing surface per row.
-    final faint = task.done || (task.event?.hidden ?? false);
+    final faint = task.done || over || (task.event?.hidden ?? false);
     Color tone(Color c) => faint ? c.withValues(alpha: c.a * 0.3) : c;
     // "Black" follows the theme, so it stays a strong mark in dark themes.
     final fill = color == null
@@ -179,12 +185,13 @@ class CheckToggle extends StatelessWidget {
   }
 }
 
-/// One task, or one imported event, on one ruled line.
+/// One task or one event on one ruled line.
 ///
-/// An event is set apart by a bar in its calendar's colour at the left;
-/// everything else about the row is the same: tap to open, the circle to
-/// complete, drag (or long press and drag) to another day, right-click (or
-/// long press and let go) for the menu.
+/// A task has a circle to tick it off. An event has none; it is set apart
+/// by a bar at the left (in its calendar's colour when it comes from one)
+/// and turns faint once it is over. Everything else about the row is the
+/// same: tap to open, drag (or long press and drag) to another day,
+/// right-click (or long press and let go) for the menu.
 class TaskRow extends StatefulWidget {
   const TaskRow({
     super.key,
@@ -207,6 +214,44 @@ class _TaskRowState extends State<TaskRow> {
   bool _hovered = false;
   bool _focused = false;
 
+  /// Runs out when an event of today ends: the row then turns faint.
+  Timer? _overTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _watchOver();
+  }
+
+  @override
+  void didUpdateWidget(TaskRow old) {
+    super.didUpdateWidget(old);
+    _watchOver();
+  }
+
+  @override
+  void dispose() {
+    _overTimer?.cancel();
+    super.dispose();
+  }
+
+  void _watchOver() {
+    _overTimer?.cancel();
+    _overTimer = null;
+    final task = widget.task;
+    if (!task.happens || task.time == null) return;
+    final store = context.readStore;
+    final now = store.clock;
+    if (task.date != store.today || task.overAt(now)) return;
+    final until = task.end ?? task.time! + Task.assumedMinutes;
+    _overTimer = Timer(
+      Duration(minutes: until - (now.hour * 60 + now.minute), seconds: -now.second, milliseconds: 200),
+      () {
+        if (mounted) setState(_watchOver);
+      },
+    );
+  }
+
   /// Opens the row's menu: at [at] for a click, by the row for the keyboard
   /// (the menu's first entry then takes the focus).
   void _menu([Offset? at]) => showTaskMenu(
@@ -224,6 +269,8 @@ class _TaskRowState extends State<TaskRow> {
     if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
       widget.onOpen(task);
     } else if (key == LogicalKeyboardKey.space) {
+      // Only a task is ticked off.
+      if (!task.checkable) return KeyEventResult.ignored;
       context.readStore.setDone(task.id, !task.done);
     } else if (key == LogicalKeyboardKey.contextMenu ||
         (key == LogicalKeyboardKey.f10 && HardwareKeyboard.instance.isShiftPressed)) {
@@ -245,9 +292,18 @@ class _TaskRowState extends State<TaskRow> {
     final dragging = DragScope.read(context).active;
     final keyed = _focused &&
         FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
-    final showCheck = widget.compact || ((_hovered || keyed) && !dragging);
+    final showCheck =
+        task.checkable && (widget.compact || ((_hovered || keyed) && !dragging));
     final style = widget.compact ? context.text.taskCompact : context.text.task14;
-    final faint = task.done || (source?.hidden ?? false);
+    final over = task.overAt(context.readStore.clock);
+    final faint = task.done || over || (source?.hidden ?? false);
+    // What marks an event, or what a calendar brought: a bar in the
+    // calendar's colour, or a plain one for an event made here.
+    final bar = source != null
+        ? calendarColor(theme, source.calendarColor)
+        : task.happens
+            ? theme.ink(55)
+            : null;
     final muted = theme.ink(faint ? 25 : 50);
     final place = task.hasLocation ? shortPlace(task.location) : '';
     final small = context.text.tiny12
@@ -264,14 +320,12 @@ class _TaskRowState extends State<TaskRow> {
 
     final content = Row(
       children: [
-        if (source != null) ...[
-          // A bar in the calendar's colour sets events apart from tasks.
+        if (bar != null) ...[
           Container(
             width: 3,
             height: place.isEmpty ? Dim.pill - 6 : Dim.row - 16,
             decoration: BoxDecoration(
-              color: calendarColor(theme, source.calendarColor)
-                  .withValues(alpha: faint ? 0.3 : 1),
+              color: bar.withValues(alpha: bar.a * (faint ? 0.3 : 1)),
               borderRadius: BorderRadius.circular(1.5),
             ),
           ),
@@ -292,6 +346,7 @@ class _TaskRowState extends State<TaskRow> {
                         task: task,
                         selected: highlighted == task.id,
                         style: style,
+                        over: over,
                       ),
                     ),
                   ),
@@ -335,7 +390,7 @@ class _TaskRowState extends State<TaskRow> {
           onEnter: (_) => setState(() => _hovered = true),
           onExit: (_) => setState(() => _hovered = false),
           child: Semantics(
-            label: source == null ? null : 'Event',
+            label: task.happens ? 'Event' : null,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => widget.onOpen(task),
@@ -347,7 +402,9 @@ class _TaskRowState extends State<TaskRow> {
                   height: Dim.row,
                   child: Stack(
                     children: [
-                      Positioned.fill(right: 35, child: content),
+                      // An event has no circle and uses the room.
+                      Positioned.fill(right: task.checkable ? 35 : 6, child: content),
+                      if (task.checkable)
                       Positioned(
                         right: 0,
                         top: 0,
@@ -436,9 +493,25 @@ class _AddRowState extends State<AddRow> {
   late final FocusNode _focus = widget.focusNode ?? FocusNode();
   bool _hovered = false;
 
-  /// The phone's editing bar, which adds a time, a place and more to the
-  /// task being typed; null on a desktop.
+  /// What goes with the item being typed besides its text: on a phone the
+  /// editing bar fills it in (a time, a place and more); everywhere it says
+  /// whether a task or an event is being made, once that was switched.
   Composer? _composer;
+
+  /// The same switch where there is no composer around the line.
+  ItemKind? _kind;
+
+  /// A task or an event: what was switched to, else what the settings say.
+  ItemKind get _making =>
+      _composer?.kind ?? _kind ?? context.readStore.newItemKind;
+
+  void _switchKind() {
+    final next = _making == ItemKind.event ? ItemKind.task : ItemKind.event;
+    setState(() {
+      final composer = _composer;
+      composer != null ? composer.setKind(next) : _kind = next;
+    });
+  }
 
   @override
   void initState() {
@@ -468,6 +541,7 @@ class _AddRowState extends State<AddRow> {
     } else if (composer == null || !composer.holds(_focus)) {
       // Clicking away keeps what was typed, as a task.
       _commit();
+      _kind = null;
     } else if (!composer.busy) {
       _commit();
       composer.detach(_focus);
@@ -485,6 +559,8 @@ class _AddRowState extends State<AddRow> {
     final composer = _composer;
     if (id != null && composer != null && composer.holds(_focus)) {
       composer.applyTo(context.readStore, id);
+    } else if (id != null) {
+      if (_kind case final kind?) context.readStore.setKind(id, kind);
     }
     return id;
   }
@@ -494,6 +570,10 @@ class _AddRowState extends State<AddRow> {
     final theme = context.theme;
     final focused = _focus.hasFocus || (_composer?.holds(_focus) ?? false);
     final style = widget.compact ? context.text.taskCompact : context.text.task14;
+    // On a desktop the line itself says, and switches, whether a task or an
+    // event is being typed; on a phone the bar above the keyboard does.
+    final ownSwitch = !isMobile && focused;
+    final asEvent = ownSwitch && _making == ItemKind.event;
     return MouseRegion(
       cursor: SystemMouseCursors.text,
       onEnter: (_) => setState(() => _hovered = true),
@@ -537,10 +617,50 @@ class _AddRowState extends State<AddRow> {
                 height: 1,
                 child: ColoredBox(color: theme.hoverRule),
               ),
+            if (asEvent)
+              // As an event's row has it.
+              Positioned(
+                key: const ValueKey('bar'),
+                left: 0,
+                top: (Dim.row - (Dim.pill - 6)) / 2,
+                width: 3,
+                height: Dim.pill - 6,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.ink(55),
+                    borderRadius: BorderRadius.circular(1.5),
+                  ),
+                ),
+              ),
+            if (ownSwitch)
+              Positioned(
+                key: const ValueKey('kind'),
+                right: 0,
+                top: 0,
+                bottom: 0,
+                // A click on it is part of typing: the line keeps the keyboard.
+                child: TextFieldTapRegion(
+                  child: Pressable(
+                    onTap: _switchKind,
+                    focusable: false,
+                    semanticLabel: asEvent
+                        ? 'An event; switch to a task (Ctrl+E)'
+                        : 'A task; switch to an event (Ctrl+E)',
+                    builder: (context, hovered, pressed) => SizedBox(
+                      width: 30,
+                      child: Icon(
+                        asEvent ? AppIcons.calendarClock : AppIcons.circleCheck,
+                        size: 18,
+                        color: theme.ink(hovered ? 75 : (asEvent ? 60 : 30)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             Positioned.fill(
               key: const ValueKey('field'),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
+                padding: EdgeInsets.only(left: 6, right: ownSwitch ? 32 : 6),
                 child: Center(
                   child: CallbackShortcuts(
                     bindings: {
@@ -548,6 +668,9 @@ class _AddRowState extends State<AddRow> {
                         _controller.clear();
                         _focus.unfocus();
                       },
+                      if (!isMobile)
+                        const SingleActivator(LogicalKeyboardKey.keyE, control: true):
+                            _switchKind,
                     },
                     child: TextField(
                       controller: _controller,
@@ -629,7 +752,7 @@ class _TaskListBodyState extends State<TaskListBody> {
     return (
       widget.tasks.any((t) => t.id == dragged.id),
       // An event has no place among the tasks; its gap opens at the top.
-      !target ? -1 : dragged.isEvent ? 0 : drag.targetIndex,
+      !target ? -1 : dragged.fromCalendar ? 0 : drag.targetIndex,
     );
   }
 

@@ -253,6 +253,23 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                       options: const {true: '24-hour', false: '12-hour'},
                       onChanged: (v) => store.setSetting(Settings.use24h, v),
                     ),
+                    section('New items are'),
+                    Segmented<String>(
+                      value: store.newItemKind.name,
+                      options: const {'task': 'Tasks', 'event': 'Events'},
+                      onChanged: (v) => store.setSetting(Settings.newItems, v),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'A task has a circle to tick it off. An event has none '
+                        'and fades once it is over. While typing a new item, '
+                        '${isMobile ? 'the first button of the bar above the keyboard' : 'Ctrl+E or the mark at the end of the line'} '
+                        'makes it the other; what a calendar brings is an '
+                        'event until you turn it into a task.',
+                        style: context.text.caption14.copyWith(color: theme.ink(60)),
+                      ),
+                    ),
                     section('Tasks'),
                     toggle(
                       'Move unfinished tasks to today',

@@ -30,7 +30,7 @@ List<(String, Slot)> moveTargets(PlannerStore store, {bool lists = true}) {
 /// out on its own unless [wholeSeries]; an imported event is hidden, which
 /// is all that can be done to it from here.
 void deleteWithUndo(BuildContext context, Task task, {bool wholeSeries = false}) {
-  if (task.isEvent) return hideWithUndo(context, task);
+  if (task.fromCalendar) return hideWithUndo(context, task);
   final store = context.readStore;
   final app = context.readApp;
   final day = task.date;
@@ -64,15 +64,16 @@ void hideWithUndo(BuildContext context, Task event) {
   );
 }
 
-/// Turns an imported event into a task of the planner's own, in [slot] (by
-/// default on its day): the task takes over its text, time and place, and
-/// the event is hidden. Returns the task's id.
-String makeTaskOf(BuildContext context, Task event, {Slot? slot}) {
+/// Makes an item of the planner's own out of what a calendar brought, in
+/// [slot] (by default on its day): it takes over the text, time and place,
+/// and the calendar's event is hidden. For a Someday list, where nothing of
+/// a calendar can be. Returns the new item's id.
+String copyIntoPlanner(BuildContext context, Task event, {Slot? slot}) {
   final store = context.readStore;
   final id = store.copyTask(event.id, slot ?? DaySlot(event.date!));
   store.setEventHidden(event.id, true);
   context.readApp.say(
-    'Made a task; the event is hidden',
+    'Copied into the planner; the calendar\'s event is hidden',
     action: 'Undo',
     onAction: () {
       store.deleteTask(id);

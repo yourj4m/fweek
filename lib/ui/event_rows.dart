@@ -114,7 +114,9 @@ class SpanBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.theme;
     final source = task.event!;
-    final faint = task.done || source.hidden;
+    // Done (when it was made a task), hidden, or an event that is over.
+    final faint =
+        task.done || source.hidden || task.overAt(context.readStore.clock);
     final own = TaskColor.resolve(task.color);
     final calendar = calendarColor(theme, source.calendarColor);
     // A colour the user gave the event fills the bar, as it would a task's

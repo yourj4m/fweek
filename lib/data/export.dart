@@ -9,7 +9,7 @@ import 'recurrence.dart';
 /// Export and backup formats.
 abstract final class Export {
   static const backupFormat = 'weektodo-backup';
-  static const backupVersion = 2;
+  static const backupVersion = 3;
 
   static List<Task> _ordered(PlannerStore store) => store.allTasks.toList()
     ..sort((a, b) {
@@ -55,6 +55,8 @@ abstract final class Export {
             if (t.note.isNotEmpty) 'note': t.note,
             if (t.color != null) 'color': t.color,
             if (t.time != null) 'time': t.time,
+            if (t.end != null) 'end_time': t.end,
+            if (t.happens) 'kind': t.kind.name,
             if (t.done) 'done': true,
             if (t.doneAt != null) 'done_at': t.doneAt,
             if (t.subtasks.isNotEmpty)
@@ -98,6 +100,8 @@ abstract final class Export {
             if (e.geo != null) 'geo': e.geo,
             if (e.date != null) 'date': e.date!.iso,
             if (e.time != null) 'time': e.time,
+            if (e.end != null) 'end_time': e.end,
+            if (e.kind != null) 'kind': e.kind!.name,
             if (e.done) 'done': true,
             if (e.doneAt != null) 'done_at': e.doneAt,
             if (e.reminder != null) 'reminder': _localStamp(e.reminder!),
@@ -155,6 +159,8 @@ abstract final class Export {
           'note': t['note'] ?? '',
           'color': t['color'],
           'time': t['time'],
+          'end_time': t['end_time'],
+          'kind': t['kind'],
           'done': t['done'] == true,
           'done_at': t['done_at'],
           'subtasks': t['subtasks'] ?? const [],
@@ -199,6 +205,8 @@ abstract final class Export {
           'geo': e['geo'],
           'date': e['date'],
           'time': e['time'],
+          'end_time': e['end_time'],
+          'kind': e['kind'],
           'done': e['done'] == true,
           'done_at': e['done_at'],
           'reminder': e['reminder'],
@@ -242,19 +250,22 @@ abstract final class Export {
     }
 
     final lines = [
-      'date,list,time,title,done,color,repeats,note,subtasks,location',
+      'date,list,time,title,done,color,repeats,note,subtasks,location,type,end',
       for (final t in _ordered(store))
         [
           t.date?.iso ?? '',
           t.date == null ? _listTitle(store, t.listId) : '',
           t.time == null ? '' : _clock(t.time!),
           t.title,
-          t.done ? 'yes' : 'no',
+          // An event is not something that is done or not.
+          !t.checkable ? '' : t.done ? 'yes' : 'no',
           t.color ?? '',
           t.recurrence == null ? '' : t.recurrence!.frequency.name,
           t.note,
           t.subtasks.map((s) => '${s.done ? '[x]' : '[ ]'} ${s.text}').join('; '),
           t.location,
+          t.kind.name,
+          t.end == null ? '' : _clock(t.end!),
         ].map(cell).join(','),
     ];
     return '${lines.join('\r\n')}\r\n';
@@ -271,8 +282,14 @@ abstract final class Export {
         out.writeln(group);
         heading = group;
       }
-      final time = t.time == null ? '' : '${_clock(t.time!)} ';
-      out.writeln('${t.done ? '[x]' : '[ ]'} $time${t.title}');
+      final time = t.time == null
+          ? ''
+          : t.end == null
+              ? '${_clock(t.time!)} '
+              : '${_clock(t.time!)}–${_clock(t.end!)} ';
+      // A task has a box to tick; an event is a plain line.
+      final mark = !t.checkable ? ' - ' : t.done ? '[x]' : '[ ]';
+      out.writeln('$mark $time${t.title}');
       for (final s in t.subtasks) {
         out.writeln(s.heading
             ? '      ${s.text}'
@@ -288,7 +305,8 @@ abstract final class Export {
     return out.toString();
   }
 
-  /// iCalendar with one VTODO per dated task (Someday tasks have no due date).
+  /// iCalendar with one VTODO per task (Someday tasks have no due date) and
+  /// one VEVENT per event that has a day.
   static String ics(PlannerStore store, {DateTime? now}) {
     String escape(String s) => s
         .replaceAll(r'\', r'\\')
@@ -324,7 +342,36 @@ abstract final class Export {
       'VERSION:2.0',
       'PRODID:-//WeekToDo//Planner//EN',
     ];
+    String at(Day day, int minutes) =>
+        '${date(day)}T${_clock(minutes).replaceAll(':', '')}00';
     for (final t in _ordered(store)) {
+      if (t.happens && t.date != null) {
+        final day = t.date!;
+        lines.addAll([
+          'BEGIN:VEVENT',
+          'UID:${t.id}@weektodo',
+          'DTSTAMP:$stamp',
+          'SUMMARY:${escape(t.title)}',
+          if (t.note.trim().isNotEmpty) 'DESCRIPTION:${escape(t.note.trim())}',
+          if (t.hasLocation) 'LOCATION:${escape(t.location.trim())}',
+          if (t.geo case final geo? when geo.contains(','))
+            'GEO:${geo.replaceFirst(',', ';')}',
+          if (t.time == null) ...[
+            'DTSTART;VALUE=DATE:${date(day)}',
+            'DTEND;VALUE=DATE:${date(day.addDays(1))}',
+          ] else ...[
+            'DTSTART:${at(day, t.time!)}',
+            if (t.end != null) 'DTEND:${at(day, t.end!)}',
+          ],
+          if (t.recurrence != null) ...[
+            'RRULE:${rrule(t.recurrence!, day)}',
+            for (final d in t.exdates.toList()..sort())
+              'EXDATE;VALUE=DATE:${date(d)}',
+          ],
+          'END:VEVENT',
+        ]);
+        continue;
+      }
       lines.addAll([
         'BEGIN:VTODO',
         'UID:${t.id}@weektodo',

@@ -68,9 +68,9 @@ class _PlannerPageState extends State<PlannerPage> {
   }
 
   void _drop(Task task, Slot slot, int index) {
-    if (task.isEvent && slot is ListSlot) {
+    if (task.fromCalendar && slot is ListSlot) {
       // An event has no place in a list; a task made of it does.
-      makeTaskOf(context, task, slot: slot);
+      copyIntoPlanner(context, task, slot: slot);
       return;
     }
     context.readStore.moveTask(task.id, slot, index: index);

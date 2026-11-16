@@ -47,6 +47,10 @@ abstract final class Settings {
   /// Draw the frame timing graphs over the app (for checking smoothness).
   static const frameTiming = 'frame_timing';
 
+  /// What a new item is unless said otherwise while making it: `task` or
+  /// `event`.
+  static const newItems = 'new_items';
+
   /// Settings that belong to this device and are not synced: how a planner
   /// looks on a phone need not follow the desktop.
   static const local = {theme, view, frameTiming};
@@ -64,6 +68,7 @@ abstract final class Settings {
     placeSearch: true,
     placeServer: '',
     frameTiming: false,
+    newItems: 'task',
   };
 }
 
@@ -243,6 +248,9 @@ class PlannerStore extends ChangeNotifier {
 
     final recurrence = row['recurrence'] as String?;
     final reminder = row['reminder'] as String?;
+    final kind = ItemKind.tryParse(row['kind']) ?? ItemKind.task;
+    final time = row['time'] as int?;
+    final end = row['end_time'] as int?;
     return Task(
       id: row['id'] as String,
       listId: row['list_id'] as String?,
@@ -251,8 +259,12 @@ class PlannerStore extends ChangeNotifier {
       title: row['title'] as String? ?? '',
       note: row['note'] as String? ?? '',
       color: row['color'] as String?,
-      time: row['time'] as int?,
-      done: row['done'] == 1,
+      time: time,
+      kind: kind,
+      end: time != null && end != null && end > time ? end : null,
+      // An event is not ticked off; a tick it had as a task comes back
+      // with it should it become one again.
+      done: row['done'] == 1 && kind == ItemKind.task,
       doneAt: row['done_at'] as int?,
       subtasks: [
         for (final item in list('subtasks')) ?Subtask.fromJson(item),
@@ -296,6 +308,8 @@ class PlannerStore extends ChangeNotifier {
         if (decoded is List)
           for (final item in decoded) ?Subtask.fromJson(item),
       ],
+      kind: ItemKind.tryParse(row['kind']),
+      end: row['end_time'] as int?,
     );
   }
 
@@ -585,9 +599,14 @@ class PlannerStore extends ChangeNotifier {
 
   // ------------------------------------------------------------------ edits
 
-  /// Adds a task at [slot] (at the end, or at [index]) and returns its id.
-  /// Returns null without adding anything when [title] is blank.
-  String? addTask(Slot slot, String title, {int? index}) {
+  /// What a new item is when nothing else is said: the setting.
+  ItemKind get newItemKind =>
+      ItemKind.tryParse(setting<String>(Settings.newItems)) ?? ItemKind.task;
+
+  /// Adds an item at [slot] (at the end, or at [index]) and returns its id:
+  /// a task or an event as [kind] says, or as the setting has it. Returns
+  /// null without adding anything when [title] is blank.
+  String? addTask(Slot slot, String title, {int? index, ItemKind? kind}) {
     final text = title.trim();
     if (text.isEmpty) return null;
     final id = _newId();
@@ -596,8 +615,23 @@ class PlannerStore extends ChangeNotifier {
       'position': _keyAt(slot, index),
       'title': text,
       'created_at': _now(),
+      if ((kind ?? newItemKind) == ItemKind.event) 'kind': ItemKind.event.name,
     });
     return id;
+  }
+
+  /// Makes an item a task or an event. For a repeating task this applies to
+  /// the whole series; for what a calendar brought it is kept as the user's
+  /// change to that event.
+  void setKind(String id, ItemKind kind) {
+    final item = task(id);
+    if (item == null || item.kind == kind) return;
+    final source = item.event;
+    if (source != null) {
+      _writeEvent(source, {'kind': kind.name});
+    } else {
+      _write('tasks', _seriesId(id), {'kind': kind.name});
+    }
   }
 
   /// Returns the id of a stored task for [id]. A computed occurrence of a
@@ -651,6 +685,7 @@ class PlannerStore extends ChangeNotifier {
     String? note,
     String? Function()? color,
     int? Function()? time,
+    int? Function()? end,
     List<Subtask>? subtasks,
     DateTime? Function()? reminder,
     String? location,
@@ -659,22 +694,45 @@ class PlannerStore extends ChangeNotifier {
     final occurrence = task(id);
     if (occurrence == null) return;
     final source = occurrence.event;
+
+    // The end as it is to be stored. One given outright is taken as it is.
+    // With only the start changing, an end the user had set moves along
+    // with it, and goes when it would pass midnight or the time is taken
+    // away. [explicit] is that end, if any.
+    ({int? value})? endFor(int? explicit) {
+      if (end != null) {
+        final start = time != null ? time() : occurrence.time;
+        final value = end();
+        return (value: start != null && value != null && value > start ? value : null);
+      }
+      if (time == null || explicit == null) return null;
+      final from = occurrence.time, to = time();
+      if (from == null || to == null) return (value: null);
+      final moved = explicit + (to - from);
+      return (value: moved > to && moved < 24 * 60 ? moved : null);
+    }
+
     if (source != null) {
       final ownTime = source.allDay || source.start == null
           ? null
           : source.start!.hour * 60 + source.start!.minute;
+      final newEnd = endFor(_overrides[source.key]?.end);
       _writeEvent(source, {
         if (title != null)
           'title': title.trim().isEmpty || title.trim() == source.title.trim()
               ? null
               : title.trim(),
-        if (note != null) 'note': note.isEmpty ? null : note,
+        // The calendar's description is the note until it is edited. An
+        // emptied note is kept as empty: null would bring the description
+        // back.
+        if (note != null) 'note': note.trim() == source.description.trim() ? null : note,
         if (color != null) 'color': color(),
         if (time != null)
           'time': switch (time()) {
             final minutes when minutes == ownTime => null,
             final minutes => minutes ?? EventOverride.noTime,
           },
+        if (newEnd != null) 'end_time': newEnd.value,
         if (subtasks != null)
           'subtasks':
               subtasks.isEmpty ? null : [for (final s in subtasks) s.toJson()],
@@ -699,11 +757,13 @@ class PlannerStore extends ChangeNotifier {
           .subtract(Duration(days: occurrence.date!.difference(series.date!)));
     }
 
+    final newEnd = endFor(occurrence.end);
     _write('tasks', target, {
       'title': ?title,
       'note': ?note,
       if (color != null) 'color': color(),
       if (time != null) 'time': time(),
+      if (newEnd != null) 'end_time': newEnd.value,
       if (subtasks != null) 'subtasks': [for (final s in subtasks) s.toJson()],
       if (reminder != null)
         'reminder': switch (seriesReminder(reminder())) {
@@ -764,13 +824,15 @@ class PlannerStore extends ChangeNotifier {
       'done_at': null,
       'reminder': null,
       'subtasks': null,
+      'kind': null,
+      'end_time': null,
     });
   }
 
-  /// Changes to imported events that carry a reminder and are neither done
-  /// nor hidden.
-  Iterable<EventOverride> get eventsWithReminders =>
-      _overrides.values.where((o) => o.reminder != null && !o.done && !o.hidden);
+  /// Changes to imported events that carry a reminder and are neither
+  /// ticked off (as tasks) nor hidden.
+  Iterable<EventOverride> get eventsWithReminders => _overrides.values.where((o) =>
+      o.reminder != null && !o.hidden && !(o.done && o.shownAs == ItemKind.task));
 
   // ------------------------------------------------------------- calendars
 
@@ -833,6 +895,8 @@ class PlannerStore extends ChangeNotifier {
   ///
   /// Returns the id under which the task is addressed afterwards.
   String setDone(String id, bool done) {
+    // Only a task is ticked off.
+    if (task(id)?.checkable == false) return id;
     if (Task.isEventId(id)) {
       final source = task(id)?.event;
       if (source != null) {
@@ -911,18 +975,17 @@ class PlannerStore extends ChangeNotifier {
     final source = task(id);
     if (source == null) throw ArgumentError('No task $id');
     final newId = _newId();
-    final description = source.event?.description.trim() ?? '';
     _write('tasks', newId, {
       ..._slotColumns(slot),
       'position': _keyAt(slot, null),
       'title': source.title,
-      // A task made from an event takes the calendar's description along.
-      'note': [
-        if (source.note.isNotEmpty) source.note,
-        if (description.isNotEmpty) description,
-      ].join('\n\n'),
+      // For what a calendar brought this is its description, or what the
+      // user made of it.
+      'note': source.note,
       'color': source.color,
       'time': source.time,
+      'end_time': source.end,
+      if (source.happens) 'kind': ItemKind.event.name,
       'location': source.location,
       'geo': source.geo,
       'subtasks': [
@@ -973,14 +1036,19 @@ class PlannerStore extends ChangeNotifier {
 
   /// Moves unfinished tasks from past days to the top of today, once per day,
   /// when the setting is on. Repeating tasks are left where they are: their
-  /// next occurrence comes round on its own. Returns how many tasks moved.
+  /// next occurrence comes round on its own. Events stay on their day: they
+  /// took place. Returns how many tasks moved.
   int rollOver() {
     final now = today;
     if (!setting<bool>(Settings.rollover)) return 0;
     if (setting<String?>(Settings.lastRollover) == now.iso) return 0;
     final overdue = _tasks.values
         .where((t) =>
-            t.date != null && t.date! < now && !t.done && t.recurrence == null)
+            t.date != null &&
+            t.date! < now &&
+            t.checkable &&
+            !t.done &&
+            t.recurrence == null)
         .toList()
       ..sort((a, b) {
         final byDate = a.date!.compareTo(b.date!);

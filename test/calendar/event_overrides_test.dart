@@ -101,6 +101,12 @@ class Device {
 
   CalendarService get calendars => _service!;
 
+  /// As if the app had been closed and opened again.
+  Future<CalendarService> restart() {
+    _service?.dispose();
+    return start();
+  }
+
   /// Replaces what the calendar holds, as the next download would.
   Future<void> download(String text, {String id = 'c1'}) async {
     cache.feeds[id] = text;
@@ -123,11 +129,16 @@ void main() {
       final calendars = await device.start();
       final event = only(calendars, monday);
       expect(event.id, startsWith('ev:'));
-      expect(event.isEvent, isTrue);
+      expect(event.fromCalendar, isTrue);
       expect(event.title, 'Team meeting');
       expect(event.time, 10 * 60);
       expect(event.location, 'Room 204');
-      expect(event.note, '');
+      // What the calendar says about it is its note, and it is an event:
+      // from 10 to 11, with nothing to tick.
+      expect(event.note, 'Bring the draft.\nSee the agenda (https://example.org/agenda)');
+      expect(event.kind, ItemKind.event);
+      expect(event.checkable, isFalse);
+      expect(event.end, 11 * 60);
       expect(event.event!.calendarName, 'Work');
       expect(event.event!.edited, isFalse);
       // What the calendar wrote in HTML reads as text, links kept.
@@ -137,7 +148,7 @@ void main() {
       expect(device.store.eventOverrides, isEmpty);
     });
 
-    test('takes a note, a colour, another time and place, subtasks and done', () async {
+    test('takes a note, a colour, another time and place and subtasks', () async {
       final device = Device(text: feed([meeting()]));
       final calendars = await device.start();
       final store = device.store;
@@ -147,6 +158,7 @@ void main() {
       store.updateTask(id, time: () => 14 * 60 + 15);
       store.updateTask(id, location: 'Room 12', geo: () => '45.1,5.7');
       store.updateTask(id, subtasks: const [Subtask(id: 's1', text: 'Print slides')]);
+      // An event is not ticked off.
       store.setDone(id, true);
 
       final event = only(calendars, monday);
@@ -156,7 +168,8 @@ void main() {
       expect(event.location, 'Room 12');
       expect(event.geo, '45.1,5.7');
       expect(event.subtasks.single.text, 'Print slides');
-      expect(event.done, isTrue);
+      expect(event.done, isFalse);
+      expect(store.eventOverrides.single.done, isFalse);
       expect(event.event!.edited, isTrue);
       // The calendar's own values stay known beside the changed ones.
       expect(event.event!.title, 'Team meeting');
@@ -196,9 +209,155 @@ void main() {
       device.store.resetEvent(id);
       final event = only(calendars, monday);
       expect(event.title, 'Team meeting');
-      expect(event.note, '');
+      expect(event.note, startsWith('Bring the draft.'));
       expect(event.color, isNull);
       expect(event.event!.hidden, isFalse);
+    });
+  });
+
+  group('an event\'s note', () {
+    const theirs = 'Bring the draft.\nSee the agenda (https://example.org/agenda)';
+
+    test('is the calendar\'s description until it is edited, and follows the calendar till then',
+        () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      expect(only(calendars, monday).note, theirs);
+      expect(device.store.eventOverrides, isEmpty);
+      await device.download(feed([
+        [...meeting().where((l) => !l.startsWith('DESCRIPTION')), 'DESCRIPTION:Room changed'],
+      ]));
+      expect(only(device.calendars, monday).note, 'Room changed');
+    });
+
+    test('an edit is the user\'s and stays through downloads', () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      final id = only(calendars, monday).id;
+      device.store.updateTask(id, note: '$theirs\nAnd the budget sheet');
+      expect(device.store.eventOverrides.single.note, endsWith('And the budget sheet'));
+      await device.download(feed([
+        [...meeting().where((l) => !l.startsWith('DESCRIPTION')), 'DESCRIPTION:Room changed'],
+      ]));
+      expect(only(device.calendars, monday).note, endsWith('And the budget sheet'));
+      // The calendar's own text stays known.
+      expect(only(device.calendars, monday).event!.description, 'Room changed');
+    });
+
+    test('typed back to what the calendar says it is no change', () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      final id = only(calendars, monday).id;
+      device.store.updateTask(id, note: 'Mine');
+      device.store.updateTask(id, note: theirs);
+      expect(device.store.eventOverrides.single.note, isNull);
+      expect(only(calendars, monday).event!.edited, isFalse);
+    });
+
+    test('emptied, it stays empty rather than bringing the description back', () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      final id = only(calendars, monday).id;
+      device.store.updateTask(id, note: '');
+      expect(only(calendars, monday).note, '');
+      expect(only(calendars, monday).hasNote, isFalse);
+      device.store.resetEvent(id);
+      expect(only(calendars, monday).note, theirs);
+    });
+
+    test('a note from the version that kept it beside the description gets the description under it, once',
+        () async {
+      final device = Device(text: feed([meeting(), meeting(title: 'Review', day: '20261110', uid: 'r@test')]));
+      var calendars = await device.start();
+      final first = only(calendars, monday).id, second = only(calendars, monday.addDays(1)).id;
+      // As that version stored them: only the user's own words.
+      device.store.updateTask(first, note: 'Ask about the budget');
+      device.store.updateTask(second, color: () => 'red');
+      // The planner is opened by this version for the first time.
+      device.store.db.setMeta('events.notes.joined', 'pending');
+      calendars = await device.restart();
+      expect(only(calendars, monday).note, 'Ask about the budget\n\n$theirs');
+      // Nothing is made up for an event that had no note of its own.
+      expect(device.store.eventOverride(only(calendars, monday.addDays(1)).event!.key)!.note, isNull);
+      // And not again.
+      device.store.updateTask(first, note: 'Short');
+      calendars = await device.restart();
+      expect(only(calendars, monday).note, 'Short');
+    });
+  });
+
+  group('events and tasks', () {
+    test('what a calendar brings is an event; it can be made a task, and back', () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      final store = device.store;
+      final id = only(calendars, monday).id;
+
+      store.setKind(id, ItemKind.task);
+      expect(only(calendars, monday).checkable, isTrue);
+      expect(store.eventOverrides.single.kind, ItemKind.task);
+      store.setDone(id, true);
+      expect(only(calendars, monday).done, isTrue);
+
+      // As an event again it has no tick; the tick is not forgotten.
+      store.setKind(id, ItemKind.event);
+      expect(only(calendars, monday).done, isFalse);
+      expect(only(calendars, monday).kind, ItemKind.event);
+      store.setKind(id, ItemKind.task);
+      expect(only(calendars, monday).done, isTrue);
+    });
+
+    test('an event ticked off before events lost their circle stays a ticked task', () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      final event = only(calendars, monday);
+      // As the version before wrote it: done, and no word about the kind.
+      device.store.refresh(device.store.db.apply(device.store.db.stamp('events', event.event!.key, {
+        'cal': event.event!.calendar,
+        'origin': '2026-11-09',
+        'done': true,
+      })));
+      expect(only(calendars, monday).kind, ItemKind.task);
+      expect(only(calendars, monday).done, isTrue);
+    });
+
+    test('the end follows the calendar, moves with the start, and can be the user\'s own', () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      final store = device.store;
+      final id = only(calendars, monday).id;
+      expect((only(calendars, monday).time, only(calendars, monday).end), (600, 660));
+
+      store.updateTask(id, time: () => 14 * 60);
+      expect(only(calendars, monday).end, 15 * 60);
+      expect(store.eventOverrides.single.end, isNull);
+
+      store.updateTask(id, end: () => 16 * 60 + 30);
+      expect(only(calendars, monday).end, 16 * 60 + 30);
+      // The user's end keeps its distance when the start moves.
+      store.updateTask(id, time: () => 15 * 60);
+      expect(only(calendars, monday).end, 17 * 60 + 30);
+
+      store.updateTask(id, time: () => null);
+      expect(only(calendars, monday).time, isNull);
+      expect(only(calendars, monday).end, isNull);
+    });
+
+    test('an event is over when its day or, today, its end has passed', () async {
+      final device = Device(text: feed([meeting(), conference]));
+      final calendars = await device.start();
+      final event = only(calendars, monday);
+      expect(event.overAt(DateTime(2026, 11, 9, 10, 59)), isFalse);
+      expect(event.overAt(DateTime(2026, 11, 9, 11)), isTrue);
+      expect(event.overAt(DateTime(2026, 11, 8, 23)), isFalse);
+      expect(event.overAt(DateTime(2026, 11, 10)), isTrue);
+      // Over several days: after the last one.
+      final span = calendars.eventsBetween(monday, sunday).spans.single;
+      expect(span.overAt(DateTime(2026, 11, 15, 23, 59)), isFalse);
+      expect(span.overAt(DateTime(2026, 11, 16)), isTrue);
+      // A task is never over, only done.
+      device.store.setKind(event.id, ItemKind.task);
+      expect(only(calendars, monday).overAt(DateTime(2026, 11, 20)), isFalse);
     });
   });
 

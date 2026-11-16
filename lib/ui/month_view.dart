@@ -247,6 +247,7 @@ class _MonthCell extends StatelessWidget {
                             task: task,
                             height: 18,
                             style: context.text.tiny12,
+                            over: task.overAt(context.readStore.clock),
                           ),
                         ),
                       ),
@@ -287,7 +288,8 @@ class _EventChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.theme;
     final source = event.event!;
-    final dim = faint * (event.done || source.hidden ? 0.4 : 1);
+    final dim = faint *
+        (event.done || source.hidden || event.overAt(context.readStore.clock) ? 0.4 : 1);
     final own = TaskColor.resolve(event.color);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
 
 import '../app_state.dart';
+import '../data/models.dart';
 import '../data/planner_store.dart';
 import '../theme/app_theme.dart';
 import 'icons.dart';
@@ -42,6 +43,17 @@ class Composer extends ChangeNotifier {
 
   final draft = TaskDraft();
 
+  /// Whether the items being typed are tasks or events, when the bar's
+  /// switch was used; null for what the settings say. Unlike the [draft],
+  /// which is for one item, this holds for as long as typing goes on:
+  /// several events can be entered one after the other.
+  ItemKind? kind;
+
+  void setKind(ItemKind? value) {
+    kind = value;
+    notifyListeners();
+  }
+
   /// Whether one of the bar's own fields (place, note) has the keyboard.
   /// The line being typed on has lost it then, but is not finished.
   bool busy = false;
@@ -71,6 +83,7 @@ class Composer extends ChangeNotifier {
     _field = null;
     _commit = null;
     busy = false;
+    kind = null;
     draft.clear();
     // The line may be going away with the whole page.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -85,6 +98,7 @@ class Composer extends ChangeNotifier {
 
   /// Gives a task just created what the bar collected for it.
   void applyTo(PlannerStore store, String id) {
+    if (kind case final kind?) store.setKind(id, kind);
     if (draft.isEmpty) return;
     store.updateTask(
       id,
@@ -218,6 +232,8 @@ class _ComposerBarState extends State<ComposerBar> {
     if (!_composer.active) return const SizedBox.shrink();
     final theme = context.theme;
     final draft = _composer.draft;
+    final usual = context.store.newItemKind;
+    final kind = _composer.kind ?? usual;
     final use24h = context.store.setting<bool>(Settings.use24h);
     final color = TaskColor.resolve(draft.color);
 
@@ -329,6 +345,23 @@ class _ComposerBarState extends State<ComposerBar> {
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
+                          // A task or an event: what the settings say, until
+                          // tapped. The word shows when it is the other.
+                          _BarButton(
+                            icon: kind == ItemKind.event
+                                ? AppIcons.calendarClock
+                                : AppIcons.circleCheck,
+                            tooltip: kind == ItemKind.event
+                                ? 'An event; tap to make it a task'
+                                : 'A task; tap to make it an event',
+                            label: kind == usual
+                                ? null
+                                : kind == ItemKind.event
+                                    ? 'Event'
+                                    : 'Task',
+                            onTap: () => _composer.setKind(
+                                kind == ItemKind.event ? ItemKind.task : ItemKind.event),
+                          ),
                           _BarButton(
                             icon: AppIcons.clock,
                             tooltip: 'Time',

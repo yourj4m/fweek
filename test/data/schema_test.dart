@@ -34,6 +34,20 @@ const _version1 = '''
   pragma user_version = 1;
 ''';
 
+/// What the second version added to them.
+const _version2 = '''
+  alter table tasks add column location text;
+  alter table tasks add column geo text;
+  create table events(id text primary key, cal text, origin text,
+    hidden integer not null default 0, color text, title text, note text,
+    location text, geo text, date text, time integer,
+    done integer not null default 0, done_at integer, reminder text, subtasks text);
+  create table calendars(id text primary key, name text, color text,
+    hidden integer not null default 0, position text, ids text,
+    deleted integer not null default 0);
+  pragma user_version = 2;
+''';
+
 void main() {
   final friday = Day(2026, 11, 13);
   late Directory folder;
@@ -120,6 +134,68 @@ void main() {
       addTearDown(db.close);
       expect(db.changeCount, 6);
       expect(db.row('tasks', 't1')!['location'], 'Corner shop');
+    });
+  });
+
+  group('a planner written by the second version', () {
+    String oldFile() {
+      final path = '${folder.path}/planner.db';
+      final db = sqlite3.open(path)..execute(_version1)..execute(_version2);
+      db.execute("insert into meta(key, value) values('device_id', 'aaaaaaaa')");
+      db.execute("insert into meta(key, value) values('sync.config', '{\"server\":\"cloud.example.org\"}')");
+      db.execute("insert into tasks(id, date, position, title, time, done, location) "
+          "values('t1', '2026-11-13', 'V', 'Seminar', 600, 1, 'Room 2')");
+      db.execute("insert into tasks(id, date, position, title) values('t2', '2026-11-13', 'W', 'Buy oat milk')");
+      db.execute("insert into lists(id, title, position) values('someday', '', 'V')");
+      db.execute("insert into events(id, cal, origin, done, note) values('e1', 'k1', '2026-11-13', 1, 'Mine')");
+      db.execute("insert into events(id, cal, origin, color) values('e2', 'k1', '2026-11-13', 'red')");
+      void logged(String hlc, String table, String row, String column, Object? value) => db.execute(
+          'insert into changes(hlc, tbl, row, col, value) values(?, ?, ?, ?, ?)',
+          [hlc, table, row, column, jsonEncode(value)]);
+      // Sent by a device that was updated first, and kept in the log.
+      logged('01a000000001-0000-bbbbbbbb', 'tasks', 't1', 'kind', 'event');
+      logged('01a000000001-0001-bbbbbbbb', 'tasks', 't1', 'end_time', 690);
+      logged('01a000000002-0000-bbbbbbbb', 'events', 'e2', 'kind', 'task');
+      db.close();
+      return path;
+    }
+
+    test('opens with everything it had; its items are tasks, as they were', () {
+      final store = PlannerStore(PlannerDatabase.open(oldFile()), today: () => friday);
+      addTearDown(store.db.close);
+      expect(store.db.foundVersion, 2);
+      expect(store.db.meta('sync.config'), contains('cloud.example.org'));
+      final milk = store.task('t2')!;
+      expect(milk.kind, ItemKind.task);
+      expect(milk.end, isNull);
+      expect(store.task('t1')!.location, 'Room 2');
+      // An event that had been ticked off stays a ticked task.
+      expect(store.eventOverride('e1')!.shownAs, ItemKind.task);
+      expect(store.eventOverride('e1')!.note, 'Mine');
+    });
+
+    test('what a newer device had already sent takes effect', () {
+      final store = PlannerStore(PlannerDatabase.open(oldFile()), today: () => friday);
+      addTearDown(store.db.close);
+      final seminar = store.task('t1')!;
+      expect(seminar.kind, ItemKind.event);
+      expect((seminar.time, seminar.end), (600, 690));
+      // An event has no tick, whatever it had as a task.
+      expect(seminar.done, isFalse);
+      expect(store.eventOverride('e2')!.kind, ItemKind.task);
+    });
+
+    test('a copy of the file as it was is kept beside it', () {
+      final path = oldFile();
+      PlannerDatabase.open(path).close();
+      final copy = sqlite3.open('$path.v2');
+      expect(copy.select('pragma user_version').first.columnAt(0), 2);
+      expect(copy.select('pragma table_info(tasks)').map((r) => r['name']), isNot(contains('kind')));
+      copy.close();
+      // Opened again, it is this version's file.
+      final again = PlannerDatabase.open(path);
+      expect(again.foundVersion, 3);
+      again.close();
     });
   });
 
@@ -215,7 +291,7 @@ void main() {
         'hidden': true,
       })));
       final backup = Export.backup(store);
-      expect(jsonDecode(backup)['version'], 2);
+      expect(jsonDecode(backup)['version'], 3);
 
       final copy = PlannerStore(PlannerDatabase.inMemory(), today: () => friday);
       Export.restore(copy, backup);

@@ -150,7 +150,7 @@ class _TaskMenuState extends State<_TaskMenu> {
               label: label,
               onTap: () => _run(() {
                 if (source != null && slot is ListSlot) {
-                  makeTaskOf(_root, task, slot: slot);
+                  copyIntoPlanner(_root, task, slot: slot);
                 } else {
                   _root.readStore.moveTask(task.id, slot);
                 }
@@ -174,11 +174,20 @@ class _TaskMenuState extends State<_TaskMenu> {
               open != null ? open(task) : showTaskDialog(_root, task.id);
             }),
           ),
+          if (task.checkable)
+            MenuRow(
+              icon: AppIcons.circleCheck,
+              label: task.done ? 'Mark as not done' : 'Mark as done',
+              hint: isMobile ? null : 'Space',
+              onTap: () => _run(() => _root.readStore.setDone(task.id, !task.done)),
+            ),
+          // A task is ticked off, an event is not: either can be made the
+          // other.
           MenuRow(
-            icon: AppIcons.circleCheck,
-            label: task.done ? 'Mark as not done' : 'Mark as done',
-            hint: isMobile ? null : 'Space',
-            onTap: () => _run(() => _root.readStore.setDone(task.id, !task.done)),
+            icon: task.checkable ? AppIcons.calendarClock : AppIcons.circleCheck,
+            label: task.checkable ? 'Turn into an event' : 'Turn into a task',
+            onTap: () => _run(() => _root.readStore.setKind(
+                task.id, task.checkable ? ItemKind.event : ItemKind.task)),
           ),
           divider(),
           MenuRow(
@@ -254,11 +263,6 @@ class _TaskMenuState extends State<_TaskMenu> {
                     _run(() => deleteWithUndo(_root, task, wholeSeries: true)),
               ),
           ] else ...[
-            MenuRow(
-              icon: AppIcons.listPlus,
-              label: 'Make a task of it',
-              onTap: () => _run(() => makeTaskOf(_root, task)),
-            ),
             if (source.edited)
               MenuRow(
                 icon: AppIcons.rotateCcw,

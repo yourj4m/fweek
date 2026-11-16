@@ -440,8 +440,36 @@ class CalendarService extends ChangeNotifier {
     if (_disposed) return;
     if (named) _save();
     _applyRows();
+    // A planner coming from the version before events had a single note.
+    if (db.foundVersion == 2 && db.meta(_oldNotes) == null) {
+      db.setMeta(_oldNotes, 'pending');
+    }
+    _joinOldNotes();
     _changed();
     _schedule();
+  }
+
+  static const _oldNotes = 'events.notes.joined';
+
+  /// An event has one note: the calendar's description, until the user
+  /// edits it. In the version before, what the user wrote about an event
+  /// was kept beside the description instead. Such a note would now stand
+  /// in the description's place and hide it, so once, for a planner that
+  /// comes from that version, the description is put under it.
+  void _joinOldNotes() {
+    if (db.meta(_oldNotes) != 'pending') return;
+    // Only with every calendar's events at hand; otherwise after the next
+    // download.
+    if (_subscriptions.any((s) => !_feeds.containsKey(s.id))) return;
+    for (final override in List.of(store.eventOverrides)) {
+      final own = override.note;
+      if (own == null || own.trim().isEmpty) continue;
+      final task = eventTask('${Task.eventPrefix}${override.id}');
+      final description = task?.event?.description ?? '';
+      if (task == null || description.isEmpty || own.contains(description)) continue;
+      store.updateTask(task.id, note: '${own.trimRight()}\n\n$description');
+    }
+    db.setMeta(_oldNotes, 'done');
   }
 
   void _schedule() {
@@ -670,6 +698,7 @@ class CalendarService extends ChangeNotifier {
         }
         _feeds[subscription.id] = feed;
         _feedChanged(subscription.id);
+        _joinOldNotes();
         subscription.events = feed.eventCount;
         subscription.etag = download.etag;
         subscription.modified = download.modified;
@@ -783,14 +812,33 @@ class CalendarService extends ChangeNotifier {
     };
     _hints[key] = (subscription.id, occurrence.firstDay);
     if (_hints.length > 6000) _hints.remove(_hints.keys.first);
+    final description = plainFromHtml(occurrence.description).trim();
+    final kind = override?.shownAs ?? ItemKind.event;
+    // The end: the user's own, or as long after the start as the calendar
+    // has it, while that stays within the day.
+    int? end;
+    if (time != null) {
+      final own = override?.end;
+      final lasts = occurrence.allDay || occurrence.start == null || occurrence.end == null
+          ? 0
+          : occurrence.end!.difference(occurrence.start!).inMinutes;
+      if (own != null && own > time) {
+        end = own;
+      } else if (lasts > 0 && time + lasts < 24 * 60) {
+        end = time + lasts;
+      }
+    }
     return Task(
       id: '${Task.eventPrefix}$key',
       date: occurrence.firstDay.addDays(shift),
       title: override?.title ?? occurrence.title.trim(),
-      note: override?.note ?? '',
+      // The calendar's description is the note, until the user edits it.
+      note: override?.note ?? description,
       color: override?.color,
       time: time,
-      done: override?.done ?? false,
+      end: end,
+      kind: kind,
+      done: (override?.done ?? false) && kind == ItemKind.task,
       doneAt: override?.doneAt,
       subtasks: override?.subtasks ?? const [],
       reminder: override?.reminder,
@@ -803,7 +851,7 @@ class CalendarService extends ChangeNotifier {
         calendarColor: subscription.color,
         title: occurrence.title.trim(),
         location: occurrence.location.trim(),
-        description: plainFromHtml(occurrence.description).trim(),
+        description: description,
         allDay: occurrence.allDay,
         start: occurrence.start,
         end: occurrence.end,

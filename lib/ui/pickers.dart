@@ -308,23 +308,41 @@ class _TimeWheelsState extends State<TimeWheels> {
 /// Chooses a time: on a phone with wheels for hours and minutes, on a
 /// desktop by typing it or picking from a list.
 class TimePicker extends StatelessWidget {
-  const TimePicker({super.key, required this.selected, required this.onPick});
+  const TimePicker({super.key, required this.selected, required this.onPick, this.after});
 
   final int? selected;
 
-  /// Called with minutes after midnight, or null for "no time".
+  /// When set, an end is being picked for something that starts at this
+  /// time: only later times are offered, each with how long that makes it.
+  final int? after;
+
+  /// Called with minutes after midnight, or null for "no time" (when an end
+  /// is picked: "no end").
   final ValueChanged<int?> onPick;
 
   @override
   Widget build(BuildContext context) => isMobile
-      ? _WheelTimePicker(selected: selected, onPick: onPick)
-      : _ListTimePicker(selected: selected, onPick: onPick);
+      ? _WheelTimePicker(selected: selected, onPick: onPick, after: after)
+      : _ListTimePicker(selected: selected, onPick: onPick, after: after);
+}
+
+/// How long [minutes] is, in the shortest way to say it: `45 min`, `1 h`,
+/// `1.5 h`, `2 h 15`.
+String formatDuration(int minutes) {
+  if (minutes < 60) return '$minutes min';
+  final hours = minutes ~/ 60, rest = minutes % 60;
+  return switch (rest) {
+    0 => '$hours h',
+    30 => '$hours.5 h',
+    _ => '$hours h $rest',
+  };
 }
 
 class _WheelTimePicker extends StatefulWidget {
-  const _WheelTimePicker({required this.selected, required this.onPick});
+  const _WheelTimePicker({required this.selected, required this.onPick, this.after});
 
   final int? selected;
+  final int? after;
   final ValueChanged<int?> onPick;
 
   @override
@@ -332,9 +350,12 @@ class _WheelTimePicker extends StatefulWidget {
 }
 
 class _WheelTimePickerState extends State<_WheelTimePicker> {
-  // Without a time yet, start from the next full hour.
-  late int _minutes =
-      widget.selected ?? ((context.readStore.clock.hour + 1) % 24) * 60;
+  // Without a time yet, start from the next full hour; for an end, an hour
+  // after the start.
+  late int _minutes = widget.selected ??
+      (widget.after != null
+          ? (widget.after! + 60).clamp(0, 24 * 60 - 5)
+          : ((context.readStore.clock.hour + 1) % 24) * 60);
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -354,7 +375,7 @@ class _WheelTimePickerState extends State<_WheelTimePicker> {
                 children: [
                   Expanded(
                     child: AppButton(
-                      label: 'No time',
+                      label: widget.after == null ? 'No time' : 'No end',
                       expand: true,
                       onTap: () => widget.onPick(null),
                     ),
@@ -377,9 +398,10 @@ class _WheelTimePickerState extends State<_WheelTimePicker> {
 
 /// A field to type a time plus a scrolling list in half-hour steps.
 class _ListTimePicker extends StatefulWidget {
-  const _ListTimePicker({required this.selected, required this.onPick});
+  const _ListTimePicker({required this.selected, required this.onPick, this.after});
 
   final int? selected;
+  final int? after;
 
   /// Called with minutes after midnight, or null for "no time".
   final ValueChanged<int?> onPick;
@@ -396,9 +418,11 @@ class _ListTimePickerState extends State<_ListTimePicker> {
   void initState() {
     super.initState();
     // Open with the current time, or mid-morning, near the top of the list.
+    // The list of ends begins at the start, so it opens at its top.
     final around = widget.selected ?? 9 * 60;
     _scroll = ScrollController(
-      initialScrollOffset: ((around ~/ 30) * 36.0 - 72).clamp(0, 48 * 36.0),
+      initialScrollOffset:
+          widget.after != null ? 0 : ((around ~/ 30) * 36.0 - 72).clamp(0, 48 * 36.0),
     );
   }
 
@@ -413,8 +437,11 @@ class _ListTimePickerState extends State<_ListTimePicker> {
   Widget build(BuildContext context) {
     final theme = context.theme;
     final use24h = context.store.setting<bool>(Settings.use24h);
+    final after = widget.after;
+    // Half-hour steps through the day; for an end, from the start onward.
+    final first = after == null ? 0 : after + 30;
     return SizedBox(
-      width: 176,
+      width: after == null ? 176 : 208,
       height: 400,
       child: Column(
         children: [
@@ -439,7 +466,10 @@ class _ListTimePickerState extends State<_ListTimePicker> {
                 ),
                 onSubmitted: (text) {
                   final minutes = parseTime(text);
-                  if (minutes != null) widget.onPick(minutes);
+                  // An end lies after the start.
+                  if (minutes != null && (after == null || minutes > after)) {
+                    widget.onPick(minutes);
+                  }
                 },
               ),
             ),
@@ -451,13 +481,22 @@ class _ListTimePickerState extends State<_ListTimePicker> {
               itemExtent: Dim.controlInline,
               children: [
                 MenuRow(
-                  label: 'No time',
+                  label: after == null ? 'No time' : 'No end',
                   checked: widget.selected == null,
                   onTap: () => widget.onPick(null),
                 ),
-                for (var t = 0; t < 24 * 60; t += 30) ...[
+                // An end before the first step keeps its place too.
+                if (widget.selected case final exact? when after != null && exact < first)
+                  MenuRow(
+                    label: formatTime(exact, use24h: use24h),
+                    hint: formatDuration(exact - after),
+                    checked: true,
+                    onTap: () => widget.onPick(exact),
+                  ),
+                for (var t = first; t < 24 * 60; t += 30) ...[
                   MenuRow(
                     label: formatTime(t, use24h: use24h),
+                    hint: after == null ? null : formatDuration(t - after),
                     checked: widget.selected == t,
                     onTap: () => widget.onPick(t),
                   ),
@@ -466,6 +505,7 @@ class _ListTimePickerState extends State<_ListTimePicker> {
                       when exact > t && exact < t + 30)
                     MenuRow(
                       label: formatTime(exact, use24h: use24h),
+                      hint: after == null ? null : formatDuration(exact - after),
                       checked: true,
                       onTap: () => widget.onPick(exact),
                     ),

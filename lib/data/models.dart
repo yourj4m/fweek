@@ -64,6 +64,19 @@ class Subtask {
   }
 }
 
+/// What an item is: something to do, which is ticked off when done, or
+/// something that takes place, which is not.
+enum ItemKind {
+  task,
+  event;
+
+  static ItemKind? tryParse(Object? name) => switch (name) {
+        'task' => task,
+        'event' => event,
+        _ => null,
+      };
+}
+
 /// What a subscribed calendar says about one of its events, kept beside the
 /// planner's own view of it (a [Task] whose [Task.event] is this).
 class EventSource {
@@ -141,9 +154,22 @@ class EventOverride {
     this.doneAt,
     this.reminder,
     this.subtasks = const [],
+    this.kind,
+    this.end,
   });
 
   final String id;
+
+  /// Whether the event is shown as a task after all. Null follows the rule
+  /// for calendars, see [shownAs].
+  final ItemKind? kind;
+
+  /// What comes from a calendar is an event, unless the user says otherwise
+  /// or had ticked it off (when events still had a circle to tick).
+  ItemKind get shownAs => kind ?? (done ? ItemKind.task : ItemKind.event);
+
+  /// The end, in minutes after midnight, when the user set one of their own.
+  final int? end;
 
   /// The calendar the event is in (its synced id), and the day the calendar
   /// had it on when it was first changed: where to look for it.
@@ -178,6 +204,8 @@ class EventOverride {
       location != null ||
       date != null ||
       time != null ||
+      end != null ||
+      kind != null ||
       done ||
       reminder != null ||
       subtasks.isNotEmpty;
@@ -215,6 +243,11 @@ class CalendarRow {
 /// An event of a subscribed calendar is handed around as a task too, with
 /// [event] set: it reads and edits like one, but what is stored is only
 /// what the user changed about it.
+///
+/// Where an item comes from and what it is are two things. [kind] says what
+/// it is: a task, which is ticked off, or an event, which is not. Items made
+/// in the planner are tasks unless made otherwise; what a calendar brings is
+/// an event unless turned into a task.
 class Task {
   const Task({
     required this.id,
@@ -239,6 +272,8 @@ class Task {
     this.location = '',
     this.geo,
     this.event,
+    this.kind = ItemKind.task,
+    this.end,
   });
 
   /// Ids of imported events start with this.
@@ -254,11 +289,40 @@ class Task {
   /// Its position as `lat,lon`, when the place was picked from a search.
   final String? geo;
 
-  /// Set when this is an event of a subscribed calendar.
+  /// Set when this comes from a subscribed calendar.
   final EventSource? event;
 
-  bool get isEvent => event != null;
+  bool get fromCalendar => event != null;
   bool get hasLocation => location.trim().isNotEmpty;
+
+  /// A task or an event; see the class comment.
+  final ItemKind kind;
+
+  /// Whether this is ticked off when done. An event never reads as done.
+  bool get checkable => kind == ItemKind.task;
+  bool get happens => kind == ItemKind.event;
+
+  /// When it ends, in minutes after midnight of its day; only with a [time],
+  /// and later than it. Shown in the card, not in the week.
+  final int? end;
+
+  /// How long an event without an end is taken to last, to tell when it is
+  /// over.
+  static const assumedMinutes = 60;
+
+  /// Whether an event lies in the past at [now]: its day has gone by, or
+  /// today its end has (an hour after the start when it has none). A task is
+  /// never over, only done.
+  bool overAt(DateTime now) {
+    final date = this.date;
+    if (!happens || date == null) return false;
+    final last = event?.lastDay ?? date;
+    final today = Day(now.year, now.month, now.day);
+    if (last < today) return true;
+    if (last > today || time == null) return false;
+    final until = end ?? time! + assumedMinutes;
+    return now.hour * 60 + now.minute >= until;
+  }
 
   /// An event shown over several days.
   bool get spansDays => event != null && date != null && event!.lastDay > date!;
@@ -342,6 +406,8 @@ class Task {
     String? location,
     String? Function()? geo,
     EventSource? Function()? event,
+    ItemKind? kind,
+    int? Function()? end,
   }) =>
       Task(
         id: id ?? this.id,
@@ -366,6 +432,8 @@ class Task {
         location: location ?? this.location,
         geo: geo != null ? geo() : this.geo,
         event: event != null ? event() : this.event,
+        kind: kind ?? this.kind,
+        end: end != null ? end() : this.end,
       );
 }
 

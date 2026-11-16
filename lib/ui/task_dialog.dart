@@ -123,6 +123,9 @@ class _TaskDialogState extends State<_TaskDialog> {
   @override
   void initState() {
     super.initState();
+    _noteFocus.addListener(() {
+      if (mounted) setState(() {});
+    });
     _placeFocus.addListener(() {
       // Done typing: the place becomes a link to the map again.
       if (!_placeFocus.hasFocus && _editingPlace && mounted) {
@@ -261,6 +264,34 @@ class _TaskDialogState extends State<_TaskDialog> {
     if (chose) {
       _apply(() {
         _store.updateTask(_id, time: () => picked);
+        return _id;
+      });
+    }
+  }
+
+  Future<void> _pickEnd(BuildContext anchor, Task task) async {
+    final start = task.time;
+    if (start == null) return;
+    var chose = false;
+    int? picked;
+    await showPopover<void>(
+      context: context,
+      anchor: globalRect(anchor),
+      builder: (popover) => PopoverSurface(
+        child: TimePicker(
+          selected: task.end,
+          after: start,
+          onPick: (minutes) {
+            chose = true;
+            picked = minutes;
+            Navigator.of(popover).pop();
+          },
+        ),
+      ),
+    );
+    if (chose) {
+      _apply(() {
+        _store.updateTask(_id, end: () => picked);
         return _id;
       });
     }
@@ -411,15 +442,18 @@ class _TaskDialogState extends State<_TaskDialog> {
                       _targets(rect, task, copy: true);
                     },
                   ),
+                // A task is ticked off, an event is not: either can be made
+                // the other.
+                MenuRow(
+                  icon: task.checkable ? AppIcons.calendarClock : AppIcons.circleCheck,
+                  label: task.checkable ? 'Turn into an event' : 'Turn into a task',
+                  onTap: () {
+                    close();
+                    _flush();
+                    _store.setKind(_id, task.checkable ? ItemKind.event : ItemKind.task);
+                  },
+                ),
                 if (source != null) ...[
-                  MenuRow(
-                    icon: AppIcons.listPlus,
-                    label: 'Make a task of it',
-                    onTap: () {
-                      close();
-                      _leave(() => makeTaskOf(context, task));
-                    },
-                  ),
                   if (source.edited)
                     MenuRow(
                       icon: AppIcons.rotateCcw,
@@ -535,9 +569,10 @@ class _TaskDialogState extends State<_TaskDialog> {
                     if (copy) {
                       _flush();
                       _store.copyTask(_id, slot);
-                    } else if (task.isEvent && slot is ListSlot) {
-                      // An event sent to a list becomes a task there.
-                      _leave(() => makeTaskOf(context, task, slot: slot));
+                    } else if (task.fromCalendar && slot is ListSlot) {
+                      // Nothing of a calendar can be in a list: a copy of
+                      // it goes there.
+                      _leave(() => copyIntoPlanner(context, task, slot: slot));
                     } else {
                       _apply(() => _store.moveTask(_id, slot));
                     }
@@ -719,6 +754,7 @@ class _TaskDialogState extends State<_TaskDialog> {
 
   Widget _card(BuildContext context, Task task, bool narrow) {
     final theme = context.theme;
+    final size = MediaQuery.sizeOf(context);
     final use24h = context.store.setting<bool>(Settings.use24h);
     final date = task.date;
     final list = task.listId == null ? null : context.store.list(task.listId!);
@@ -731,37 +767,118 @@ class _TaskDialogState extends State<_TaskDialog> {
     final side = narrow ? 24.0 : 32.0;
     final muted = context.text.caption14.copyWith(color: theme.ink(60));
 
-    final header = SizedBox(
-      height: 44,
-      child: Row(
-        children: [
-          Builder(
-            builder: (anchor) => _HeaderButton(
-              icon: AppIcons.calendar,
-              label: where,
-              onTap: () => _pickDate(anchor, task),
+    // Which calendar it is from, for what a calendar brought.
+    final Widget? origin = source == null
+        ? null
+        : Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 32),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: calendarColor(theme, source.calendarColor),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      [
+                        source.calendarName,
+                        if (source.repeats) 'repeats',
+                        if (source.hidden) 'hidden',
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.text.small15.copyWith(color: theme.ink(60)),
+                    ),
+                  ),
+                  if (source.edited)
+                    Pressable(
+                      onTap: _reset,
+                      semanticLabel: 'Reset to the calendar\'s version',
+                      builder: (context, hovered, pressed) => Padding(
+                        padding: const EdgeInsets.only(left: 10, top: 6, bottom: 6),
+                        child: Text(
+                          'Edited · Reset',
+                          style: muted.copyWith(
+                            color: theme.ink(hovered ? 90 : 60),
+                            decoration: TextDecoration.underline,
+                            decorationColor: theme.ink(30),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
+          );
+
+    // Along the top: the day, the time from start to end, and the calendar.
+    // What does not fit beside the rest goes on a line of its own.
+    final header = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Builder(
+                builder: (anchor) => _HeaderButton(
+                  icon: AppIcons.calendar,
+                  label: where,
+                  onTap: () => _pickDate(anchor, task),
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Builder(
+                    builder: (anchor) => _HeaderButton(
+                      icon: AppIcons.clock,
+                      label: task.time == null
+                          ? null
+                          : formatTime(task.time!, use24h: use24h),
+                      muted: task.time == null,
+                      tooltip: 'Time',
+                      // The end follows closely.
+                      close: task.time != null,
+                      onTap: () => _pickTime(anchor, task),
+                    ),
+                  ),
+                  // With a start there can be an end.
+                  if (task.time != null)
+                    Builder(
+                      builder: (anchor) => _HeaderButton(
+                        label: task.end == null
+                            ? '– end'
+                            : '– ${formatTime(task.end!, use24h: use24h)}',
+                        muted: task.end == null,
+                        tooltip: task.end == null ? 'Add an end time' : 'End time',
+                        tight: true,
+                        onTap: () => _pickEnd(anchor, task),
+                      ),
+                    ),
+                ],
+              ),
+              ?origin,
+            ],
           ),
-          Builder(
-            builder: (anchor) => _HeaderButton(
-              icon: AppIcons.clock,
-              label: task.time == null
-                  ? null
-                  : formatTime(task.time!, use24h: use24h),
-              muted: task.time == null,
-              tooltip: 'Time',
-              onTap: () => _pickTime(anchor, task),
-            ),
-          ),
-          const Spacer(),
-          _HeaderButton(
-            icon: _expanded ? AppIcons.minimize2 : AppIcons.maximize2,
-            label: _expanded ? 'Compact' : 'Expand',
-            muted: true,
-            onTap: () => setState(() => _expanded = !_expanded),
-          ),
-        ],
-      ),
+        ),
+        _HeaderButton(
+          icon: _expanded ? AppIcons.minimize2 : AppIcons.maximize2,
+          // The word only where there is room for it.
+          label: narrow && size.width < 480 ? null : (_expanded ? 'Compact' : 'Expand'),
+          tooltip: _expanded ? 'Compact' : 'Expand',
+          muted: true,
+          onTap: () => setState(() => _expanded = !_expanded),
+        ),
+      ],
     );
 
     final title = Row(
@@ -779,23 +896,26 @@ class _TaskDialogState extends State<_TaskDialog> {
             maxLines: null,
             textInputAction: TextInputAction.done,
             decoration: InputDecoration.collapsed(
-              hintText: source == null ? 'Task' : 'Event',
+              hintText: task.checkable ? 'Task' : 'Event',
               hintStyle: context.text.title28.copyWith(color: theme.ink(25)),
             ),
             onChanged: (_) => _scheduleSave(),
             onSubmitted: (_) => _noteFocus.requestFocus(),
           ),
         ),
-        const SizedBox(width: 8),
-        SizedBox(
-          height: 34,
-          child: CheckToggle(
-            done: task.done,
-            size: 24,
-            color: theme.text,
-            onTap: () => _apply(() => _store.setDone(_id, !task.done)),
+        // A task has the circle to tick it off; an event has none.
+        if (task.checkable) ...[
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 34,
+            child: CheckToggle(
+              done: task.done,
+              size: 24,
+              color: theme.text,
+              onTap: () => _apply(() => _store.setDone(_id, !task.done)),
+            ),
           ),
-        ),
+        ],
       ],
     );
 
@@ -803,12 +923,12 @@ class _TaskDialogState extends State<_TaskDialog> {
       controller: _note,
       focusNode: _noteFocus,
       style: context.text.body17,
-      // Room for a few lines; an event's card also shows the calendar's
-      // own description below, so its field starts smaller.
-      minLines: _expanded ? 8 : (source == null ? 5 : 3),
-      hint: source == null
-          ? 'Add some extra notes here…'
-          : 'Add notes of your own…',
+      // A note takes the room it needs, with the place right under it; an
+      // empty one, or one being typed in, has a few lines to write on. For
+      // what a calendar brought, the note is the calendar's description
+      // until it is edited here.
+      minLines: _expanded ? 8 : (task.hasNote && !_noteFocus.hasFocus ? 1 : 3),
+      hint: 'Add some extra notes here…',
       onChanged: _scheduleSave,
     );
 
@@ -818,7 +938,7 @@ class _TaskDialogState extends State<_TaskDialog> {
     final Widget? place;
     if (_editingPlace) {
       place = Padding(
-        padding: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.only(top: 14),
         child: LocationField(
           location: task.location,
           geo: task.geo,
@@ -831,7 +951,7 @@ class _TaskDialogState extends State<_TaskDialog> {
       );
     } else if (task.hasLocation) {
       place = Padding(
-        padding: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.only(top: 14),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -872,69 +992,6 @@ class _TaskDialogState extends State<_TaskDialog> {
       );
     } else {
       place = null;
-    }
-
-    // For an imported event: which calendar it is from and what that
-    // calendar says, kept apart from what was added here.
-    Widget? origin;
-    if (source != null) {
-      String clock(DateTime t) =>
-          formatTime(t.hour * 60 + t.minute, use24h: use24h);
-      final start = source.start, end = source.end;
-      final when = source.allDay || start == null
-          ? null
-          : end == null || !end.isAfter(start)
-              ? clock(start)
-              : '${clock(start)} – ${clock(end)}';
-      origin = Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: calendarColor(theme, source.calendarColor),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  [
-                    source.calendarName,
-                    ?when,
-                    if (source.repeats) 'repeats',
-                    if (source.hidden) 'hidden',
-                  ].join(' · '),
-                  style: muted,
-                ),
-              ),
-              if (source.edited)
-                Pressable(
-                  onTap: _reset,
-                  semanticLabel: 'Reset to the calendar\'s version',
-                  builder: (context, hovered, pressed) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                    child: Text(
-                      'Edited · Reset',
-                      style: muted.copyWith(
-                        color: theme.ink(hovered ? 90 : 60),
-                        decoration: TextDecoration.underline,
-                        decorationColor: theme.ink(30),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          if (source.description.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            LinkedText(source.description, style: context.text.small15),
-          ],
-        ],
-      );
     }
 
     final subtasks = Column(
@@ -1007,7 +1064,7 @@ class _TaskDialogState extends State<_TaskDialog> {
             size: Dim.controlLarge,
             tooltip: task.hasLocation ? 'Place' : 'Add a place',
             foreground: task.hasLocation ? theme.text : theme.ink(40),
-            // The place line appears above the notes, ready to type in.
+            // The place line appears under the notes, ready to type in.
             onTap: _editPlace,
           ),
           Builder(
@@ -1060,17 +1117,11 @@ class _TaskDialogState extends State<_TaskDialog> {
         const SizedBox(height: 20),
         Container(height: 1, color: theme.ink(10)),
         const SizedBox(height: 24),
-        ?place,
         notes,
+        ?place,
         if (task.hasSubtasks) ...[
           const SizedBox(height: 12),
           subtasks,
-        ],
-        if (origin != null) ...[
-          const SizedBox(height: 16),
-          Container(height: 1, color: theme.ink(10)),
-          const SizedBox(height: 14),
-          origin,
         ],
         if (details.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -1114,14 +1165,21 @@ class _TaskDialogState extends State<_TaskDialog> {
 
 class _HeaderButton extends StatelessWidget {
   const _HeaderButton({
-    required this.icon,
+    this.icon,
     required this.onTap,
     this.label,
     this.muted = false,
     this.tooltip,
+    this.tight = false,
+    this.close = false,
   });
 
-  final IconData icon;
+  final IconData? icon;
+
+  /// Follows another button closely, as its second half; [close] is for the
+  /// first half.
+  final bool tight;
+  final bool close;
   final String? label;
   final bool muted;
   final String? tooltip;
@@ -1137,14 +1195,14 @@ class _HeaderButton extends StatelessWidget {
         final color = muted ? theme.ink(hovered ? 75 : 40) : theme.text;
         return Container(
           height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.only(left: tight ? 0 : 12, right: close ? 6 : 12),
           child: Opacity(
             opacity: hovered && !muted ? 0.75 : 1,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               spacing: 8,
               children: [
-                Icon(icon, size: 16, color: color),
+                if (icon != null) Icon(icon, size: 16, color: color),
                 if (label != null)
                   Text(label!,
                       style: context.text.small15.copyWith(color: color)),

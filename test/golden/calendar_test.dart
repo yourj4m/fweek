@@ -29,11 +29,54 @@ void main() {
     // Above the day's first task.
     expect(tester.getTopLeft(find.text('10:00 Team meeting')).dy,
         lessThan(tester.getTopLeft(find.textContaining('Buy oat milk')).dy));
-    // An event is a row like a task: it has the circle to complete it.
+    // An event is a row like a task, but with nothing to tick: a task has
+    // the circle, an event does not.
     final row = find.ancestor(
         of: find.text('10:00 Team meeting'), matching: find.byType(TaskRow));
-    expect(find.descendant(of: row, matching: find.byType(CheckToggle)), findsOneWidget);
+    expect(find.descendant(of: row, matching: find.byType(CheckToggle)), findsNothing);
+    final task = find.ancestor(
+        of: find.textContaining('Buy oat milk'), matching: find.byType(TaskRow));
+    expect(find.descendant(of: task, matching: find.byType(CheckToggle)), findsOneWidget);
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/week_1440_events.png'));
+  });
+
+  desktopTest('an event turned into a task gets the circle, and the change is the user\'s',
+      (tester) async {
+    final store = seededStore();
+    await pumpApp(tester, store, calendars: await calendarWith(tester, store));
+    final row = find.ancestor(
+        of: find.text('10:00 Team meeting'), matching: find.byType(TaskRow));
+    await rightClick(tester, find.text('10:00 Team meeting'));
+    expect(find.text('Mark as done'), findsNothing);
+    await tester.tap(find.text('Turn into a task'));
+    await tester.pumpAndSettle();
+    expect(changeIn(store).kind, ItemKind.task);
+    expect(find.descendant(of: row, matching: find.byType(CheckToggle)), findsOneWidget);
+
+    await rightClick(tester, find.text('10:00 Team meeting'));
+    await tester.tap(find.text('Mark as done'));
+    await tester.pumpAndSettle();
+    expect(changeIn(store).done, isTrue);
+
+    await rightClick(tester, find.text('10:00 Team meeting'));
+    await tester.tap(find.text('Turn into an event'));
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: row, matching: find.byType(CheckToggle)), findsNothing);
+  });
+
+  desktopTest('an event that is over is faint, and one of today turns faint when it ends',
+      (tester) async {
+    final store = seededStore();
+    await pumpApp(tester, store, calendars: await calendarWith(tester, store));
+    Color inkOf(String label) =>
+        tester.widget<Text>(find.text(label)).style!.color!;
+    // Monday's meeting lies behind (it is Friday), Friday's committee ahead
+    // (14:30, and it is 9:36).
+    expect(inkOf('10:00 Team meeting').a, lessThan(0.5));
+    expect(inkOf('14:30 Thesis committee').a, 1);
+    // Not struck through: it is past, not done.
+    expect(tester.widget<Text>(find.text('10:00 Team meeting')).style!.decoration,
+        TextDecoration.none);
   });
 
   desktopTest('an event over several days is one bar under the headings, across its days',
@@ -54,31 +97,60 @@ void main() {
     expect(bar.bottom, lessThan(tester.getRect(find.textContaining('Buy oat milk')).top));
   });
 
-  desktopTest('an event opens as a card: annotate it, complete it, and reset it',
-      (tester) async {
+  desktopTest('an event opens as a card: day, time from start to end and calendar on top, '
+      'then the title, the calendar\'s note, the place', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store, calendars: await calendarWith(tester, store));
     await tester.tap(find.text('10:00 Team meeting'));
     await tester.pumpAndSettle();
-    // Where it comes from and what its calendar says.
-    expect(find.text('Work · 10:00 – 11:00'), findsOneWidget);
-    // The place shows on the row behind the card too.
-    expect(find.text('Room 204'), findsNWidgets(2));
-    expect(find.text('Bring the draft.'), findsOneWidget);
     expect(store.eventOverrides, isEmpty, reason: 'looking changes nothing');
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/event_card.png'));
+    final card = find.byWidgetPredicate(
+        (w) => w is EditableText && w.controller.text == 'Team meeting'); // the title
+    // Along the top, in this order: the day, the start, the end, the calendar.
+    final day = tester.getRect(find.text('Mon, 9 Nov 2026'));
+    final start = tester.getRect(find.text('10:00'));
+    final end = tester.getRect(find.text('– 11:00'));
+    final calendar = tester.getRect(find.text('Work'));
+    expect(day.right, lessThan(start.left));
+    expect(start.right, lessThan(end.left));
+    // The calendar follows where there is room beside them, or begins the
+    // next line of the top (this card is a narrow one).
+    expect(end.right < calendar.left || calendar.top >= end.bottom - 12, isTrue);
+    for (final part in [day, start, end, calendar]) {
+      expect(part.bottom, lessThan(tester.getRect(card).top));
+    }
+    // The time is said once.
+    expect(find.textContaining('10:00 – 11:00'), findsNothing);
+    // Under the title what the calendar says, as the note; under it the
+    // place (which shows on the row behind the card too); no second,
+    // empty field for notes.
+    final note = find.byWidgetPredicate((w) =>
+        w is EditableText && w.controller.text.startsWith('Bring the draft.'));
+    expect(note, findsOneWidget);
+    expect(find.text('Add notes of your own…'), findsNothing);
+    expect(find.text('Room 204'), findsNWidgets(2));
+    final place = tester.getRect(find.bySemanticsLabel('Open Room 204 in the map app'));
+    expect(tester.getRect(card).bottom, lessThan(tester.getRect(note).top));
+    expect(tester.getRect(note).bottom, lessThan(place.top));
+    expect(place.bottom, lessThan(tester.getRect(find.bySemanticsLabel('Add subtask')).top));
+    // Nothing to tick.
+    expect(find.bySemanticsLabel('Mark as done'), findsNothing);
 
-    // A note of the user's own.
-    await tester.enterText(
-        find.widgetWithText(TextField, 'Add notes of your own…'), 'Ask about the budget');
+    // The note is edited where it stands, and the edit is the user's.
+    await tester.enterText(note, 'Bring the draft.\nAsk about the budget');
     await tester.pump(const Duration(milliseconds: 600));
-    expect(changeIn(store).note, 'Ask about the budget');
+    expect(changeIn(store).note, 'Bring the draft.\nAsk about the budget');
     expect(changeIn(store).title, isNull, reason: 'the title still follows the calendar');
 
-    // Done, like a task.
-    await tester.tap(find.bySemanticsLabel('Mark as done').last);
+    // Another end.
+    await tester.tap(find.text('– 11:00'));
     await tester.pumpAndSettle();
-    expect(changeIn(store).done, isTrue);
+    expect(find.text('No end'), findsOneWidget);
+    await tester.tap(find.text('11:30'));
+    await tester.pumpAndSettle();
+    expect(changeIn(store).end, 11 * 60 + 30);
+    expect(find.text('– 11:30'), findsOneWidget);
 
     // Everything changed here can be dropped again.
     await tester.tap(find.text('Edited · Reset'));
@@ -306,7 +378,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 700));
     await finger.up();
     await tester.pumpAndSettle();
-    expect(find.text('Make a task of it'), findsOneWidget);
+    expect(find.text('Turn into a task'), findsOneWidget);
+    expect(find.text('Mark as done'), findsNothing);
     expect(find.text('Hide Work'), findsOneWidget);
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/phone_event_menu.png'));
   });
