@@ -17,15 +17,25 @@ Test builds for Linux and Android, from the same code. What works:
 
 - **Week view**: five weekday columns plus a stacked weekend, ten ruled rows
   that grow with your tasks; a single-column layout below 1024 px.
+- **Tasks and events**: an item is a task, with a circle to tick it off, or
+  an event, with none: an event is marked by a bar at its left and turns
+  faint once it is over. New items are tasks unless Settings → "New items
+  are" says events; while typing one, Ctrl+E or the mark at the end of the
+  line makes it the other, and so does "Turn into an event / a task" in any
+  item's menu. What a calendar brings is an event until you turn it into a
+  task.
 - **Tasks**: click an empty row and type, Enter for the next one. Click a task
   to open it. Check to complete. Drag between days and lists, or hold a task
   at the window edge to carry it to another week. Right-click (on a phone:
   long press and let go) for a menu: move, time, colour, note, place,
   duplicate, delete. Deleting offers Undo for a few seconds.
-- **Task card**: title, notes with clickable links, a place, subtasks (with
-  section titles, stars and one level of indent), highlight colour including
-  your own hex colours, time, date, repeat (presets and a custom editor),
-  reminder, move, copy, delete.
+- **Task card**: along the top the day, the time (from start to end, when
+  it has an end) and, for what a calendar brought, the calendar; then the
+  title, notes with clickable links, a place, subtasks (with section titles,
+  stars and one level of indent); below, highlight colour including your own
+  hex colours, repeat (presets and a custom editor), reminder, move, copy,
+  delete. A click beside the card, Escape or the back gesture closes it. The
+  end time shows in the card only; the week shows when things start.
 - **Rows** show what a task carries, quietly: its time, a mark for a note,
   subtasks done of total, and the place on a second, smaller line.
 - **Places**: type one freely, or pick from suggestions while typing; a
@@ -45,10 +55,11 @@ Test builds for Linux and Android, from the same code. What works:
 - **Sync** through Nextcloud (Settings → Sync): on start, every five minutes,
   a few seconds after you stop editing, and on request.
 - **Calendars**: subscribe to a calendar's iCal address (for example Google
-  Calendar's "secret address") and its events appear in your week like
-  tasks: move them, recolour them, add notes, complete or hide them. Events
-  over several days lie in a band under the day headings. Your changes sync
-  between your devices; the calendar itself is never changed. See
+  Calendar's "secret address") and its events appear in your week: move
+  them, recolour them, edit their notes, hide them, or turn one into a task
+  to tick off. Events over several days lie in a band under the day
+  headings. Your changes sync between your devices; the calendar itself is
+  never changed. See
   [Calendars](#calendars).
 - **Export** to CSV, iCalendar and plain text; **backup and restore** as JSON.
 - **Shortcuts**: ← → previous/next, T today, M month view, Ctrl+F search,
@@ -126,8 +137,10 @@ What to expect on the phone:
 - **Backups**: the app opts out of system backups and phone-to-phone
   transfer, because the planner file carries the device's identity for sync.
   Use sync, or Settings → Backup, to move your data.
-- **Touch**: tap an empty line to type; tap a task to open it, its circle to
-  complete it; press and hold a task to drag it, to the screen edge to carry
+- **Touch**: tap an empty line to type (the first button of the bar above
+  the keyboard switches between task and event); tap a task to open it, its
+  circle to complete it; tap beside an open card to close it; press and hold
+  a task to drag it, to the screen edge to carry
   it to another week; swipe sideways to turn the week; tap the title to
   return to today, and again for the month.
 
@@ -257,11 +270,15 @@ For Google Calendar the address is under Settings → the calendar → Integrate
 calendar → "Secret address in iCal format". Any calendar that offers an
 `.ics` or `webcal://` address works the same way.
 
-An event is handled like a task: open it, give it a note, a colour, another
-time, a place, subtasks or a reminder, check it off, drag it to another day,
-hide it, or make a task of it. An event over several days is a bar in a band
-under the day headings, across its days. The menu (☰ → Calendars) shows or
-hides a whole calendar with one click, and brings hidden events back.
+An event is handled like an item of your own: open it, give it a colour,
+another time or end, a place, subtasks or a reminder, drag it to another
+day, hide it. Its note is what the calendar says about it (the event's
+description); click it to edit it, and from then on the note is yours.
+Being an event it has nothing to tick; "Turn into a task" in its menu gives
+it the circle, and that too is a change of yours that syncs. An event over
+several days is a bar in a band under the day headings, across its days.
+The menu (☰ → Calendars) shows or hides a whole calendar with one click,
+and brings hidden events back.
 
 What happens to such changes:
 
@@ -349,7 +366,7 @@ file refuses to open it rather than damage it, so update all devices before
 relying on what is new.
 
 Before a file is brought up to date, a copy of it as it was is kept beside
-it (`planner.db.v1` for a file of the first version). To go back to the
+it (`planner.db.v2` for a file of the second version). To go back to the
 earlier build, close the app, put that copy in the place of `planner.db`
 (and delete `planner.db-wal` and `planner.db-shm`), and start the earlier
 build; what was changed since the update is then missing on that device

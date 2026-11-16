@@ -90,11 +90,21 @@ def planner(out, shot, width, height):
     ui.key("ENTER")
     ui.type_text("Plain task")
     ui.key("ENTER")
+    # The bar's first button: what is typed next is an event.
+    switch = ui.find(r"^A task; tap to make it an event")
+    if check(bool(switch), "the bar has a switch between task and event"):
+        ui.tap(*switch[0].centre, pause=0.8)
+        ui.type_text("Team lunch")
+        ui.key("ENTER")
     ui.back(pause=1.2)
     timed = ui.find(r"\d{1,2}:00 Dentist check")
     check(bool(timed), "the task typed next carries the time set in the bar")
     check(bool(ui.find("Plain task")) and not ui.find(r"\d{1,2}:00 Plain task"),
           "and the task after it does not")
+    lunch = ui.find("Team lunch")
+    check(bool(lunch) and "Mark as" not in lunch[0].label
+          and "Mark as" in ui.one("Plain task").label,
+          "what was typed as an event has no circle to tick; the tasks have")
     shot("f03-tasks")
 
     # --- the menu
@@ -172,14 +182,17 @@ def events(out, shot, width, height):
     if not check(bool(meeting), "calendar events show as rows of their day"):
         return
     shot("e01-events")
-    check(any("Mark as" in n.label for n in ui.nodes() if "Weekly meeting" in n.label)
-          or bool(ui.find("Mark as done")), "an event has the circle to complete it, like a task")
+    seen = ui.nodes()
+    check(not any("Mark as" in n.label for n in seen if "Weekly meeting" in n.label)
+          and any("Mark as" in n.label for n in seen),
+          "an event has no circle to tick; tasks have")
 
     row = meeting[0]
     title = re.search(r"Weekly meeting \d", row.label).group(0)
     hold(row.left + 200, row.centre[1])
-    check(bool(ui.find("Make a task of it", exact=True)) and bool(ui.find(r"^Hide Calendar")),
-          "a long press on an event opens its menu")
+    check(bool(ui.find("Turn into a task", exact=True)) and bool(ui.find(r"^Hide Calendar"))
+          and not ui.find("Mark as done", exact=True),
+          "a long press on an event opens its menu, which can turn it into a task")
     shot("e02-event-menu")
     ui.tap_on("Hide", exact=True)
     time.sleep(0.6)
@@ -194,9 +207,16 @@ def events(out, shot, width, height):
 
     row = ui.one(title)
     ui.tap(row.left + 200, row.centre[1], pause=1.5)
-    check(bool(ui.find(r"Calendar · \d{1,2}:\d\d")), "its card says which calendar it is from, and when")
+    seen = ui.nodes()
+    check(any(re.search(r"^Calendar( ·|$)", n.label) for n in seen)
+          and any(re.search(r"– \d{1,2}:\d\d", n.label) for n in seen),
+          "its card says which calendar it is from, and from when to when")
+    check(not any(n.label.startswith("Mark as") for n in seen),
+          "and has nothing to tick")
     shot("e03-event-card")
-    ui.back(pause=1.0)
+    # A tap above the sheet, on the dimmed page, closes it.
+    ui.tap(width * 0.5, height * 0.08, pause=1.0)
+    check(not ui.find("Add subtask"), "a tap beside the card closes it")
 
     # An event over several days: a bar on each of its days.
     bar = []
