@@ -194,7 +194,7 @@ void main() {
       copy.close();
       // Opened again, it is this version's file.
       final again = PlannerDatabase.open(path);
-      expect(again.foundVersion, 4);
+      expect(again.foundVersion, 5);
       again.close();
     });
   });
@@ -251,6 +251,75 @@ void main() {
     });
   });
 
+  group('a planner written by the fourth version', () {
+    // Lists then held tasks without a day only, ordered by the same key a
+    // day orders its tasks by.
+    String oldFile() {
+      final path = '${folder.path}/planner.db';
+      final db = sqlite3.open(path)
+        ..execute(_version1)
+        ..execute(_version2)
+        ..execute('''
+          alter table tasks add column kind text;
+          alter table tasks add column end_time integer;
+          alter table events add column kind text;
+          alter table events add column end_time integer;
+          alter table tasks add column rolled_from text;
+          alter table tasks add column rolled_pos text;
+          alter table events add column position text;
+          pragma user_version = 4;
+        ''');
+      db.execute("insert into meta(key, value) values('device_id', 'aaaaaaaa')");
+      db.execute("insert into lists(id, title, position) values('someday', '', 'V')");
+      db.execute("insert into lists(id, title, position) values('films', 'Films', 'W')");
+      db.execute("insert into tasks(id, list_id, position, title) values('s1', 'someday', 'V', 'Renew passport')");
+      db.execute("insert into tasks(id, list_id, position, title) values('s2', 'someday', 'K', 'Call the bank')");
+      db.execute("insert into tasks(id, list_id, position, title, done, done_at) "
+          "values('f1', 'films', 'V', 'Stalker', 1, 5)");
+      db.execute("insert into tasks(id, date, position, title) values('d1', '2026-11-13', 'V', 'Buy oat milk')");
+      void logged(String hlc, String table, String row, String column, Object? value) => db.execute(
+          'insert into changes(hlc, tbl, row, col, value) values(?, ?, ?, ?, ?)',
+          [hlc, table, row, column, jsonEncode(value)]);
+      // Sent by a device that was updated first, and kept in the log: the
+      // milk was put into a list there and given a deadline.
+      logged('01a000000001-0000-bbbbbbbb', 'tasks', 'd1', 'list_pos', 'c');
+      logged('01a000000001-0001-bbbbbbbb', 'tasks', 'd1', 'due', '2026-11-20');
+      db.close();
+      return path;
+    }
+
+    test('its Someday lists are the lists of the Tasks page, in their order', () {
+      final store = PlannerStore(PlannerDatabase.open(oldFile()), today: () => friday);
+      addTearDown(store.db.close);
+      expect(store.db.foundVersion, 4);
+      expect([for (final l in store.lists) store.listName(l.id)], ['To do', 'Films']);
+      // The order the tasks had under the week.
+      expect([for (final t in store.openIn('someday')) t.title], ['Call the bank', 'Renew passport']);
+      expect(store.doneIn('films').single.title, 'Stalker');
+      // A task put between them stands there, old keys and new together.
+      final id = store.addTask(ListSlot('someday'), 'Between', index: 1)!;
+      expect([for (final t in store.openIn('someday')) t.title],
+          ['Call the bank', 'Between', 'Renew passport']);
+      expect(store.task(id)!.listPos, isNotEmpty);
+    });
+
+    test('what a newer device had already sent takes effect', () {
+      final store = PlannerStore(PlannerDatabase.open(oldFile()), today: () => friday);
+      addTearDown(store.db.close);
+      final milk = store.task('d1')!;
+      expect((milk.listPos, milk.due), ('c', Day(2026, 11, 20)));
+    });
+
+    test('a copy of the file as it was is kept beside it', () {
+      final path = oldFile();
+      PlannerDatabase.open(path).close();
+      final copy = sqlite3.open('$path.v4');
+      expect(copy.select('pragma user_version').first.columnAt(0), 4);
+      expect(copy.select('pragma table_info(tasks)').map((r) => r['name']), isNot(contains('list_pos')));
+      copy.close();
+    });
+  });
+
   test('a file from a newer version is refused, not damaged', () {
     final path = '${folder.path}/future.db';
     sqlite3.open(path)
@@ -296,10 +365,10 @@ void main() {
       store.moveList(reading, 1); // already last
       expect(order(), ['Home', '', 'Reading']);
 
-      final tasks = store.deleteList(home);
+      final removal = store.deleteList(home);
       expect(order(), ['', 'Reading']);
-      expect(tasks, hasLength(1));
-      store.restoreList(home, tasks);
+      expect(removal.deleted, hasLength(1));
+      store.restoreList(removal);
       expect(order(), ['Home', '', 'Reading']);
       expect(store.tasksIn(home).single.title, 'Fix the tap');
     });
@@ -343,7 +412,7 @@ void main() {
         'hidden': true,
       })));
       final backup = Export.backup(store);
-      expect(jsonDecode(backup)['version'], 4);
+      expect(jsonDecode(backup)['version'], 5);
 
       final copy = PlannerStore(PlannerDatabase.inMemory(), today: () => friday);
       Export.restore(copy, backup);

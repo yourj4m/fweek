@@ -32,6 +32,18 @@ abstract final class Strings {
   static String fullDate(Day d) =>
       '${weekdayShort(d)}, ${d.day} ${monthShort(d)} ${d.year}';
 
+  /// A day as a short mark beside a task, seen from [today]: `Today`,
+  /// `Tomorrow`, `Yesterday`, `Wed 25` within the coming week, `25 Nov`
+  /// otherwise (with the year when it is another one).
+  static String near(Day d, Day today) {
+    final ahead = d.difference(today);
+    if (ahead == 0) return 'Today';
+    if (ahead == 1) return 'Tomorrow';
+    if (ahead == -1) return 'Yesterday';
+    if (ahead > 1 && ahead < 7) return '${weekdayShort(d)} ${d.day}';
+    return d.year == today.year ? dayMonth(d) : '${dayMonth(d)} ${d.year}';
+  }
+
   /// `second` for a day that is the second of its weekday in its month.
   static String ordinalInMonth(Day d) => ordinals[(d.day - 1) ~/ 7];
 

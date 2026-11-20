@@ -16,6 +16,21 @@ class _Zone {
   int count = 0;
 }
 
+/// Something a dragged task can be held over or dropped on that is not the
+/// body of a day or list: a list's name, the button that leads to the other
+/// page.
+class _Spot {
+  _Spot(this.key, this.onDwell, this.drop);
+
+  final GlobalKey key;
+
+  /// Called once when a task has been held here for a moment.
+  final VoidCallback? onDwell;
+
+  /// Where a task let go here ends up (at the end of it), if anywhere.
+  final Slot? drop;
+}
+
 /// Tracks a task being dragged between days and lists.
 ///
 /// Rows report pointer-down; the page forwards pointer moves and releases.
@@ -29,8 +44,9 @@ class _Zone {
 class DragController extends ChangeNotifier {
   DragController({required this.onDrop, required this.onEdge, this.onHold});
 
-  /// Called when a task is released over a zone.
-  final void Function(Task task, Slot slot, int index) onDrop;
+  /// Called when a task is released over a zone, with the place its row was
+  /// picked up from ([from]: the day or list that showed it).
+  final void Function(Task task, Slot slot, int index, Slot? from) onDrop;
 
   /// Called when a dragged task is held at the left (−1) or right (+1) window
   /// edge, to turn to the previous or next week.
@@ -38,8 +54,11 @@ class DragController extends ChangeNotifier {
 
   /// Called when a task picked up by a long press is let go without having
   /// been moved: a hold, which asks for the task's menu. [row] is where the
-  /// task's row is on screen.
-  final void Function(Task task, Rect row)? onHold;
+  /// task's row is on screen, [from] the day or list that showed it.
+  final void Function(Task task, Rect row, Slot? from)? onHold;
+
+  /// A drop index that means "at the end".
+  static const atEnd = 1 << 30;
 
   static const _slop = 5.0;
 
@@ -49,6 +68,18 @@ class DragController extends ChangeNotifier {
   static const _edgeDelay = Duration(milliseconds: 650);
 
   final Map<Slot, _Zone> _zones = {};
+  final Map<Object, _Spot> _spots = {};
+
+  /// The day or list whose row is being dragged (a task can show in two
+  /// places: on its day and in its list).
+  Slot? get source => _source;
+  Slot? _source;
+
+  /// The id of the spot the dragged task is held over, if any; see
+  /// [registerSpot].
+  Object? get spot => _spot;
+  Object? _spot;
+  Timer? _spotTimer;
 
   Task? _candidate;
   Offset _downAt = Offset.zero;
@@ -110,9 +141,20 @@ class DragController extends ChangeNotifier {
     if (_zones[slot]?.key == key) _zones.remove(slot);
   }
 
+  /// Makes the widget with [key] a spot under the name [id]: a dragged task
+  /// held over it for a moment calls [onDwell] (once), and one let go over
+  /// it goes to the end of [drop], when that is given.
+  void registerSpot(Object id, GlobalKey key, {VoidCallback? onDwell, Slot? drop}) =>
+      _spots[id] = _Spot(key, onDwell, drop);
+
+  void unregisterSpot(Object id, GlobalKey key) {
+    if (_spots[id]?.key == key) _spots.remove(id);
+  }
+
   /// A mouse press on a task row: the drag starts once the pointer moves.
-  void pointerDown(Task task, Offset global, Rect row) {
+  void pointerDown(Task task, Offset global, Rect row, {Slot? from}) {
     _candidate = task;
+    _source = from;
     _downAt = global;
     _grab = global - row.topLeft;
     _width = row.width;
@@ -123,8 +165,9 @@ class DragController extends ChangeNotifier {
   /// that moves right away scrolls instead, so touch never goes through
   /// [pointerDown]. Moving on from here drags; letting go without moving is
   /// a hold ([onHold]).
-  void begin(Task task, Offset global, Rect row) {
+  void begin(Task task, Offset global, Rect row, {Slot? from}) {
     _candidate = null;
+    _source = from;
     _grab = global - row.topLeft;
     _width = row.width;
     _row = row;
@@ -171,11 +214,12 @@ class DragController extends ChangeNotifier {
     final held = _holding;
     final slot = _targetSlot;
     final index = _targetIndex;
+    final from = _source;
     _reset();
     if (held) {
-      onHold?.call(task, _row);
+      onHold?.call(task, _row, from);
     } else if (slot != null) {
-      onDrop(task, slot, index);
+      onDrop(task, slot, index, from);
     }
   }
 
@@ -188,6 +232,9 @@ class DragController extends ChangeNotifier {
     _task = null;
     _targetSlot = null;
     _holding = false;
+    _spot = null;
+    _spotTimer?.cancel();
+    _spotTimer = null;
     _edge = 0;
     _edgeTimer?.cancel();
     _edgeTimer = null;
@@ -195,8 +242,42 @@ class DragController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Finds the zone and row under the pointer. True if the target changed.
+  /// The spot under the pointer, if any.
+  Object? _spotAt() {
+    for (final entry in _spots.entries) {
+      final box = entry.value.key.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.attached) continue;
+      if ((box.localToGlobal(Offset.zero) & box.size).contains(_pointer)) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  /// Finds the spot, or else the zone and row, under the pointer. True if
+  /// the target or the spot changed.
   bool _retarget() {
+    final spot = _spotAt();
+    final spotChanged = spot != _spot;
+    if (spotChanged) {
+      _spot = spot;
+      _spotTimer?.cancel();
+      _spotTimer = spot == null
+          ? null
+          : Timer(_edgeDelay, () {
+              if (_task != null && _spot == spot) _spots[spot]?.onDwell?.call();
+            });
+    }
+    if (spot != null) {
+      // Over a spot nothing else is aimed at, however near a list may be.
+      final drop = _spots[spot]?.drop;
+      final moved = drop != _targetSlot;
+      if (!moved && _targetIndex == atEnd) return spotChanged;
+      _targetSlot = drop;
+      _targetIndex = atEnd;
+      if (moved) layout.value++;
+      return true;
+    }
     Slot? best;
     var bestIndex = 0;
     var bestDistance = double.infinity;
@@ -226,7 +307,7 @@ class DragController extends ChangeNotifier {
           .clamp(0, entry.value.count);
     }
     final slot = bestDistance < 160 ? best : null;
-    if (slot == _targetSlot && bestIndex == _targetIndex) return false;
+    if (slot == _targetSlot && bestIndex == _targetIndex) return spotChanged;
     final moved = slot != _targetSlot;
     _targetSlot = slot;
     _targetIndex = bestIndex;
@@ -259,6 +340,7 @@ class DragController extends ChangeNotifier {
   @override
   void dispose() {
     _edgeTimer?.cancel();
+    _spotTimer?.cancel();
     ghost.dispose();
     layout.dispose();
     super.dispose();
@@ -371,10 +453,15 @@ class _DragAutoScrollState extends State<DragAutoScroll>
     if (pointer.dx < rect.left || pointer.dx > rect.right) return 0;
     final fromTop = pointer.dy - rect.top;
     final fromBottom = rect.bottom - pointer.dy;
+    // Nothing to do at an end that is reached already: no frames are spent
+    // on a page that cannot move.
+    final position = widget.controller.hasClients ? widget.controller.position : null;
     if (fromTop < _band) {
+      if (position != null && position.pixels <= position.minScrollExtent) return 0;
       return -_maxSpeed * (1 - fromTop / _band).clamp(0.0, 1.0);
     }
     if (fromBottom < _band) {
+      if (position != null && position.pixels >= position.maxScrollExtent) return 0;
       return _maxSpeed * (1 - fromBottom / _band).clamp(0.0, 1.0);
     }
     return 0;

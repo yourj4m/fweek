@@ -17,13 +17,16 @@ import 'widgets/controls.dart';
 /// Opens the menu of things to do with [task] (a task or an imported
 /// event) beside [anchor]: a point for a right-click, the row for a long
 /// press or the menu key. With [keyboard], the first entry takes the focus
-/// so that the arrow keys continue from there.
+/// so that the arrow keys continue from there. [from] is the day or list
+/// whose row asked: a list's row offers to plan the task for a day, a day's
+/// row to move it.
 Future<void> showTaskMenu(
   BuildContext context,
   Task task, {
   required Rect anchor,
   ValueChanged<Task>? onOpen,
   bool keyboard = false,
+  Slot? from,
 }) {
   // The row that asked may be gone by the time an entry is chosen (the menu
   // outlives a rebuild), so everything is done through the app's root.
@@ -39,6 +42,7 @@ Future<void> showTaskMenu(
       anchor: anchor,
       onOpen: onOpen,
       keyboard: keyboard,
+      inList: from is ListSlot,
     ),
   );
 }
@@ -52,6 +56,7 @@ class _TaskMenu extends StatefulWidget {
     required this.anchor,
     required this.onOpen,
     required this.keyboard,
+    required this.inList,
   });
 
   final BuildContext root;
@@ -59,6 +64,9 @@ class _TaskMenu extends StatefulWidget {
   final Rect anchor;
   final ValueChanged<Task>? onOpen;
   final bool keyboard;
+
+  /// Asked for from a row of a list rather than of a day.
+  final bool inList;
 
   @override
   State<_TaskMenu> createState() => _TaskMenuState();
@@ -117,6 +125,24 @@ class _TaskMenuState extends State<_TaskMenu> {
     }
   }
 
+  Future<void> _pickDue(Task task) async {
+    final picked = await showPopover<Day>(
+      context: _root,
+      anchor: widget.anchor,
+      align: -1,
+      builder: (popover) => PopoverSurface(
+        child: MonthPicker(
+          selected: task.due,
+          onPick: (day) => Navigator.of(popover).pop(day),
+        ),
+      ),
+    );
+    final root = _root;
+    if (picked != null && picked != task.due && root.mounted) {
+      root.readStore.updateTask(task.id, due: () => picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = context.readStore;
@@ -143,24 +169,43 @@ class _TaskMenuState extends State<_TaskMenu> {
           ),
         );
       case _Page.move:
+        final list = task.listId;
         rows = [
-          for (final (label, slot) in moveTargets(store, lists: true))
+          for (final (label, slot) in dayTargets(store))
             MenuRow(
-              icon: slot is DaySlot ? AppIcons.calendar : AppIcons.list,
+              icon: AppIcons.calendar,
               label: label,
-              onTap: () => _run(() {
-                if (source != null && slot is ListSlot) {
-                  copyIntoPlanner(_root, task, slot: slot);
-                } else {
-                  _root.readStore.moveTask(task.id, slot);
-                }
-              }),
+              onTap: () => _run(() => _root.readStore.moveTask(task.id, slot)),
             ),
           MenuRow(
             icon: AppIcons.calendarSearch,
             label: 'Pick a day…',
             onTap: () => _run(() => _pickDay(task)),
           ),
+          // A list's task that has a day can lose it again.
+          if (list != null && task.date != null && !task.isOccurrence)
+            MenuRow(
+              icon: AppIcons.calendarX,
+              label: widget.inList ? 'No day' : 'No day, back to ${store.listName(list)}',
+              onTap: () => _run(() => _root.readStore.unplan(task.id)),
+            ),
+          if (store.lists.any((l) => l.id != list)) divider(),
+          // From a list to another list the task keeps its day; from its
+          // day to a list it has none any more.
+          for (final other in store.lists)
+            if (other.id != list)
+              MenuRow(
+                icon: AppIcons.list,
+                label: store.listName(other.id),
+                onTap: () => _run(() {
+                  final slot = ListSlot(other.id);
+                  if (source != null) {
+                    copyIntoPlanner(_root, task, slot: slot);
+                  } else {
+                    _root.readStore.moveTask(task.id, slot, keepDay: widget.inList);
+                  }
+                }),
+              ),
         ];
       case _Page.main:
         rows = [
@@ -196,26 +241,50 @@ class _TaskMenuState extends State<_TaskMenu> {
               onTap: () => _run(() => _root.readStore.setDone(task.id, !task.done)),
             ),
           // A task is ticked off, an event is not: either can be made the
-          // other.
-          MenuRow(
-            icon: task.checkable ? AppIcons.calendarClock : AppIcons.circleCheck,
-            label: task.checkable ? 'Turn into an event' : 'Turn into a task',
-            onTap: () => _run(() => _root.readStore.setKind(
-                task.id, task.checkable ? ItemKind.event : ItemKind.task)),
-          ),
+          // other. A list holds tasks, so only an event is offered the
+          // change there.
+          if (!widget.inList || !task.checkable)
+            MenuRow(
+              icon: task.checkable ? AppIcons.calendarClock : AppIcons.circleCheck,
+              label: task.checkable ? 'Turn into an event' : 'Turn into a task',
+              onTap: () => _run(() => _root.readStore.setKind(
+                  task.id, task.checkable ? ItemKind.event : ItemKind.task)),
+            ),
           divider(),
           MenuRow(
-            icon: AppIcons.arrowRight,
-            label: 'Move to',
+            icon: widget.inList ? AppIcons.calendarPlus : AppIcons.arrowRight,
+            label: widget.inList ? 'Plan for' : 'Move to',
+            hint: widget.inList && task.date != null
+                ? Strings.near(task.date!, store.today)
+                : null,
             trailing: chevron(),
             onTap: () => setState(() => _page = _Page.move),
           ),
-          MenuRow(
-            icon: AppIcons.clock,
-            label: 'Time',
-            hint: task.time == null ? null : formatTime(task.time!, use24h: use24h),
-            onTap: () => _run(() => _pickTime(task)),
-          ),
+          // A time of day belongs to a day.
+          if (task.date != null)
+            MenuRow(
+              icon: AppIcons.clock,
+              label: 'Time',
+              hint: task.time == null ? null : formatTime(task.time!, use24h: use24h),
+              onTap: () => _run(() => _pickTime(task)),
+            ),
+          // A deadline: for a task of the planner's own that does not
+          // repeat.
+          if (source == null && task.checkable && !task.repeats) ...[
+            MenuRow(
+              icon: AppIcons.flag,
+              label: task.due == null ? 'Deadline' : 'Change deadline',
+              hint: task.due == null ? null : Strings.near(task.due!, store.today),
+              onTap: () => _run(() => _pickDue(task)),
+            ),
+            if (task.due != null)
+              MenuRow(
+                icon: AppIcons.flagOff,
+                label: 'No deadline',
+                onTap: () =>
+                    _run(() => _root.readStore.updateTask(task.id, due: () => null)),
+              ),
+          ],
           MenuRow(
             icon: AppIcons.droplet,
             label: 'Colour',
@@ -247,7 +316,8 @@ class _TaskMenuState extends State<_TaskMenu> {
               icon: AppIcons.copy,
               label: 'Duplicate',
               onTap: () => _run(() {
-                final slot = task.date != null
+                // The copy goes where the row stands that asked for it.
+                final slot = task.date != null && !(widget.inList && task.listId != null)
                     ? DaySlot(task.date!) as Slot
                     : ListSlot(task.listId!);
                 _root.readStore.copyTask(task.id, slot);

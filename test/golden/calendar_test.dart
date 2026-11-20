@@ -296,6 +296,8 @@ void main() {
 
   desktopTest('an event dropped on a list becomes a task there', (tester) async {
     final store = seededStore();
+    // The lists beside the week.
+    store.setSetting(Settings.listPanel, true);
     final calendars = await calendarWith(tester, store);
     await pumpApp(tester, store, calendars: calendars);
     final from = tester.getCenter(find.text('10:00 Team meeting'));

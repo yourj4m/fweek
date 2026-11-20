@@ -277,7 +277,30 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                           'the top of today. Repeating tasks stay put.',
                     ),
                     toggle('Sort completed tasks down', Settings.sortDoneDown),
-                    toggle('Hide completed tasks', Settings.hideDone),
+                    toggle(
+                      'Hide completed tasks',
+                      Settings.hideDone,
+                      detail: 'These two are about the days of the week. A list '
+                          'on the Tasks page keeps its done tasks folded away '
+                          'under its last line.',
+                    ),
+                    section('A task from a list, given a day'),
+                    Segmented<bool>(
+                      value: store.setting<bool>(Settings.keepInList),
+                      options: const {true: 'Stays in its list', false: 'Leaves its list'},
+                      onChanged: (v) => store.setSetting(Settings.keepInList, v),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        store.setting<bool>(Settings.keepInList)
+                            ? 'It shows in both places: on its day in the week '
+                                'and, marked with that day, in its list.'
+                            : 'It moves to the week and is no longer in its '
+                                'list, as a Someday task did.',
+                        style: context.text.caption14.copyWith(color: theme.ink(60)),
+                      ),
+                    ),
                     if (context.readAndroid case final android?) ...[
                       section('Reminders'),
                       _NotificationPermission(android: android),

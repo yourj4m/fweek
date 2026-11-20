@@ -64,15 +64,22 @@ class Composer extends ChangeNotifier {
   /// Whether [field] is the line the bar belongs to at the moment.
   bool holds(FocusNode field) => _field == field;
 
+  /// Whether the line being typed on is one of a list: what is made there
+  /// is a task without a day, so there is no event to switch to and no
+  /// time to give.
+  bool tasksOnly = false;
+
   /// A line gained the keyboard. [commit] makes a task of what is typed on
   /// it and returns its id.
-  void attach(FocusNode field, String? Function() commit) {
+  void attach(FocusNode field, String? Function() commit, {bool tasksOnly = false}) {
     if (_field == field) return;
     // Typing moved to another line: what was on the old one becomes a task,
     // with what the bar collected for it.
     _commit?.call();
     _field = field;
     _commit = commit;
+    this.tasksOnly = tasksOnly;
+    if (tasksOnly) kind = null;
     busy = false;
     draft.clear();
     notifyListeners();
@@ -98,11 +105,11 @@ class Composer extends ChangeNotifier {
 
   /// Gives a task just created what the bar collected for it.
   void applyTo(PlannerStore store, String id) {
-    if (kind case final kind?) store.setKind(id, kind);
+    if (kind case final kind? when !tasksOnly) store.setKind(id, kind);
     if (draft.isEmpty) return;
     store.updateTask(
       id,
-      time: draft.time == null ? null : () => draft.time,
+      time: draft.time == null || tasksOnly ? null : () => draft.time,
       color: draft.color == null ? null : () => draft.color,
       note: draft.note.trim().isEmpty ? null : draft.note,
       location: draft.location.trim().isEmpty ? null : draft.location,
@@ -347,6 +354,7 @@ class _ComposerBarState extends State<ComposerBar> {
                         children: [
                           // A task or an event: what the settings say, until
                           // tapped. The word shows when it is the other.
+                          if (!_composer.tasksOnly)
                           _BarButton(
                             icon: kind == ItemKind.event
                                 ? AppIcons.calendarClock
@@ -362,6 +370,7 @@ class _ComposerBarState extends State<ComposerBar> {
                             onTap: () => _composer.setKind(
                                 kind == ItemKind.event ? ItemKind.task : ItemKind.event),
                           ),
+                          if (!_composer.tasksOnly)
                           _BarButton(
                             icon: AppIcons.clock,
                             tooltip: 'Time',

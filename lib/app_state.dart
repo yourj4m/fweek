@@ -20,7 +20,12 @@ class Toast {
   final VoidCallback? onAction;
 }
 
-/// What the window is showing: which week or month, and in which view.
+/// The window's two pages: the planner (a week or a month) and the lists
+/// of tasks.
+enum AppPage { planner, tasks }
+
+/// What the window is showing: the planner or the Tasks page, which week or
+/// month, and in which view.
 ///
 /// Listeners are told when the visible week or month, or the view, changes.
 /// Things that change more often or concern fewer widgets have notifiers of
@@ -36,6 +41,42 @@ class AppController extends ChangeNotifier {
 
   Day _anchor;
   late bool _month;
+  /// The page on show, for what follows that alone (and not, say, every
+  /// turn of the week). The window opens on the planner.
+  final pageNotifier = ValueNotifier<AppPage>(AppPage.planner);
+
+  AppPage get page => pageNotifier.value;
+  bool get onTasks => page == AppPage.tasks;
+
+  void setPage(AppPage page) {
+    if (page == pageNotifier.value) return;
+    pageNotifier.value = page;
+    notifyListeners();
+  }
+
+  void togglePage() => setPage(onTasks ? AppPage.planner : AppPage.tasks);
+
+  /// Shows the Tasks page; with [list], with that list open where one list
+  /// shows at a time. [highlight] is the task to draw attention to.
+  void showTasks({String? list, String? highlight}) {
+    if (list != null) setOpenList(list);
+    this.highlight.value = highlight;
+    setPage(AppPage.tasks);
+  }
+
+  /// The list that is open where the Tasks page shows one at a time: the
+  /// one chosen last on this device, else the first.
+  String get openList {
+    final id = store.setting<String?>(Settings.openList);
+    return id != null && store.list(id) != null ? id : store.lists.first.id;
+  }
+
+  void setOpenList(String id) => store.setSetting(Settings.openList, id);
+
+  /// Whether the lists show in a panel beside the week (wide windows).
+  bool get panel => store.setting<bool>(Settings.listPanel);
+
+  void setPanel(bool open) => store.setSetting(Settings.listPanel, open);
 
   /// A day inside the visible week or month.
   Day get anchor => _anchor;
@@ -58,8 +99,10 @@ class AppController extends ChangeNotifier {
 
   String? get highlightedTask => highlight.value;
 
-  void setMonthView(bool month) =>
-      store.setSetting(Settings.view, month ? 'month' : 'week');
+  void setMonthView(bool month) {
+    setPage(AppPage.planner);
+    store.setSetting(Settings.view, month ? 'month' : 'week');
+  }
 
   /// Counts the requests to scroll a list of days to [focusDay] (so that
   /// asking for the same day twice still scrolls).
@@ -70,10 +113,11 @@ class AppController extends ChangeNotifier {
   late Day _focusDay = store.today;
   int get focusRequests => focus.value;
 
-  /// Shows the week or month holding [day]. With [focus], lists also scroll
-  /// to that day.
+  /// Shows the week or month holding [day], turning to the planner if the
+  /// Tasks page is on show. With [focus], lists also scroll to that day.
   void show(Day day, {String? highlight, bool focus = false}) {
-    final moved = day != _anchor;
+    final moved = day != _anchor || page != AppPage.planner;
+    pageNotifier.value = AppPage.planner;
     _anchor = day;
     this.highlight.value = highlight;
     if (focus || highlight != null) {
@@ -116,6 +160,7 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _toastTimer?.cancel();
     store.removeListener(_onStore);
+    pageNotifier.dispose();
     highlight.dispose();
     focus.dispose();
     toast.dispose();

@@ -46,12 +46,13 @@ void main() {
     final finger = await tester.startGesture(
         tester.getCenter(find.text('Mark me complete')),
         kind: PointerDeviceKind.touch);
-    await finger.moveBy(const Offset(0, -30));
-    await finger.moveBy(const Offset(0, -90));
+    // The page opens with today at its top; the days before are above.
+    await finger.moveBy(const Offset(0, 30));
+    await finger.moveBy(const Offset(0, 90));
     await tester.pump();
     await finger.up();
     await tester.pumpAndSettle();
-    expect(tester.getTopLeft(find.text('Mark me complete')).dy, lessThan(before));
+    expect(tester.getTopLeft(find.text('Mark me complete')).dy, greaterThan(before));
     expect(titles(store.tasksOn(saturday)),
         ['Mark me complete', 'Tap and edit', 'Drag to the next day']);
     expect(titles(store.tasksOn(friday)), ['Water the plants']);
@@ -60,22 +61,22 @@ void main() {
   phoneTest('a sideways swipe turns the week, the title leads back to today', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store, size: phone);
-    expect(find.text('W46'), findsOneWidget);
+    expect(find.text('2026 · W46'), findsOneWidget);
     await tester.fling(find.byType(PageView), const Offset(-300, 0), 1200);
     await tester.pumpAndSettle();
-    expect(find.text('W47'), findsOneWidget);
+    expect(find.text('2026 · W47'), findsOneWidget);
     expect(find.text('Water the plants'), findsNothing);
 
-    await tester.tap(find.text('Nov 2026'));
+    await tester.tap(find.text('November'));
     await tester.pumpAndSettle();
-    expect(find.text('W46'), findsOneWidget);
+    expect(find.text('2026 · W46'), findsOneWidget);
     expect(find.text('Water the plants'), findsOneWidget);
 
     // On the current week the title opens the month, and brings one back.
-    await tester.tap(find.text('Nov 2026'));
+    await tester.tap(find.text('November'));
     await tester.pumpAndSettle();
     expect(store.setting<String>(Settings.view), 'month');
-    await tester.tap(find.text('Nov 2026'));
+    await tester.tap(find.text('November'));
     await tester.pumpAndSettle();
     expect(store.setting<String>(Settings.view), 'week');
   });
@@ -86,7 +87,7 @@ void main() {
     addTearDown(tester.view.reset);
     await pumpApp(tester, seededStore(), size: phone);
     // The header starts below the status bar.
-    expect(tester.getTopLeft(find.text('Nov 2026')).dy, greaterThanOrEqualTo(40));
+    expect(tester.getTopLeft(find.text('November')).dy, greaterThanOrEqualTo(40));
     await tester.tap(find.text('Water the plants'));
     await tester.pumpAndSettle();
     // The sheet's toolbar ends above the navigation bar.

@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
 import 'package:flutter/widgets.dart';
 
 import '../app_state.dart';
+import '../data/day.dart';
 import '../data/models.dart';
 import '../data/planner_store.dart';
 import '../platform.dart';
@@ -290,9 +291,15 @@ class TaskRow extends StatefulWidget {
     required this.task,
     required this.compact,
     required this.onOpen,
+    this.slot,
   });
 
   final Task task;
+
+  /// The day or list that shows this row. A list's task that has a day
+  /// shows twice, on its day and in its list; what a drag or the menu does
+  /// with it depends on which of the two rows is taken.
+  final Slot? slot;
 
   /// Narrow layout: larger text and an always-visible check.
   final bool compact;
@@ -352,6 +359,7 @@ class _TaskRowState extends State<TaskRow> {
         anchor: at == null ? globalRect(context) : at & Size.zero,
         onOpen: widget.onOpen,
         keyboard: at == null,
+        from: widget.slot,
       );
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -409,7 +417,25 @@ class _TaskRowState extends State<TaskRow> {
         ? linkify(task.title).where((p) => p.isLink).firstOrNull
         : null;
 
+    // In a list: the day the task is planned for, if it has one.
+    final inList = widget.slot is ListSlot;
+    final today = context.readStore.today;
+    final day = inList ? task.date : null;
+    final due = task.due;
+
     final marks = <Widget>[
+      if (day != null)
+        Text(
+          Strings.near(day, today),
+          style: small.copyWith(
+            color: day == today && !faint ? theme.accent : muted,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      // A deadline: the date in a list, where there is room for it; in the
+      // week a flag. Red once the day has passed.
+      if (due != null)
+        DueMark(due: due, today: today, done: faint, size: style.fontSize! - 2, dated: inList),
       // A title with an address in it: a button that opens the address.
       if (link != null)
         // A button of its own for a screen reader too, not part of what
@@ -505,8 +531,9 @@ class _TaskRowState extends State<TaskRow> {
               event.buttons != kPrimaryButton) {
             return;
           }
-          DragScope.read(context)
-              .pointerDown(task, event.position, globalRect(context));
+          DragScope.read(context).pointerDown(
+              task, event.position, globalRect(context),
+              from: widget.slot);
         },
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
@@ -520,7 +547,7 @@ class _TaskRowState extends State<TaskRow> {
               onSecondaryTapUp: (details) => _menu(details.globalPosition),
               child: _TouchPickUp(
                 onPickUp: (position) => DragScope.read(context)
-                    .begin(task, position, globalRect(context)),
+                    .begin(task, position, globalRect(context), from: widget.slot),
                 child: SizedBox(
                   height: Dim.row,
                   child: Stack(
@@ -581,6 +608,62 @@ class _TaskRowState extends State<TaskRow> {
   }
 }
 
+/// A task's deadline as a small mark: a flag, with the date when [dated].
+/// Red once the day has passed and the task is not done; in the text colour
+/// on the day itself.
+class DueMark extends StatelessWidget {
+  const DueMark({
+    super.key,
+    required this.due,
+    required this.today,
+    required this.done,
+    required this.size,
+    this.dated = true,
+  });
+
+  final Day due;
+  final Day today;
+  final bool done;
+  final double size;
+  final bool dated;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final color = done
+        ? theme.ink(25)
+        : due < today
+            ? AppTheme.danger
+            : due == today
+                ? theme.text
+                : theme.ink(50);
+    final label = 'Due ${Strings.near(due, today).toLowerCase()}';
+    return Semantics(
+      container: true,
+      label: due < today && !done ? '$label, passed' : label,
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(AppIcons.flag, size: size, color: color),
+          if (dated) ...[
+            const SizedBox(width: 2),
+            Text(
+              Strings.near(due, today),
+              style: context.text.tiny12.copyWith(
+                fontSize: isMobile ? 13 : 11.5,
+                height: 1.2,
+                color: color,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// Reports a long press by a finger or pen, which picks a task up. A mouse
 /// is left out on purpose: it drags by moving, and a slow click must stay a
 /// click.
@@ -613,6 +696,8 @@ class AddRow extends StatefulWidget {
     required this.onSubmit,
     required this.compact,
     this.focusNode,
+    this.tasksOnly = false,
+    this.hint,
   });
 
   /// Called with the typed text; returns the id of the task made of it.
@@ -621,6 +706,12 @@ class AddRow extends StatefulWidget {
   final String? Function(String text) onSubmit;
   final bool compact;
   final FocusNode? focusNode;
+
+  /// The line of a list: what is typed there is a task, never an event.
+  final bool tasksOnly;
+
+  /// Shown faintly while the line is empty.
+  final String? hint;
 
   @override
   State<AddRow> createState() => _AddRowState();
@@ -675,7 +766,7 @@ class _AddRowState extends State<AddRow> {
   void _onFocus() {
     final composer = _composer;
     if (_focus.hasFocus) {
-      composer?.attach(_focus, _commit);
+      composer?.attach(_focus, _commit, tasksOnly: widget.tasksOnly);
     } else if (composer == null || !composer.holds(_focus)) {
       // Clicking away keeps what was typed, as a task.
       _commit();
@@ -697,7 +788,7 @@ class _AddRowState extends State<AddRow> {
     final composer = _composer;
     if (id != null && composer != null && composer.holds(_focus)) {
       composer.applyTo(context.readStore, id);
-    } else if (id != null) {
+    } else if (id != null && !widget.tasksOnly) {
       if (_kind case final kind?) context.readStore.setKind(id, kind);
     }
     return id;
@@ -710,7 +801,7 @@ class _AddRowState extends State<AddRow> {
     final style = widget.compact ? context.text.taskCompact : context.text.task14;
     // On a desktop the line itself says, and switches, whether a task or an
     // event is being typed; on a phone the bar above the keyboard does.
-    final ownSwitch = !isMobile && focused;
+    final ownSwitch = !isMobile && focused && !widget.tasksOnly;
     final asEvent = ownSwitch && _making == ItemKind.event;
     return MouseRegion(
       cursor: SystemMouseCursors.text,
@@ -806,7 +897,7 @@ class _AddRowState extends State<AddRow> {
                         _controller.clear();
                         _focus.unfocus();
                       },
-                      if (!isMobile)
+                      if (!isMobile && !widget.tasksOnly)
                         const SingleActivator(LogicalKeyboardKey.keyE, control: true):
                             _switchKind,
                     },
@@ -818,7 +909,10 @@ class _AddRowState extends State<AddRow> {
                       cursorWidth: 1.5,
                       maxLines: 1,
                       textInputAction: TextInputAction.done,
-                      decoration: const InputDecoration.collapsed(hintText: ''),
+                      decoration: InputDecoration.collapsed(
+                        hintText: widget.hint ?? '',
+                        hintStyle: style.copyWith(color: theme.ink(25)),
+                      ),
                       onSubmitted: (_) {
                         _commit();
                         _focus.requestFocus();
@@ -846,7 +940,11 @@ class TaskListBody extends StatefulWidget {
     required this.compact,
     required this.onOpen,
     this.onAdd,
+    this.addHint,
   });
+
+  /// Shown faintly on the empty line new tasks are typed on.
+  final String? addHint;
 
   final Slot slot;
   final List<Task> tasks;
@@ -992,12 +1090,15 @@ class _TaskListBodyState extends State<TaskListBody> {
                       task: shown[i],
                       compact: widget.compact,
                       onOpen: widget.onOpen,
+                      slot: widget.slot,
                     ),
                   ],
                   if (target) gap(shown.length),
                   AddRow(
                     compact: widget.compact,
                     focusNode: _addFocus,
+                    tasksOnly: widget.slot is ListSlot,
+                    hint: widget.addHint,
                     onSubmit: widget.onAdd ??
                         (text) => context.readStore.addTask(widget.slot, text),
                   ),
@@ -1048,6 +1149,95 @@ class _RulePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RulePainter old) => old.color != color;
+}
+
+/// How many rows a body needs right now: its tasks (minus one being dragged
+/// away), a gap if it is the drop target, and the add row.
+int rowsNeeded(DragController drag, Slot slot, List<Task> tasks, int minimum) {
+  var count = tasks.length;
+  if (drag.active) {
+    if (tasks.any((t) => t.id == drag.task!.id)) count--;
+    if (drag.targetSlot == slot) count++;
+  }
+  return TaskListBody.rowsFor(count, minimum);
+}
+
+/// Gives one day or list that stands alone its number of rows, and builds
+/// it again only when that number changes.
+///
+/// While a task is dragged, the day it is over grows by a row and the day
+/// it left shrinks by one. In the wide week all columns share a height, so
+/// the grid works that out as a whole; where each day or list stands alone,
+/// a task crossing from one to the next concerns those two only.
+class LocalRows extends StatefulWidget {
+  const LocalRows({
+    super.key,
+    required this.slot,
+    required this.tasks,
+    required this.minimum,
+    required this.builder,
+  });
+
+  final Slot slot;
+  final List<Task> tasks;
+  final int minimum;
+  final Widget Function(BuildContext context, int rows) builder;
+
+  @override
+  State<LocalRows> createState() => _LocalRowsState();
+}
+
+class _LocalRowsState extends State<LocalRows> {
+  DragController? _drag;
+  int _rows = 0;
+
+  int _needed() => rowsNeeded(_drag!, widget.slot, widget.tasks, widget.minimum);
+
+  void _onDrag() {
+    if (!mounted) return;
+    final rows = _needed();
+    if (rows != _rows) setState(() => _rows = rows);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final drag = DragScope.read(context);
+    if (drag != _drag) {
+      _drag?.layout.removeListener(_onDrag);
+      _drag = drag..layout.addListener(_onDrag);
+    }
+    _rows = _needed();
+  }
+
+  @override
+  void didUpdateWidget(LocalRows old) {
+    super.didUpdateWidget(old);
+    _rows = _needed();
+  }
+
+  @override
+  void dispose() {
+    _drag?.layout.removeListener(_onDrag);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _rows);
+}
+
+/// Ruled lines with nothing on them: the body of a column that holds no
+/// list or day yet.
+class BlankRows extends StatelessWidget {
+  const BlankRows({super.key, required this.rows});
+
+  final int rows;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: rows * Dim.row,
+        child: CustomPaint(painter: _RulePainter(context.theme.rule)),
+      );
 }
 
 /// Whether [listEquals] holds for two task lists by identity of their

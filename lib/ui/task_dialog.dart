@@ -227,21 +227,125 @@ class _TaskDialogState extends State<_TaskDialog> {
 
   // ------------------------------------------------------------ popovers
 
-  Future<void> _pickDate(BuildContext anchor, Task task) async {
-    final picked = await showPopover<Day>(
-      context: context,
-      anchor: globalRect(anchor),
-      align: -1,
-      builder: (popover) => PopoverSurface(
-        child: MonthPicker(
-          selected: task.date,
-          onPick: (day) => Navigator.of(popover).pop(day),
+  /// A month to pick a day from and, under it, the way to have none
+  /// ([none]), where that is offered. Returns the day picked, or null with
+  /// [cleared] called when none was chosen.
+  Future<Day?> _pickDayOrNone(
+    BuildContext anchor, {
+    required Day? selected,
+    String? none,
+    IconData? noneIcon,
+    VoidCallback? cleared,
+  }) =>
+      showPopover<Day>(
+        context: context,
+        anchor: globalRect(anchor),
+        align: -1,
+        builder: (popover) => PopoverSurface(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              MonthPicker(
+                selected: selected,
+                onPick: (day) => Navigator.of(popover).pop(day),
+              ),
+              if (none != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: SizedBox(
+                    width: 272,
+                    child: MenuRow(
+                      icon: noneIcon,
+                      label: none,
+                      onTap: () {
+                        Navigator.of(popover).pop();
+                        cleared?.call();
+                      },
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
-      ),
+      );
+
+  Future<void> _pickDate(BuildContext anchor, Task task) async {
+    // A list's task can be without a day; any other is on one.
+    final canClear =
+        task.date != null && task.listId != null && !task.isOccurrence && !task.fromCalendar;
+    final picked = await _pickDayOrNone(
+      anchor,
+      selected: task.date,
+      none: canClear ? 'No day' : null,
+      noneIcon: AppIcons.calendarX,
+      cleared: () => _apply(() {
+        _store.unplan(_id);
+        return _id;
+      }),
     );
     if (picked != null && picked != task.date) {
       _apply(() => _store.moveTask(_id, DaySlot(picked)));
     }
+  }
+
+  Future<void> _pickDue(BuildContext anchor, Task task) async {
+    final picked = await _pickDayOrNone(
+      anchor,
+      selected: task.due,
+      none: task.due == null ? null : 'No deadline',
+      noneIcon: AppIcons.flagOff,
+      cleared: () => _store.updateTask(_id, due: () => null),
+    );
+    if (picked != null && picked != task.due) {
+      _apply(() {
+        _store.updateTask(_id, due: () => picked);
+        return _id;
+      });
+    }
+  }
+
+  /// The lists, to put the task into one or take it out of its own. It
+  /// keeps its day either way.
+  void _pickList(BuildContext anchor, Task task) {
+    showPopover<void>(
+      context: context,
+      anchor: globalRect(anchor),
+      align: -1,
+      builder: (popover) => PopoverSurface(
+        padding: const EdgeInsets.all(8),
+        child: SizedBox(
+          width: 232,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final list in _store.lists)
+                  MenuRow(
+                    label: _store.listName(list.id),
+                    checked: list.id == task.listId,
+                    onTap: () {
+                      Navigator.of(popover).pop();
+                      _flush();
+                      _store.setList(_id, list.id);
+                    },
+                  ),
+                // Without a day it has to be in some list.
+                if (task.listId != null && task.date != null)
+                  MenuRow(
+                    label: 'No list',
+                    checked: false,
+                    onTap: () {
+                      Navigator.of(popover).pop();
+                      _flush();
+                      _store.setList(_id, null);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _pickTime(BuildContext anchor, Task task) async {
@@ -547,7 +651,11 @@ class _TaskDialogState extends State<_TaskDialog> {
   }
 
   void _targets(Rect rect, Task task, {required bool copy}) {
-    final targets = moveTargets(_store);
+    // A task is moved to a day here; which list it is in is said at the top
+    // of the card. A copy can go to a list, and so can what a calendar
+    // brought (as a copy).
+    final List<(String, Slot)> targets =
+        copy || task.fromCalendar ? moveTargets(_store) : dayTargets(_store);
     showPopover<void>(
       context: context,
       anchor: rect,
@@ -763,7 +871,9 @@ class _TaskDialogState extends State<_TaskDialog> {
         ? (task.spansDays
             ? '${Strings.fullDate(date)} – ${Strings.fullDate(source!.lastDay)}'
             : Strings.fullDate(date))
-        : (list == null ? 'Someday' : listTitle(context.store, list));
+        : 'No day';
+    // A task of the planner's own that does not repeat can be in a list.
+    final listed = source == null && !task.repeats;
     final side = narrow ? 24.0 : 32.0;
     final muted = context.text.caption14.copyWith(color: theme.ink(60));
 
@@ -832,9 +942,13 @@ class _TaskDialogState extends State<_TaskDialog> {
                 builder: (anchor) => _HeaderButton(
                   icon: AppIcons.calendar,
                   label: where,
+                  muted: date == null,
+                  tooltip: date == null ? 'Plan for a day' : null,
                   onTap: () => _pickDate(anchor, task),
                 ),
               ),
+              // A time of day belongs to a day.
+              if (date != null)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -866,6 +980,16 @@ class _TaskDialogState extends State<_TaskDialog> {
                     ),
                 ],
               ),
+              if (listed)
+                Builder(
+                  builder: (anchor) => _HeaderButton(
+                    icon: AppIcons.list,
+                    label: list == null ? null : listTitle(context.store, list),
+                    muted: list == null,
+                    tooltip: list == null ? 'Put into a list' : 'List',
+                    onTap: () => _pickList(anchor, task),
+                  ),
+                ),
               ?origin,
             ],
           ),
@@ -1068,6 +1192,22 @@ class _TaskDialogState extends State<_TaskDialog> {
             // The place line appears under the notes, ready to type in.
             onTap: _editPlace,
           ),
+          // A deadline: for a task of the planner's own that does not repeat.
+          if (source == null && task.checkable && !task.repeats)
+            Builder(
+              builder: (anchor) => AppButton(
+                icon: AppIcons.flag,
+                kind: ButtonKind.ghost,
+                size: Dim.controlLarge,
+                tooltip: 'Deadline',
+                foreground: task.due == null
+                    ? theme.ink(40)
+                    : task.overdueAt(_store.today)
+                        ? AppTheme.danger
+                        : theme.text,
+                onTap: () => _pickDue(anchor, task),
+              ),
+            ),
           Builder(
             builder: (anchor) => AppButton(
               icon: task.reminder == null ? AppIcons.bell : AppIcons.bellRing,
@@ -1097,6 +1237,14 @@ class _TaskDialogState extends State<_TaskDialog> {
           icon: AppIcons.history,
           text: 'Not ticked on ${Strings.fullDate(from)}, so moved to today. '
               'Green if it was done that day, red if it is still to do.',
+        ),
+      if (task.due case final due?)
+        _Detail(
+          icon: AppIcons.flag,
+          text: task.overdueAt(_store.today)
+              ? 'Was due ${Strings.fullDate(due)}'
+              : 'Due ${Strings.fullDate(due)}',
+          color: task.overdueAt(_store.today) ? AppTheme.danger : null,
         ),
       if (task.repeats && date != null)
         _Detail(
@@ -1225,14 +1373,15 @@ class _HeaderButton extends StatelessWidget {
 }
 
 class _Detail extends StatelessWidget {
-  const _Detail({required this.icon, required this.text});
+  const _Detail({required this.icon, required this.text, this.color});
 
   final IconData icon;
   final String text;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final color = context.theme.ink(60);
+    final color = this.color ?? context.theme.ink(60);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Row(

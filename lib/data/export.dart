@@ -9,7 +9,7 @@ import 'recurrence.dart';
 /// Export and backup formats.
 abstract final class Export {
   static const backupFormat = 'weektodo-backup';
-  static const backupVersion = 4;
+  static const backupVersion = 5;
 
   static List<Task> _ordered(PlannerStore store) => store.allTasks.toList()
     ..sort((a, b) {
@@ -22,14 +22,13 @@ abstract final class Export {
       } else {
         final byList = (a.listId ?? '').compareTo(b.listId ?? '');
         if (byList != 0) return byList;
+        return a.listPosition.compareTo(b.listPosition);
       }
       return a.position.compareTo(b.position);
     });
 
-  static String _listTitle(PlannerStore store, String? id) {
-    final title = id == null ? null : store.list(id)?.title;
-    return title == null || title.isEmpty ? 'Someday' : title;
-  }
+  static String _listTitle(PlannerStore store, String? id) =>
+      id == null ? '' : store.listName(id);
 
   /// A complete backup that [restore] can read back.
   static String backup(PlannerStore store) {
@@ -71,6 +70,8 @@ abstract final class Export {
             if (t.geo != null) 'geo': t.geo,
             if (t.rolledFrom != null) 'rolled_from': t.rolledFrom!.iso,
             if (t.rolledPosition != null) 'rolled_pos': t.rolledPosition,
+            if (t.listPos.isNotEmpty) 'list_pos': t.listPos,
+            if (t.due != null) 'due': t.due!.iso,
             'created_at': t.createdAt,
           },
       ],
@@ -176,6 +177,8 @@ abstract final class Export {
           'geo': t['geo'],
           'rolled_from': t['rolled_from'],
           'rolled_pos': t['rolled_pos'],
+          'list_pos': t['list_pos'],
+          'due': t['due'],
           'created_at': t['created_at'] ?? 0,
           'deleted': false,
         }));
@@ -256,11 +259,11 @@ abstract final class Export {
     }
 
     final lines = [
-      'date,list,time,title,done,color,repeats,note,subtasks,location,type,end',
+      'date,list,time,title,done,color,repeats,note,subtasks,location,type,end,due',
       for (final t in _ordered(store))
         [
           t.date?.iso ?? '',
-          t.date == null ? _listTitle(store, t.listId) : '',
+          _listTitle(store, t.listId),
           t.time == null ? '' : _clock(t.time!),
           t.title,
           // An event is not something that is done or not.
@@ -272,6 +275,7 @@ abstract final class Export {
           t.location,
           t.kind.name,
           t.end == null ? '' : _clock(t.end!),
+          t.due?.iso ?? '',
         ].map(cell).join(','),
     ];
     return '${lines.join('\r\n')}\r\n';
@@ -296,6 +300,11 @@ abstract final class Export {
       // A task has a box to tick; an event is a plain line.
       final mark = !t.checkable ? ' - ' : t.done ? '[x]' : '[ ]';
       out.writeln('$mark $time${t.title}');
+      // A list's task that has a day stands under its day.
+      if (t.date != null && t.listId != null) {
+        out.writeln('    # ${_listTitle(store, t.listId)}');
+      }
+      if (t.due != null) out.writeln('    ! due ${t.due!.iso}');
       for (final s in t.subtasks) {
         out.writeln(s.heading
             ? '      ${s.text}'
@@ -311,8 +320,9 @@ abstract final class Export {
     return out.toString();
   }
 
-  /// iCalendar with one VTODO per task (Someday tasks have no due date) and
-  /// one VEVENT per event that has a day.
+  /// iCalendar with one VTODO per task and one VEVENT per event that has a
+  /// day. A task is due on its deadline if it has one, else on the day it is
+  /// planned for; one with neither has no due date.
   static String ics(PlannerStore store, {DateTime? now}) {
     String escape(String s) => s
         .replaceAll(r'\', r'\\')
@@ -387,13 +397,22 @@ abstract final class Export {
         if (t.hasLocation) 'LOCATION:${escape(t.location.trim())}',
         if (t.geo case final geo? when geo.contains(','))
           'GEO:${geo.replaceFirst(',', ';')}',
-        if (t.date != null && t.time == null) 'DUE;VALUE=DATE:${date(t.date!)}',
-        if (t.date != null && t.time != null)
+        // A deadline is the due date; the planned day then is the start
+        // (of the same kind of value, and not after the due date).
+        if (t.due case final due?)
+          t.date != null && t.time != null
+              ? 'DUE:${date(due)}T235900'
+              : 'DUE;VALUE=DATE:${date(due)}'
+        else if (t.date != null && t.time == null)
+          'DUE;VALUE=DATE:${date(t.date!)}'
+        else if (t.date != null && t.time != null)
           'DUE:${date(t.date!)}T${_clock(t.time!).replaceAll(':', '')}00',
-        if (t.date != null && t.recurrence != null) ...[
+        if (t.date != null &&
+            (t.recurrence != null || (t.due != null && t.date! <= t.due!)))
           t.time == null
               ? 'DTSTART;VALUE=DATE:${date(t.date!)}'
               : 'DTSTART:${date(t.date!)}T${_clock(t.time!).replaceAll(':', '')}00',
+        if (t.date != null && t.recurrence != null) ...[
           'RRULE:${rrule(t.recurrence!, t.date!)}',
           for (final d in t.exdates.toList()..sort())
             'EXDATE;VALUE=DATE:${date(d)}',

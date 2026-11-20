@@ -51,9 +51,22 @@ abstract final class Settings {
   /// `event`.
   static const newItems = 'new_items';
 
+  /// Whether a list's task that is given a day stays in its list as well
+  /// (and shows in both places), or leaves the list for the week.
+  static const keepInList = 'keep_in_list';
+
+  /// Whether the lists are shown in a panel beside the week (wide windows).
+  static const listPanel = 'list_panel';
+
+  /// Ids of the lists folded shut in that panel.
+  static const foldedLists = 'folded_lists';
+
+  /// The list that is open where the Tasks page shows one list at a time.
+  static const openList = 'open_list';
+
   /// Settings that belong to this device and are not synced: how a planner
   /// looks on a phone need not follow the desktop.
-  static const local = {theme, view, frameTiming};
+  static const local = {theme, view, frameTiming, listPanel, foldedLists, openList};
 
   static const defaults = <String, Object?>{
     theme: 'system',
@@ -69,6 +82,10 @@ abstract final class Settings {
     placeServer: '',
     frameTiming: false,
     newItems: 'task',
+    keepInList: true,
+    listPanel: false,
+    foldedLists: <String>[],
+    openList: null,
   };
 }
 
@@ -288,6 +305,8 @@ class PlannerStore extends ChangeNotifier {
       geo: row['geo'] as String?,
       rolledFrom: Day.tryParse(row['rolled_from'] as String?),
       rolledPosition: row['rolled_pos'] as String?,
+      listPos: row['list_pos'] as String? ?? '',
+      due: Day.tryParse(row['due'] as String?),
     );
   }
 
@@ -395,7 +414,7 @@ class PlannerStore extends ChangeNotifier {
 
   // ------------------------------------------------------------------ lists
 
-  /// Someday lists in display order.
+  /// The lists of the Tasks page in display order.
   List<TaskList> get lists => _lists.values.toList()
     ..sort((a, b) {
       final byPosition = a.position.compareTo(b.position);
@@ -403,6 +422,14 @@ class PlannerStore extends ChangeNotifier {
     });
 
   TaskList? list(String id) => _lists[id];
+
+  /// What a list is called: its title, or a stand-in while it has none.
+  String listName(String id) {
+    final list = _lists[id];
+    if (list == null) return '';
+    if (list.title.isNotEmpty) return list.title;
+    return lists.first.id == id ? 'To do' : 'Untitled list';
+  }
 
   /// Adds a list after the existing ones and returns its id.
   String addList([String title = '']) {
@@ -419,29 +446,47 @@ class PlannerStore extends ChangeNotifier {
   void renameList(String id, String title) =>
       _write('lists', id, {'title': title});
 
-  /// Deletes a list together with the tasks in it. Returns the ids of those
-  /// tasks, for [restoreList].
-  List<String> deleteList(String id) {
-    final tasks = [
-      for (final task in _tasks.values.where((t) => t.listId == id)) task.id,
-    ];
+  /// Deletes a list. Its tasks that have no day go with it; those on a day
+  /// stay on that day and only lose the list. Returns what was done, for
+  /// [restoreList].
+  ListRemoval deleteList(String id) =>
+      _take(id, _tasks.values.where((t) => t.listId == id), list: true);
+
+  /// Clears the done tasks out of a list: those without a day are deleted,
+  /// those on a day stay there and leave the list. Returns what was done,
+  /// for [restoreList].
+  ListRemoval clearDone(String id) =>
+      _take(id, _tasks.values.where((t) => t.listId == id && t.done), list: false);
+
+  ListRemoval _take(String id, Iterable<Task> tasks, {required bool list}) {
+    final deleted = <String>[], detached = <String>[];
+    for (final task in tasks) {
+      (task.date == null ? deleted : detached).add(task.id);
+    }
     final changes = <Change>[
-      for (final task in tasks) ...db.stamp('tasks', task, {'deleted': true}),
-      ...db.stamp('lists', id, {'deleted': true}),
+      for (final task in deleted) ...db.stamp('tasks', task, {'deleted': true}),
+      for (final task in detached) ...db.stamp('tasks', task, {'list_id': null}),
+      if (list) ...db.stamp('lists', id, {'deleted': true}),
     ];
-    db.apply(changes);
-    _load();
-    _revision++;
-    notifyListeners();
-    return tasks;
+    if (changes.isNotEmpty) {
+      db.apply(changes);
+      _load();
+      _revision++;
+      notifyListeners();
+    }
+    return ListRemoval(listId: id, list: list, deleted: deleted, detached: detached);
   }
 
-  /// Brings back a list removed by [deleteList], with its tasks (undo).
-  void restoreList(String id, List<String> tasks) {
+  /// Takes back [deleteList] or [clearDone] (undo).
+  void restoreList(ListRemoval removal) {
     final changes = <Change>[
-      ...db.stamp('lists', id, {'deleted': false}),
-      for (final task in tasks) ...db.stamp('tasks', task, {'deleted': false}),
+      if (removal.list) ...db.stamp('lists', removal.listId, {'deleted': false}),
+      for (final task in removal.deleted)
+        ...db.stamp('tasks', task, {'deleted': false}),
+      for (final task in removal.detached)
+        ...db.stamp('tasks', task, {'list_id': removal.listId}),
     ];
+    if (changes.isEmpty) return;
     db.apply(changes);
     _load();
     _revision++;
@@ -538,9 +583,75 @@ class PlannerStore extends ChangeNotifier {
     return {for (final e in byDay.entries) e.key: _arrange(e.value)};
   }
 
-  /// Tasks in a Someday list in display order.
-  List<Task> tasksIn(String listId) =>
-      _arrange(_tasks.values.where((t) => t.listId == listId).toList());
+  int _compareInList(Task a, Task b) {
+    final byPosition = a.listPosition.compareTo(b.listPosition);
+    return byPosition != 0 ? byPosition : a.id.compareTo(b.id);
+  }
+
+  final Map<String, ({List<Task> open, List<Task> done})> _listed = {};
+  int _listedRevision = -1;
+
+  ({List<Task> open, List<Task> done}) _inList(String listId) {
+    // Every list of the page asks; the tasks are gone through once.
+    if (_listedRevision != _revision) {
+      _listed.clear();
+      _listedRevision = _revision;
+      for (final task in _tasks.values) {
+        final id = task.listId;
+        if (id == null) continue;
+        final list = _listed[id] ??= (open: [], done: []);
+        (task.done ? list.done : list.open).add(task);
+      }
+      for (final list in _listed.values) {
+        list.open.sort(_compareInList);
+        list.done.sort((a, b) {
+          final byTime = (b.doneAt ?? 0).compareTo(a.doneAt ?? 0);
+          return byTime != 0 ? byTime : a.id.compareTo(b.id);
+        });
+      }
+    }
+    return _listed[listId] ?? const (open: [], done: []);
+  }
+
+  /// What is still to do in a list, in the list's order: tasks without a
+  /// day and tasks that have one alike. Shared until the next change; do
+  /// not alter it.
+  List<Task> openIn(String listId) => _inList(listId).open;
+
+  /// The done tasks of a list, the one ticked last first.
+  List<Task> doneIn(String listId) => _inList(listId).done;
+
+  /// Every task of a list: [openIn], then [doneIn].
+  List<Task> tasksIn(String listId) => [...openIn(listId), ...doneIn(listId)];
+
+  final Map<Day, List<Task>> _due = {};
+  int _dueRevision = -1;
+
+  /// The tasks still to do whose deadline is [day]. Shared until the next
+  /// change; do not alter it.
+  List<Task> dueOn(Day day) {
+    if (_dueRevision != _revision) {
+      _due.clear();
+      _dueRevision = _revision;
+      for (final task in _tasks.values) {
+        final due = task.due;
+        if (due != null && !task.done) (_due[due] ??= []).add(task);
+      }
+      for (final tasks in _due.values) {
+        tasks.sort((a, b) => a.title.compareTo(b.title));
+      }
+    }
+    return _due[day] ?? const [];
+  }
+
+  /// How many tasks are still to do in all lists together.
+  int get openInLists {
+    var count = 0;
+    for (final list in _lists.keys) {
+      count += openIn(list).length;
+    }
+    return count;
+  }
 
   /// The items of one day as they are shown: [tasks] (as [tasksOn] gives
   /// them) and the [events] calendars bring within that day, as one list.
@@ -572,7 +683,7 @@ class PlannerStore extends ChangeNotifier {
 
   List<Task> _itemsAt(Slot slot) => switch (slot) {
         DaySlot(:final day) => itemsOn(day),
-        ListSlot(:final listId) => tasksIn(listId),
+        ListSlot(:final listId) => openIn(listId),
       };
 
   /// Tasks whose title, note or subtasks contain [query], newest date first.
@@ -612,13 +723,17 @@ class PlannerStore extends ChangeNotifier {
   /// An ordering key that places a task at [index] among the tasks at [slot],
   /// ignoring the task [except] (the one being moved).
   String _keyAt(Slot slot, int? index, {String? except}) {
+    // A list orders its tasks by keys of its own.
+    final inList = slot is ListSlot;
+    String place(Task t) => inList ? t.listPosition : t.position;
     List<Task> others() => _itemsAt(slot).where((t) => t.id != except).toList();
     var shown = others();
     final i = index == null ? shown.length : index.clamp(0, shown.length);
     // What a calendar brought and was never placed has no key and stands
     // above all that has one. To put something among such events, or above
     // them, they are given keys first, in the order they stand in.
-    final loose = shown.takeWhile((t) => t.position.isEmpty).toList();
+    final loose =
+        inList ? const <Task>[] : shown.takeWhile((t) => t.position.isEmpty).toList();
     if (i < loose.length) {
       final first = loose.length < shown.length ? shown[loose.length].position : null;
       final keys = orderKeysBetween(null, first, loose.length);
@@ -628,7 +743,7 @@ class PlannerStore extends ChangeNotifier {
       }
       shown = others();
     }
-    String? key(Task t) => t.position.isEmpty ? null : t.position;
+    String? key(Task t) => place(t).isEmpty ? null : place(t);
     final before = i > 0 ? key(shown[i - 1]) : null;
     var after = i < shown.length ? key(shown[i]) : null;
     if (before != null && after != null && before.compareTo(after) >= 0) {
@@ -636,7 +751,7 @@ class PlannerStore extends ChangeNotifier {
       // two devices issued the same key: go directly after the upper
       // neighbour in stored order instead.
       final later = shown
-          .map((t) => t.position)
+          .map(place)
           .where((p) => p.compareTo(before) > 0)
           .toList()
         ..sort();
@@ -645,9 +760,13 @@ class PlannerStore extends ChangeNotifier {
     return orderKeyBetween(before, after);
   }
 
-  static Map<String, Object?> _slotColumns(Slot slot) => switch (slot) {
-        DaySlot(:final day) => {'date': day.iso, 'list_id': null},
-        ListSlot(:final listId) => {'date': null, 'list_id': listId},
+  /// The columns that put a new task at [index] of [slot].
+  Map<String, Object?> _placeColumns(Slot slot, int? index) => switch (slot) {
+        DaySlot(:final day) => {'date': day.iso, 'position': _keyAt(slot, index)},
+        ListSlot(:final listId) => {
+            'list_id': listId,
+            'list_pos': _keyAt(slot, index),
+          },
       };
 
   // ------------------------------------------------------------------ edits
@@ -657,18 +776,19 @@ class PlannerStore extends ChangeNotifier {
       ItemKind.tryParse(setting<String>(Settings.newItems)) ?? ItemKind.task;
 
   /// Adds an item at [slot] (at the end, or at [index]) and returns its id:
-  /// a task or an event as [kind] says, or as the setting has it. Returns
-  /// null without adding anything when [title] is blank.
+  /// on a day a task or an event as [kind] says, or as the setting has it;
+  /// in a list always a task. Returns null without adding anything when
+  /// [title] is blank.
   String? addTask(Slot slot, String title, {int? index, ItemKind? kind}) {
     final text = title.trim();
     if (text.isEmpty) return null;
     final id = _newId();
     _write('tasks', id, {
-      ..._slotColumns(slot),
-      'position': _keyAt(slot, index),
+      ..._placeColumns(slot, index),
       'title': text,
       'created_at': _now(),
-      if ((kind ?? newItemKind) == ItemKind.event) 'kind': ItemKind.event.name,
+      if (slot is DaySlot && (kind ?? newItemKind) == ItemKind.event)
+        'kind': ItemKind.event.name,
     });
     return id;
   }
@@ -783,6 +903,7 @@ class PlannerStore extends ChangeNotifier {
     DateTime? Function()? reminder,
     String? location,
     String? Function()? geo,
+    Day? Function()? due,
   }) {
     final occurrence = task(id);
     if (occurrence == null) return;
@@ -865,6 +986,7 @@ class PlannerStore extends ChangeNotifier {
         },
       'location': ?location?.trim(),
       if (geo != null) 'geo': geo(),
+      if (due != null) 'due': due()?.iso,
     });
   }
 
@@ -1020,7 +1142,6 @@ class PlannerStore extends ChangeNotifier {
     if (task == null || from == null) return;
     _write('tasks', id, {
       'date': from.iso,
-      'list_id': null,
       'position': task.rolledPosition ?? task.position,
       'done': true,
       'done_at': _now(),
@@ -1073,10 +1194,12 @@ class PlannerStore extends ChangeNotifier {
       _write('tasks', series.id, {'recurrence': rule.toJson()});
       return id;
     }
-    if (current.date == null && rule != null) return id; // Someday tasks cannot repeat.
+    if (current.date == null && rule != null) return id; // Only a day's task can repeat.
     _write('tasks', id, {
       'recurrence': rule?.toJson(),
       if (rule == null) 'exdates': <String>[],
+      // What repeats is the week's business: it is in no list.
+      if (rule != null && current.listId != null) 'list_id': null,
     });
     return id;
   }
@@ -1085,9 +1208,15 @@ class PlannerStore extends ChangeNotifier {
   /// occurrence of a repeating task moves only that occurrence. Returns the
   /// id under which the task is addressed afterwards.
   ///
+  /// To a day: the task is on that day from now on. One that came from a
+  /// list stays in its list too, or leaves it, as [Settings.keepInList] has
+  /// it. To a list: the task is in that list and has no day any more,
+  /// unless [keepDay] (a task moved from one list to another, or within its
+  /// list, keeps the day it is planned for).
+  ///
   /// An imported event moved to a day is shown on that day from then on; one
   /// moved to a list becomes a task there, and the event itself is hidden.
-  String moveTask(String id, Slot slot, {int? index}) {
+  String moveTask(String id, Slot slot, {int? index, bool keepDay = false}) {
     if (Task.isEventId(id)) {
       final source = task(id)?.event;
       if (source == null) return id;
@@ -1107,17 +1236,70 @@ class PlannerStore extends ChangeNotifier {
       }
     }
     final target = detach(id);
-    _write('tasks', target, {
-      ..._slotColumns(slot),
-      'position': _keyAt(slot, index, except: target),
-      if (slot is ListSlot) 'recurrence': null,
-      // Moved by hand after the daily move: the user has dealt with it.
-      if (_tasks[target]?.rolledFrom != null) ...{
-        'rolled_from': null,
-        'rolled_pos': null,
-      },
-    });
+    final current = _tasks[target];
+    if (current == null) return target;
+    // Moved by hand after the daily move: the user has dealt with it.
+    final dealtWith = <String, Object?>{
+      if (current.rolledFrom != null) ...{'rolled_from': null, 'rolled_pos': null},
+    };
+    switch (slot) {
+      case DaySlot(:final day):
+        final fromList = current.listId != null && current.date == null;
+        _write('tasks', target, {
+          'date': day.iso,
+          'position': _keyAt(slot, index, except: target),
+          if (fromList && !setting<bool>(Settings.keepInList))
+            'list_id': null
+          else if (current.listId != null && current.listPos.isEmpty)
+            // Its place in the list was kept in `position` until now.
+            'list_pos': current.position,
+          ...dealtWith,
+        });
+      case ListSlot(:final listId):
+        _write('tasks', target, {
+          'list_id': listId,
+          'list_pos': _keyAt(slot, index, except: target),
+          if (!keepDay) ...{'date': null, 'recurrence': null, ...dealtWith},
+        });
+    }
     return target;
+  }
+
+  /// Takes a list's task off its day: it is in its list only again. Does
+  /// nothing for a task that is in no list (it would be nowhere).
+  void unplan(String id) {
+    final item = task(id);
+    if (item == null ||
+        item.fromCalendar ||
+        item.isOccurrence ||
+        item.listId == null ||
+        item.date == null) {
+      return;
+    }
+    _write('tasks', id, {
+      'date': null,
+      'recurrence': null,
+      if (item.rolledFrom != null) ...{'rolled_from': null, 'rolled_pos': null},
+    });
+  }
+
+  /// Puts a task into a list, at its end, or takes it out of its list
+  /// ([listId] null); it keeps its day either way. A task without a day
+  /// stays in some list. Repeating tasks and what a calendar brings are in
+  /// no list.
+  void setList(String id, String? listId) {
+    final item = task(id);
+    if (item == null || item.fromCalendar || item.repeats || item.listId == listId) {
+      return;
+    }
+    if (listId == null) {
+      if (item.date != null) _write('tasks', id, {'list_id': null});
+    } else if (_lists.containsKey(listId)) {
+      _write('tasks', id, {
+        'list_id': listId,
+        'list_pos': _keyAt(ListSlot(listId), null, except: id),
+      });
+    }
   }
 
   /// Duplicates a task to [slot] and returns the copy's id. A copy does not
@@ -1127,8 +1309,7 @@ class PlannerStore extends ChangeNotifier {
     if (source == null) throw ArgumentError('No task $id');
     final newId = _newId();
     _write('tasks', newId, {
-      ..._slotColumns(slot),
-      'position': _keyAt(slot, null),
+      ..._placeColumns(slot, null),
       'title': source.title,
       // For what a calendar brought this is its description, or what the
       // user made of it.
@@ -1136,7 +1317,9 @@ class PlannerStore extends ChangeNotifier {
       'color': source.color,
       'time': source.time,
       'end_time': source.end,
-      if (source.happens) 'kind': ItemKind.event.name,
+      // A list holds tasks: what is copied there is one.
+      if (source.happens && slot is DaySlot) 'kind': ItemKind.event.name,
+      'due': source.due?.iso,
       'location': source.location,
       'geo': source.geo,
       'subtasks': [

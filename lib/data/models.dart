@@ -241,10 +241,12 @@ class CalendarRow {
   final bool deleted;
 }
 
-/// A task on a day or in a Someday list.
+/// A task on a day, in a list, or both.
 ///
-/// Exactly one of [date] and [listId] places the task: a dated task belongs
-/// to a day, an undated one to a list.
+/// [date] and [listId] place the task, and at least one of them is set: a
+/// task with a day shows in the week, one in a list shows on the Tasks page,
+/// and a list's task that was given a day shows in both (unless the user has
+/// such tasks leave their list; see `Settings.keepInList`).
 ///
 /// An event of a subscribed calendar is handed around as a task too, with
 /// [event] set: it reads and edits like one, but what is stored is only
@@ -282,6 +284,8 @@ class Task {
     this.end,
     this.rolledFrom,
     this.rolledPosition,
+    this.listPos = '',
+    this.due,
   });
 
   /// Ids of imported events start with this.
@@ -345,15 +349,33 @@ class Task {
   /// An event shown over several days.
   bool get spansDays => event != null && date != null && event!.lastDay > date!;
 
-  /// The Someday list holding this task, or null for a dated task.
+  /// The list holding this task, or null for one that is only on a day.
   final String? listId;
 
-  /// The day this task is on, or null for a Someday task. For a repeating
-  /// task this is the first occurrence.
+  /// The day this task is on, or null for one that has none yet (it is in a
+  /// list then). For a repeating task this is the first occurrence.
   final Day? date;
 
-  /// Ordering key within the day or list; see `order_key.dart`.
+  /// Ordering key within the day; see `order_key.dart`. For a task without
+  /// a day that was made before lists had keys of their own, it is the key
+  /// within its list ([listPosition]).
   final String position;
+
+  /// Ordering key within the list, as stored.
+  final String listPos;
+
+  /// Where the task stands in its list.
+  String get listPosition => listPos.isNotEmpty ? listPos : position;
+
+  /// Has a day: shows in the week.
+  bool get planned => date != null;
+
+  /// The day by which it is to be done, if it has a deadline. This is not
+  /// the day it is planned for.
+  final Day? due;
+
+  /// Its deadline has passed at [today] and it is not done.
+  bool overdueAt(Day today) => due != null && !done && due! < today;
 
   final String title;
   final String note;
@@ -428,6 +450,8 @@ class Task {
     int? Function()? end,
     Day? Function()? rolledFrom,
     String? Function()? rolledPosition,
+    String? listPos,
+    Day? Function()? due,
   }) =>
       Task(
         id: id ?? this.id,
@@ -457,10 +481,12 @@ class Task {
         rolledFrom: rolledFrom != null ? rolledFrom() : this.rolledFrom,
         rolledPosition:
             rolledPosition != null ? rolledPosition() : this.rolledPosition,
+        listPos: listPos ?? this.listPos,
+        due: due != null ? due() : this.due,
       );
 }
 
-/// A titled list in the Someday area.
+/// A titled list on the Tasks page.
 class TaskList {
   const TaskList({
     required this.id,
@@ -483,7 +509,29 @@ class TaskList {
       );
 }
 
-/// Where a task lives: on a day or in a Someday list.
+/// What deleting a list, or clearing its done tasks, took away; enough to
+/// put it back.
+class ListRemoval {
+  const ListRemoval({
+    required this.listId,
+    this.list = false,
+    this.deleted = const [],
+    this.detached = const [],
+  });
+
+  final String listId;
+
+  /// Whether the list itself was deleted.
+  final bool list;
+
+  /// Tasks deleted: those that had no day and so were nowhere else.
+  final List<String> deleted;
+
+  /// Tasks that stay on their day and only left the list.
+  final List<String> detached;
+}
+
+/// A place a task can be put or shown: a day or a list.
 sealed class Slot {
   const Slot();
 }

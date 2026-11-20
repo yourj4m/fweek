@@ -40,6 +40,9 @@ class _SearchDialogState extends State<_SearchDialog> {
     if (day != null) {
       app.setMonthView(false);
       app.show(day, highlight: task.id);
+    } else if (task.listId case final list?) {
+      // Without a day it is on the Tasks page, in its list.
+      app.showTasks(list: list, highlight: task.id);
     }
     showTaskDialog(root, task.id);
   }
@@ -198,9 +201,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                               : store.list(task.listId!);
                           final where = task.date != null
                               ? '${Strings.dayMonth(task.date!)} ${task.date!.year}'
-                              : (list == null || list.title.isEmpty
-                                  ? 'Someday'
-                                  : list.title);
+                              : (list == null ? '' : store.listName(list.id));
                           return Pressable(
                             onTap: () => _open(task),
                             builder: (context, hovered, pressed) => Container(

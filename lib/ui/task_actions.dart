@@ -9,22 +9,24 @@ import 'strings.dart';
 /// (the row's menu, the card, the keyboard), each with a way back.
 
 /// The name a list goes by: its title, or what stands in for a blank one.
-String listTitle(PlannerStore store, TaskList list) {
-  if (list.title.isNotEmpty) return list.title;
-  return list.id == store.lists.first.id ? 'Someday' : 'Untitled list';
-}
+String listTitle(PlannerStore store, TaskList list) => store.listName(list.id);
 
-/// Where a task can be sent: a few near days, then the lists.
-List<(String, Slot)> moveTargets(PlannerStore store, {bool lists = true}) {
+/// The near days a task can be sent to.
+List<(String, DaySlot)> dayTargets(PlannerStore store) {
   final today = store.today;
   return [
     ('Today', DaySlot(today)),
     ('Tomorrow', DaySlot(today.addDays(1))),
     ('Next week', DaySlot(today.startOfWeek(store.weekStart).addDays(7))),
-    if (lists)
-      for (final list in store.lists) (listTitle(store, list), ListSlot(list.id)),
   ];
 }
+
+/// Where a task can be sent: a few near days, then the lists.
+List<(String, Slot)> moveTargets(PlannerStore store, {bool lists = true}) => [
+      ...dayTargets(store),
+      if (lists)
+        for (final list in store.lists) (listTitle(store, list), ListSlot(list.id)),
+    ];
 
 /// Deletes a task and offers to undo. One day of a repeating task is taken
 /// out on its own unless [wholeSeries]; an imported event is hidden, which
@@ -82,8 +84,8 @@ void hideWithUndo(BuildContext context, Task event) {
 
 /// Makes an item of the planner's own out of what a calendar brought, in
 /// [slot] (by default on its day): it takes over the text, time and place,
-/// and the calendar's event is hidden. For a Someday list, where nothing of
-/// a calendar can be. Returns the new item's id.
+/// and the calendar's event is hidden. For a list, where nothing of a
+/// calendar can be. Returns the new item's id.
 String copyIntoPlanner(BuildContext context, Task event, {Slot? slot}) {
   final store = context.readStore;
   final id = store.copyTask(event.id, slot ?? DaySlot(event.date!));

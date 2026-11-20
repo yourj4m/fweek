@@ -174,7 +174,7 @@ void main() {
     test('a backup carries them and reads back', () {
       final store = populated();
       final backup = Export.backup(store);
-      expect(jsonDecode(backup)['version'], 4);
+      expect(jsonDecode(backup)['version'], 5);
       final copy = planner();
       Export.restore(copy, backup);
       final seminar = copy.tasksOn(friday).firstWhere((t) => t.title == 'Seminar');
@@ -199,8 +199,8 @@ void main() {
 
     test('CSV says what each is and when it ends', () {
       final rows = const LineSplitter().convert(Export.csv(populated()).replaceAll('\r\n', '\n'));
-      expect(rows[1], '2026-11-13,,10:00,Seminar,,,,,,Room 2,event,11:30');
-      expect(rows[3], '2026-11-13,,,Buy oat milk,yes,,,,,,task,');
+      expect(rows[1], '2026-11-13,,10:00,Seminar,,,,,,Room 2,event,11:30,');
+      expect(rows[3], '2026-11-13,,,Buy oat milk,yes,,,,,,task,,');
     });
 
     test('plain text gives tasks a box and events a dash', () {

@@ -238,102 +238,6 @@ void main() {
     });
   });
 
-  group('lists', () {
-    desktopTest('there is always a place to start a new list', (tester) async {
-      final store = seededStore();
-      await pumpApp(tester, store);
-      // Said plainly, not only under the mouse.
-      expect(find.text('New list'), findsOneWidget);
-      await tester.tap(find.text('New list'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.widgetWithText(TextField, 'List name'), 'Reading');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
-      expect([for (final l in store.lists) l.title], ['', 'Reading']);
-
-      // A full row of three used to leave no way to add a fourth.
-      store.addList('Home');
-      await tester.pumpAndSettle();
-      expect(store.lists, hasLength(3));
-      expect(find.text('New list'), findsOneWidget);
-      await tester.ensureVisible(find.text('New list'));
-      await tester.tap(find.text('New list'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.widgetWithText(TextField, 'List name'), 'Travel');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
-      expect([for (final l in store.lists) l.title], ['', 'Reading', 'Home', 'Travel']);
-    });
-
-    desktopTest('typing a task into the blank column also starts a list', (tester) async {
-      final store = seededStore();
-      await pumpApp(tester, store);
-      final blank = find.descendant(
-        of: find.byWidgetPredicate((w) =>
-            w is TaskListBody && w.slot is ListSlot && w.tasks.isEmpty && w.onAdd != null),
-        matching: find.byType(TextField),
-      );
-      await tester.enterText(blank.first, 'Book flights');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
-      expect(store.lists, hasLength(2));
-      expect(titles(store.tasksIn(store.lists.last.id)), ['Book flights']);
-    });
-
-    desktopTest('a list is moved and deleted from its menu, and comes back on Undo',
-        (tester) async {
-      final store = seededStore();
-      final home = store.addList('Home');
-      store.addTask(ListSlot(home), 'Fix the tap');
-      await pumpApp(tester, store);
-      await rightClick(tester, find.text('Home'));
-      await tester.tap(find.text('Move left'));
-      await tester.pumpAndSettle();
-      expect(store.lists.first.id, home);
-
-      await rightClick(tester, find.text('Home'));
-      await tester.tap(find.text('Delete list and 1 tasks'));
-      await tester.pumpAndSettle();
-      expect(store.list(home), isNull);
-      expect(find.text('Home and 1 task deleted'), findsOneWidget);
-      await tester.tap(find.text('Undo'));
-      await tester.pumpAndSettle();
-      expect(store.list(home)!.title, 'Home');
-      expect(titles(store.tasksIn(home)), ['Fix the tap']);
-    });
-
-    desktopTest('the menu creates a list and asks for its name', (tester) async {
-      final store = seededStore();
-      await pumpApp(tester, store);
-      await tester.tap(find.bySemanticsLabel('Menu'));
-      await tester.pumpAndSettle();
-      // The menu's entry, not the blank column behind it.
-      await tester.tap(find.text('New list').last);
-      await tester.pumpAndSettle();
-      expect(store.lists, hasLength(2));
-      tester.testTextInput.enterText('Groceries');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
-      expect(store.lists.last.title, 'Groceries');
-    });
-
-    phoneTest('on a phone a button under the lists creates one', (tester) async {
-      final store = seededStore();
-      await pumpApp(tester, store, size: const Size(411, 914));
-      // To the end of the week's page (the pages beside it have a button
-      // of their own, out of sight).
-      await tester.drag(find.byType(PageView), const Offset(0, -3000));
-      await tester.pumpAndSettle();
-      await tester.tap(find.bySemanticsLabel('New list').hitTestable());
-      await tester.pumpAndSettle();
-      expect(store.lists, hasLength(2));
-      tester.testTextInput.enterText('Films');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
-      expect(store.lists.last.title, 'Films');
-    });
-  });
-
   group('the day\'s progress', () {
     double filled(WidgetTester tester) {
       final bar = find.byType(DayProgress);
@@ -1122,70 +1026,66 @@ void main() {
     /// The reference week with a quiet weekend (the two days stacked in
     /// the last column need rows of their own for what they hold) and
     /// [more] lists besides Someday.
-    PlannerStore withLists(int more) {
+    /// The reference week with a light weekend: one task each on Saturday
+    /// and Sunday (the two share a column, and so its rows).
+    PlannerStore lightWeekend() {
       final store = seededStore();
       for (final day in [monday.addDays(5), monday.addDays(6)]) {
         for (final task in store.tasksOn(day).skip(1).toList()) {
           store.deleteTask(task.id, wholeSeries: true);
         }
       }
-      for (var i = 0; i < more; i++) {
-        store.addTask(ListSlot(store.addList('List ${i + 2}')), 'Something');
-      }
       return store;
     }
 
-    desktopTest('a maximized window on a 1920×1080 screen at 125 %: week and lists, no scrolling',
+    desktopTest('a maximized window on a 1920×1080 screen at 125 %: the week fills it, no scrolling',
         (tester) async {
-      // Four lists: two rows of them under the week.
-      final store = withLists(3);
-      await pumpApp(tester, store, size: const Size(1536, 790));
+      await pumpApp(tester, lightWeekend(), size: const Size(1536, 790));
       expect(scrollRoom(tester), 0);
-      expect(rowsOf(tester, monday), 7, reason: 'fewer rows than the usual ten');
-      expect(find.text('List 4'), findsOneWidget);
+      expect(rowsOf(tester, monday), 14, reason: 'as many rows as reach the bottom');
       await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/week_1536_fit.png'));
     });
 
     desktopTest('with a band of several-day events over the week it still fits', (tester) async {
-      final store = withLists(3);
+      final store = lightWeekend();
       await pumpApp(tester, store,
           size: const Size(1536, 790), calendars: await calendarWith(tester, store));
       expect(scrollRoom(tester), 0);
-      expect(rowsOf(tester, monday), 6);
+      expect(rowsOf(tester, monday), 14);
     });
 
-    desktopTest('with room to spare it is the generous layout: ten rows', (tester) async {
-      await pumpApp(tester, withLists(0), size: const Size(1536, 790));
+    desktopTest('a taller window has more rows, a lower one fewer', (tester) async {
+      await pumpApp(tester, lightWeekend(), size: const Size(1536, 1400));
       expect(scrollRoom(tester), 0);
-      expect(rowsOf(tester, monday), 10);
-      // A tall window never gets more than ten.
-      await pumpApp(tester, withLists(3), size: const Size(1536, 1400));
-      expect(rowsOf(tester, monday), 10);
+      expect(rowsOf(tester, monday), 29);
+      await pumpApp(tester, lightWeekend(), size: const Size(1536, 520));
+      expect(scrollRoom(tester), 0);
+      expect(rowsOf(tester, monday), 8);
     });
 
     desktopTest('a day that holds more than fits grows, and then the page scrolls', (tester) async {
-      final store = withLists(3);
-      for (var i = 0; i < 9; i++) {
+      final store = lightWeekend();
+      for (var i = 0; i < 16; i++) {
         store.addTask(DaySlot(monday.addDays(1)), 'Task $i');
       }
       await pumpApp(tester, store, size: const Size(1536, 790));
-      expect(rowsOf(tester, monday), 10, reason: 'nine tasks and the line to type on');
+      expect(rowsOf(tester, monday), 17, reason: 'sixteen tasks and the line to type on');
       expect(scrollRoom(tester), greaterThan(0));
     });
 
-    desktopTest('a short window keeps the rows its days need, at least four, and scrolls',
+    desktopTest('a very low window keeps the rows its days need, at least four, and scrolls',
         (tester) async {
-      await pumpApp(tester, withLists(3), size: const Size(1536, 520));
+      await pumpApp(tester, lightWeekend(), size: const Size(1536, 300));
       // Saturday and Sunday, one task each and a line to type on, with the
       // second heading and the gap between them: six.
       expect(rowsOf(tester, monday), 6);
       expect(scrollRoom(tester), greaterThan(0));
 
-      final store = withLists(3);
+      final store = lightWeekend();
       for (final day in [monday.addDays(5), monday.addDays(6)]) {
         store.deleteTask(store.tasksOn(day).single.id, wholeSeries: true);
       }
-      await pumpApp(tester, store, size: const Size(1536, 520));
+      await pumpApp(tester, store, size: const Size(1536, 300));
       expect(rowsOf(tester, monday), 4);
     });
   });
@@ -1232,9 +1132,9 @@ void main() {
       expect(built('TaskListBody'), 0);
       await tester.pump(const Duration(milliseconds: 200));
       await tester.pumpAndSettle();
-      // Seven empty days and the Someday list with its one task.
-      expect(built('TaskRow'), 1);
-      expect(built('TaskListBody'), 8);
+      // Seven empty days.
+      expect(built('TaskRow'), 0);
+      expect(built('TaskListBody'), 7);
     });
 
     phoneTest('a week swiped to before it was prepared is built at once', (tester) async {
@@ -1247,7 +1147,7 @@ void main() {
       await tester.fling(find.byType(PageView), const Offset(-300, 0), 1200);
       await tester.pumpAndSettle();
       expect(find.text('23 Nov'), findsOneWidget);
-      expect(find.text('Keep tasks here without a date', skipOffstage: false), findsWidgets);
+      expect(find.byType(TaskListBody), findsWidgets);
     });
 
     phoneTest('the keyboard sliding in redraws nothing of the week', (tester) async {
