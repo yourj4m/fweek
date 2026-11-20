@@ -606,7 +606,8 @@ class PlannerStore extends ChangeNotifier {
         list.open.sort(_compareInList);
         list.done.sort((a, b) {
           final byTime = (b.doneAt ?? 0).compareTo(a.doneAt ?? 0);
-          return byTime != 0 ? byTime : a.id.compareTo(b.id);
+          // Ticked in the same moment: as they stood in the list.
+          return byTime != 0 ? byTime : _compareInList(a, b);
         });
       }
     }

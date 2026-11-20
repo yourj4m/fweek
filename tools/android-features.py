@@ -6,7 +6,8 @@
 
 On a fresh planner: the editing bar above the keyboard while a task is
 typed, a time set from it, the menu on a long press, a place found through
-the place search and handed to the map app, and a new list.
+the place search and handed to the map app, and the Tasks page: a new
+list, a task typed into it and planned for a day.
 
 With --events the app must be a build made with WEEKTODO_PERF (see
 tools/android-perf.py), which starts with a calendar of test events: then
@@ -147,20 +148,52 @@ def planner(out, shot, width, height):
         ui.back(pause=0.8)  # closes the sheet
     check(bool(ui.find("Brandenburger Tor")), "the place shows under the task in the week")
 
-    # --- a new list
-    for _ in range(6):
-        ui.swipe(width * 0.5, height * 0.8, width * 0.5, height * 0.25, 200, pause=0.4)
-    button = ui.find("New list", exact=True)
-    if check(bool(button), "the end of the week offers a New list button"):
-        ui.tap(*button[0].centre, pause=1.5)
+    # --- the Tasks page: the bar at the bottom, a new list, a task planned
+    # for a day from there
+    tab = ui.find("Tasks", exact=True)
+    if not check(bool(tab), "a bar at the bottom leads to the Tasks page"):
+        return
+    check(tab[0].bottom <= height and tab[0].top > height * 0.8,
+          "the bar is at the bottom of the screen")
+    ui.tap(*tab[0].centre, pause=1.5)
+    check(bool(ui.find(r"^To do, \d+ to do, open$")), "which opens with the first list")
+    plus = ui.find("New list", exact=True)
+    if check(bool(plus), "after the names of the lists a button makes a new one"):
+        ui.tap(*plus[0].centre, pause=1.5)
         ui.type_text("Films")
-        ui.key("ENTER", 1.0)
-        # Back puts the keyboard away; with none up it would leave the app.
+        ui.key("ENTER", 1.2)
+        # Back puts the keyboard away; with none up it would leave the page.
         if ui.keyboard_shown():
             ui.back(pause=0.8)
-        # A list's heading is a button that renames it.
-        check(bool(ui.find("Rename Films", exact=True)), "and the list it creates takes its name")
+        check(bool(ui.find("Films, 0 to do, open", exact=True)),
+              "the list it creates is named in a card and opens")
         shot("f07-list")
+        # The first line of the open list.
+        lines = fields()
+        if check(bool(lines), "the open list has a line to type on"):
+            ui.tap(*lines[0].centre, pause=1.8)
+            check(not ui.find("Time", exact=True) and bool(ui.find("Place", exact=True)),
+                  "the bar over the keyboard offers no time there: a list's task has no day")
+            ui.type_text("Stalker")
+            ui.key("ENTER")
+            ui.back(pause=1.2)
+            film = ui.find("Stalker")
+            if check(bool(film), "what is typed there is a task of the list"):
+                hold(film[0].left + 200, film[0].centre[1])
+                plan = ui.find("Plan for")
+                if check(bool(plan), "a long press on it offers to plan it for a day"):
+                    ui.tap(*plan[0].centre, pause=1.0)
+                    ui.tap_on("Tomorrow", exact=True)
+                    time.sleep(1.0)
+                    check(any("Tomorrow" in n.label or "Tomorrow" in n.text for n in ui.nodes()),
+                          "planned, it stays in its list, marked with the day")
+                    shot("f08-planned")
+    # Going back leads to the week, not out of the app.
+    ui.back(pause=1.2)
+    check(bool(ui.find("Go to today")), "going back from the tasks leads to the week")
+    # Tomorrow may be on the next week's page; the task is in the planner
+    # either way, which the Tasks page has shown.
+    shot("f09-week")
 
 
 def events(out, shot, width, height):

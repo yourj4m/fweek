@@ -61,6 +61,7 @@ class _PlannerPageState extends State<PlannerPage> {
   void initState() {
     super.initState();
     if (_dropping) FileDrop.listen(_dropped);
+    FocusManager.instance.addListener(_keepKeyboard);
     _drag = DragController(
       onDrop: _drop,
       onEdge: (direction) =>
@@ -73,10 +74,21 @@ class _PlannerPageState extends State<PlannerPage> {
   @override
   void dispose() {
     if (_dropping) FileDrop.listen(null);
+    FocusManager.instance.removeListener(_keepKeyboard);
     _drag.dispose();
     _composer.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  /// When nothing in the window has the keyboard any more (a line that was
+  /// typed on let go of it with Escape), the window itself takes it, so
+  /// that its shortcuts work at once and not only after the next click.
+  /// While a card or a menu is open the keyboard is theirs.
+  void _keepKeyboard() {
+    if (!mounted || _focus.hasFocus) return;
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary != null && primary == _focus.enclosingScope) _focus.requestFocus();
   }
 
   /// On a desktop: calendar files dropped anywhere on the window are taken
@@ -1150,13 +1162,14 @@ class _DayColumn extends StatelessWidget {
 
 /// How the wide week is laid out in a window of a given height: as many
 /// ruled rows per day as reach the bottom of the window, so that the week
-/// fills it and nothing scrolls unless a day holds more than that.
+/// fills it and nothing scrolls unless a day holds more than that. The week
+/// keeps its place under the header whatever the height: what is left over
+/// of a row stays blank at the bottom.
 class _Fit {
-  const _Fit({required this.rows, required this.headerGap, required this.bottom});
+  const _Fit({required this.rows});
 
   /// Ruled rows of a weekday, unless a day needs more.
   final int rows;
-  final double headerGap, bottom;
 
   /// Never fewer rows than this: a shorter window scrolls.
   static const fewestRows = 4;
@@ -1164,28 +1177,18 @@ class _Fit {
   /// Nor more than this, on the tallest of screens.
   static const mostRows = 40;
 
+  /// Between the header and the days.
+  static const headerGap = 40.0;
+
+  /// Under the last row.
+  static const bottom = 8.0;
+
   /// For a page [height] high inside its padding, with a band of
   /// several-day events [band] high over the week.
   factory _Fit.of(double height, {required double band}) {
-    const tight = (header: 20.0, bottom: 8.0);
-    const loose = (header: Dim.headerGap, bottom: 20.0);
-    final fixed =
-        Dim.headerHeight + Dim.dayHeader + band + tight.header + tight.bottom;
-    final rows = ((height - fixed) / Dim.row).floor().clamp(fewestRows, mostRows);
-    // What is left over goes into the gaps, the one under the header first.
-    var spare = height - fixed - rows * Dim.row;
-    double widen(double from, double to) {
-      if (spare <= 0) return from;
-      final by = spare.clamp(0.0, to - from);
-      spare -= by;
-      return from + by;
-    }
-
-    final headerGap = widen(tight.header, loose.header);
+    final fixed = Dim.headerHeight + headerGap + Dim.dayHeader + band + bottom;
     return _Fit(
-      rows: rows,
-      headerGap: headerGap,
-      bottom: widen(tight.bottom, loose.bottom),
+      rows: ((height - fixed) / Dim.row).floor().clamp(fewestRows, mostRows),
     );
   }
 }
@@ -1243,12 +1246,12 @@ class _WideLayout extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Header(narrow: false, panelRoom: panelRoom),
-              SizedBox(height: app.monthView ? Dim.headerGap : fit.headerGap),
+              SizedBox(height: app.monthView ? Dim.headerGap : _Fit.headerGap),
               if (app.monthView)
                 MonthView(onOpen: onOpen)
               else
                 _WeekGrid(onOpen: onOpen, minRows: fit.rows),
-              SizedBox(height: app.monthView ? 20 : fit.bottom),
+              SizedBox(height: app.monthView ? 20 : _Fit.bottom),
             ],
           ),
         ),

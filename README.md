@@ -1,7 +1,7 @@
 # WeekToDo
 
 A minimal weekly planner for Linux (Wayland) and Android. Your week as ruled
-columns, a Someday area for undated tasks, and nothing else in the way.
+columns, a page of lists for what has no day yet, and nothing else in the way.
 
 Local-first: everything is stored on your machine and the app works offline.
 Optionally it keeps your devices in step through a folder in your own
@@ -16,9 +16,9 @@ before being published.
 Test builds for Linux and Android, from the same code. What works:
 
 - **Week view**: five weekday columns plus a stacked weekend, with as many
-  ruled rows as the window has room for (ten at most, more when a day holds
-  more), so that the week and the lists show at once in a maximized window;
-  a single-column layout below 1024 px.
+  ruled rows as reach the bottom of the window (more when a day holds
+  more), so that the week fills a maximized window without scrolling; a
+  single-column layout below 1024 px.
 - **Tasks and events**: an item is a task, with a circle to tick it off, or
   an event, with none: an event is marked by a bar at its left and turns
   faint once it is over. New items are tasks unless Settings → "New items
@@ -49,9 +49,29 @@ Test builds for Linux and Android, from the same code. What works:
   click opens it in your map program. See [Places](#places).
 - **Repeating tasks**: completing, moving or deleting one occurrence leaves
   the rest of the series alone; text and colour edits apply to the series.
-- **Someday lists**: any number of named lists below the week. There is
-  always a "New list" column (a button on narrow screens); a list's menu
-  renames, moves and deletes it.
+- **Tasks page**: any number of named lists, on a page of their own beside
+  the planner (the button with the ticked lines in the header, or L; on a
+  phone the bar at the bottom). Every list is a column while the window has
+  room for all of them; in a narrower window their names stand at the left
+  and one list is open; on a phone the names are tabs, and a swipe turns to
+  the next list. There is always a way to start a new list; a list's menu
+  renames, moves and deletes it. Done tasks fold away under the list
+  ("3 done"), where they can be looked at and cleared.
+- **From a list into the week**: "Plan for" in a task's menu gives it a
+  day, as does its card; or drag it onto the header's button (a tab of the
+  phone's bar) and hold it there: the page turns, and the task is dropped
+  on a day. It then shows on that day and stays in its list too, marked
+  with the day; ticked in one place it is ticked in the other. Settings →
+  "A task from a list, given a day" has it leave its list instead. A task
+  of the week is put into a list, or taken out, at the top of its card.
+- **Lists beside the week**: in a wide window (1240 px and up) the lists
+  also open as a panel at the right of the week (the header's panel button,
+  or P), to drag tasks straight onto days, and from a day back into a list.
+- **Deadlines**: a task can have a day by which it is to be done, apart
+  from the day it is planned for (the flag in its card, or "Deadline" in
+  its menu). Its row carries a flag, red once the day has passed, and in
+  the week the day it is due has a flag in its heading that lists what is
+  due then.
 - **Month view**; **search** over tasks and calendar events, with colour
   filters; twelve **themes**: light ones, dark ones, and five semi-dark ones
   in deep, muted colours (Wine, Plum, Forest, Midnight, Cocoa).
@@ -85,16 +105,18 @@ Test builds for Linux and Android, from the same code. What works:
 - **Export** to CSV, iCalendar and plain text; **backup and restore** as JSON.
 - **Trackpad**: two fingers swiped sideways turn to the next or previous
   week (or month).
-- **Shortcuts**: ← → previous/next, T today, M month view, Ctrl+F search,
-  Ctrl+, settings, Esc close. Tab and the arrow keys reach every button and
+- **Shortcuts**: ← → previous/next, T today, M month view, L tasks page
+  and back, P the lists beside the week, Ctrl+F search, Ctrl+, settings,
+  Esc close. Tab and the arrow keys reach every button and
   row; on a row, Enter opens, Space completes, Delete deletes and the menu
   key (or Shift+F10) opens its menu.
 - Text that is not a button can be selected and copied: details in cards,
   calendar descriptions, the settings' explanations.
 
 - **Android** (13 and newer): the single-column layout with larger rows, a
-  swipe to turn the week, a long press to pick a task up (let go for its
-  menu, move on to drag it), reminders that fire while the app is closed.
+  bar at the bottom for the week and the tasks, a swipe to turn the week (or
+  to the next list), a long press to pick a task up (let go for its menu,
+  move on to drag it), reminders that fire while the app is closed.
   While you type a task, a bar above the keyboard gives it a time (wheels
   for hours and minutes), a place, a note or a colour. See
   [Android](#android).
@@ -164,8 +186,10 @@ What to expect on the phone:
   the keyboard switches between task and event); tap a task to open it, its
   circle to complete it; tap beside an open card to close it; press and hold
   a task to drag it, to the screen edge to carry
-  it to another week; swipe sideways to turn the week; tap the title to
-  return to today, and again for the month.
+  it to another week, or onto the other tab of the bar at the bottom to
+  carry it from a list to the week or back; swipe sideways to turn the
+  week; tap the title to return to today, and again for the month; going
+  back from the tasks leads to the week.
 
 The stack, and why: the Android app is the desktop app's Flutter code, so
 there is one sync engine and one data format to keep right. On top of that
@@ -392,7 +416,7 @@ file refuses to open it rather than damage it, so update all devices before
 relying on what is new.
 
 Before a file is brought up to date, a copy of it as it was is kept beside
-it (`planner.db.v3` for a file of the third version). To go back to the
+it (`planner.db.v4` for a file of the fourth version). To go back to the
 earlier build, close the app, put that copy in the place of `planner.db`
 (and delete `planner.db-wal` and `planner.db-shm`), and start the earlier
 build; what was changed since the update is then missing on that device

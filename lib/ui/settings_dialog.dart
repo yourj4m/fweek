@@ -296,8 +296,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                         store.setting<bool>(Settings.keepInList)
                             ? 'It shows in both places: on its day in the week '
                                 'and, marked with that day, in its list.'
-                            : 'It moves to the week and is no longer in its '
-                                'list, as a Someday task did.',
+                            : 'It moves to the week and is no longer in its list.',
                         style: context.text.caption14.copyWith(color: theme.ink(60)),
                       ),
                     ),

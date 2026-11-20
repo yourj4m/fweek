@@ -141,8 +141,8 @@ start_app
 shot 01-start
 assert_fills 01-start
 
-# Type two tasks into Monday's first row.
-click 130 207
+# Type two tasks into Monday's first row (rows are 42 px, the first from 154).
+click 130 175
 type_text "Typed on Wayland"; key Return
 type_text "Second task"; key Return
 shot 02-typed
@@ -150,7 +150,7 @@ key Escape
 [ "$(stored 'Typed on Wayland')" -ge 1 ] && pass "typed text was stored" || fail "typed text was not stored"
 
 # Open the first task and add a note.
-click 100 207
+click 100 175
 wait_for_change 02-typed 03-card 500x370+470+90 "the task card opened"
 click 620 285
 type_text "A note typed in the card."; sleep 0.6
@@ -158,11 +158,24 @@ key Escape; sleep 0.4
 [ "$(stored 'A note typed in the card')" -ge 1 ] && pass "note was stored" || fail "note was not stored"
 
 # Drag the second task from Monday to Wednesday.
-at 70 249; press; sleep 0.1
+at 70 217; press; sleep 0.1
 for x in 90 150 250 400 520 560; do at "$x" 300; done
 shot 04-dragging
 release; sleep 0.6
 shot 05-dropped
+wednesday="$(date -d "$(date +%F) -$(( $(date +%u) - 1 )) days +2 days" +%F)"
+field() {
+  python3 - "$data/planner.db" "$1" "$2" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+row = db.execute(
+    f"select {sys.argv[3]} from tasks where title = ? and deleted = 0", (sys.argv[2],)).fetchone()
+print("" if row is None or row[0] is None else row[0])
+PY
+}
+[ "$(field 'Second task' date)" = "$wednesday" ] \
+  && pass "a task dragged to another day is on that day" \
+  || fail "the dragged task is on '$(field 'Second task' date)', not on $wednesday"
 
 # Keyboard: next week, back to today, month view.
 key Right
@@ -177,7 +190,7 @@ type_text m
 at 700 450
 send "swipe -320"; sleep 1.2
 shot 07b-swiped
-click 130 207
+click 130 175
 type_text "Typed after a swipe"; key Return; key Escape
 sleep 0.4
 next_monday="$(date -d "$(date +%F) -$(( $(date +%u) - 1 )) days +7 days" +%F)"
@@ -193,6 +206,55 @@ PY
   || fail "after a trackpad swipe a task landed on '${swiped_to:-nowhere}', not on $next_monday"
 at 700 450
 send "swipe 320"; sleep 1.2
+
+# The Tasks page (L): a list is started in the blank column and named
+# where it stands; a task typed into it is in that list and has no day.
+type_text l; sleep 0.8
+shot 07e-tasks
+click 500 126
+type_text "Films"; key Return
+click 500 174
+type_text "Stalker"; key Return; key Escape
+sleep 0.4
+shot 07f-list
+films="$(python3 - "$data/planner.db" <<'PY'
+import sqlite3, sys
+row = sqlite3.connect(sys.argv[1]).execute(
+    "select id from lists where title = 'Films' and deleted = 0").fetchone()
+print(row[0] if row else "")
+PY
+)"
+[ -n "$films" ] && [ "$(field Stalker list_id)" = "$films" ] && [ -z "$(field Stalker date)" ] \
+  && pass "a list is made on the Tasks page and takes a task without a day" \
+  || fail "the task typed into a new list is in list '$(field Stalker list_id)' (Films is '$films'), on '$(field Stalker date)'"
+
+# Dragged onto the header's button and held there, the task is taken to the
+# week; dropped on Wednesday it is planned for that day and still in its
+# list.
+at 440 174; press; sleep 0.1
+for p in "470 170" "700 140" "1000 100" "1250 60" "1350 48"; do at $p; done
+sleep 1.3
+shot 07g-carried
+for p in "1200 200" "900 300" "640 320" "600 330"; do at $p; done
+sleep 0.4
+release; sleep 0.8
+shot 07h-planned
+[ "$(field Stalker date)" = "$wednesday" ] && [ "$(field Stalker list_id)" = "$films" ] \
+  && pass "held on the header's button, a task is carried to the week and planned for a day" \
+  || fail "the carried task is on '$(field Stalker date)' (wanted $wednesday), in list '$(field Stalker list_id)'"
+
+# The lists beside the week (P), and away again.
+type_text p; sleep 0.8
+shot 07i-panel
+panel="$(python3 - "$data/planner.db" <<'PY'
+import sqlite3, sys
+row = sqlite3.connect(sys.argv[1]).execute(
+    "select value from meta where key = 'local.list_panel'").fetchone()
+print(row[0] if row else "")
+PY
+)"
+[ "$panel" = "true" ] && pass "P opens the lists beside the week" || fail "the lists panel did not open ('$panel')"
+type_text p; sleep 0.5
 
 # A calendar file dragged out of another program's window and dropped on
 # the planner: its event must be in the planner afterwards, and the card

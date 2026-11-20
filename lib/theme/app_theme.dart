@@ -27,11 +27,9 @@ abstract final class Dim {
   static const listHeading = 53.0;
   static const headerHeight = 48.0;
   static const headerGap = 72.0;
-  static const somedayGap = 32.0;
 
   static const weekdayRows = 10;
   static const weekendRows = 4;
-  static const somedayRows = 2;
 
   static const dialogWidth = 512.0;
   static const dialogRadius = 24.0;

@@ -626,6 +626,25 @@ void main() {
       expect(find.text('Fix the bike light'), findsOneWidget);
     });
 
+    desktopTest('after Escape on a line that was typed on, the shortcuts work at once',
+        (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      final line = find.descendant(
+        of: find.byWidgetPredicate((w) => w is TaskListBody && w.slot == DaySlot(today)),
+        matching: find.byType(TextField),
+      );
+      await tester.tap(line);
+      await tester.pumpAndSettle();
+      await tester.enterText(line, 'Typed and kept');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await toTasks(tester);
+      expect(find.text('Tasks'), findsOneWidget);
+    });
+
     desktopTest('L turns to the tasks and back; T and M lead to the planner', (tester) async {
       final store = listsStore();
       await pumpApp(tester, store, size: const Size(1536, 790));

@@ -1051,16 +1051,21 @@ void main() {
       await pumpApp(tester, store,
           size: const Size(1536, 790), calendars: await calendarWith(tester, store));
       expect(scrollRoom(tester), 0);
-      expect(rowsOf(tester, monday), 14);
+      expect(rowsOf(tester, monday), 13);
     });
 
-    desktopTest('a taller window has more rows, a lower one fewer', (tester) async {
+    desktopTest('a taller window has more rows, a lower one fewer; the week keeps its place',
+        (tester) async {
+      await pumpApp(tester, lightWeekend(), size: const Size(1536, 790));
+      final top = tester.getTopLeft(find.text('9 Nov')).dy;
       await pumpApp(tester, lightWeekend(), size: const Size(1536, 1400));
       expect(scrollRoom(tester), 0);
-      expect(rowsOf(tester, monday), 29);
+      expect(rowsOf(tester, monday), 28);
+      expect(tester.getTopLeft(find.text('9 Nov')).dy, top);
       await pumpApp(tester, lightWeekend(), size: const Size(1536, 520));
       expect(scrollRoom(tester), 0);
-      expect(rowsOf(tester, monday), 8);
+      expect(rowsOf(tester, monday), 7);
+      expect(tester.getTopLeft(find.text('9 Nov')).dy, top);
     });
 
     desktopTest('a day that holds more than fits grows, and then the page scrolls', (tester) async {

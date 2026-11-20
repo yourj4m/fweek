@@ -373,8 +373,35 @@ attached (the time, the place's name, a colour dot) and opens its panel in
 place above the bar: wheels for hours and minutes, the place field with its
 suggestions, a note field, the colour swatches.
 
-### Lists
+### Lists: a page of their own
 
-The first blank column of the Someday area reads "+ New list" in muted ink
-at all times (30 %, 60 % under the pointer). The single-column layout has a
-"New list" button after the last list instead.
+The reference keeps its lists ("Someday") under the week. Here they have a
+page of their own, and the week takes the whole window: as many ruled rows
+as reach its bottom (at least 4), the two weekend days sharing their column
+half and half.
+
+- **Tasks page**, wide: a header like the week's ("Tasks", the number still
+  to do at 20 %), 28 px, then every list as a column, 24 px apart, 220 to
+  360 px wide; heading 53 px (21 px bold, an unnamed list at 55 %), ruled
+  rows to the bottom of the window, then a 42 px line "n done" (14 px,
+  45 %) that opens the done tasks in the place of blank rows. With room for
+  one more column, a blank one reads "+ New list" (30 %, 60 % under the
+  pointer).
+- When the lists do not all fit at 220 px: their names in a 216 px column
+  at the left (rows 40 px, 15 px text, the open one bold on 8 % ink, counts
+  at 40 %), the open list beside them, at most 640 px wide.
+- On a phone (and below 560 px): the names as tabs in a 48 px strip (15 px,
+  the open one bold over a 2 px rule), "+" after them and the open list's
+  menu at the right; the lists are pages, swiped sideways.
+- A task with a day says so after its title (11.5 px medium, 50 %; today in
+  the accent colour). A deadline is a flag with its date (red once passed);
+  in the week only the flag, and a flag in the heading of the day it is due.
+- **Phone bar**: 56 px at the bottom, a rule on top; two tabs (icon 22 px
+  over a 12 px label), the open one in the text colour and bold, the other
+  at 45 %. Hidden while the keyboard is up.
+- **Phone top bar**: the month in full (24 px bold) over the year and the
+  week's number (14 px, 50 %), instead of the abbreviated one-line title.
+- **Panel beside the week** (windows from 1240 px): 280 px plus padding at
+  the right, a 1 px rule at its left; "Lists" (24 px bold) level with the
+  week's title; each list a heading like a day's (18 px bold over a 2 px
+  rule) that folds it, and its open tasks on ruled rows.
