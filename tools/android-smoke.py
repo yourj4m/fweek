@@ -61,8 +61,28 @@ def task(title):
     return ui.one(re.escape(title))
 
 
+def to_middle(title):
+    """Scrolls until the task [title] is in the middle part of the screen
+    and returns it: clear of the top edge, where the page scrolls by itself
+    while something is dragged, and of the bottom, where the system's
+    navigation buttons are. Where things end up on the page depends on the
+    day of the week, so nothing is taken to be where it was."""
+    width, height = ui.screen_size()
+    for _ in range(8):
+        node = task(title)
+        if node.top > height * 0.55:
+            ui.swipe(width * 0.5, height * 0.6, width * 0.5, height * 0.42, 400, pause=0.9)
+        elif node.top < height * 0.3:
+            ui.swipe(width * 0.5, height * 0.4, width * 0.5, height * 0.52, 400, pause=0.9)
+            if abs(task(title).top - node.top) < 5:
+                break  # the page is at its top: nothing above to scroll to
+        else:
+            break
+    return task(title)
+
+
 def open_sheet(title):
-    node = task(title)
+    node = to_middle(title)
     ui.tap(node.left + 200, node.centre[1], pause=1.2)
 
 
@@ -139,16 +159,25 @@ def main():
         ui.swipe(width * 0.5, height * 0.35, width * 0.5, height * 0.8, 250, pause=0.6)
 
     # --- completing
-    dentist = task("Call the dentist")
+    dentist = to_middle("Call the dentist")
     ui.tap(dentist.right - 45, dentist.centre[1], pause=0.8)
     check("Mark as not done" in task("Call the dentist").label, "tapping the circle completes a task")
 
     # --- long-press drag to a neighbouring day
-    headers = [n for n in ui.nodes() if re.fullmatch(r"\d{1,2} [A-Z][a-z]{2}", n.label)]
-    today_header = min(headers, key=lambda n: abs(n.top - today[0].top))
-    later = [n for n in headers if n.top > today_header.top + 10]
-    target = later[0] if later else max((n for n in headers if n.top < today_header.top - 10), key=lambda n: n.top)
+    # Where things are is read now, not remembered from the start: the page
+    # has been scrolled since, by how much depends on the day of the week.
+    # The task is brought to the middle of the screen first: the day after
+    # it then has room below, and the task is clear of the top edge, where
+    # the page scrolls by itself while something is dragged (and would
+    # carry the place aimed at away).
+    to_middle("Buy oat milk")
+    headers = sorted((n for n in ui.nodes() if re.fullmatch(r"\d{1,2} [A-Z][a-z]{2}", n.label)),
+                     key=lambda n: n.top)
     milk = task("Buy oat milk")
+    later = [n for n in headers if n.top > milk.top]
+    earlier = [n for n in headers if n.top < milk.top]
+    # The next day; on the last day of the week, the one before.
+    target = later[0] if later else earlier[-2]
     drop_y = target.bottom + 80
     ui.drag(milk.left + 200, milk.centre[1], 400, drop_y, hold=0.9, steps=14, release=False)
     time.sleep(0.4)

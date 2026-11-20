@@ -109,7 +109,7 @@ class _TaskDialogState extends State<_TaskDialog> {
   late String _id = widget.id;
   bool _expanded = false;
 
-  final _title = TextEditingController();
+  final _title = LinkTextController();
   final _note = LinkTextController();
   final _titleFocus = FocusNode();
   final _noteFocus = FocusNode();
@@ -885,22 +885,19 @@ class _TaskDialogState extends State<_TaskDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: TextField(
+          // A web address in the title reads as a short link, which a click
+          // opens; a click beside it edits the title, address and all.
+          child: NoteField(
             controller: _title,
             focusNode: _titleFocus,
             style: context.text.title28.copyWith(
               decoration: task.done ? TextDecoration.lineThrough : null,
               color: task.done ? theme.ink(40) : theme.text,
             ),
-            cursorColor: theme.text,
-            maxLines: null,
-            textInputAction: TextInputAction.done,
-            decoration: InputDecoration.collapsed(
-              hintText: task.checkable ? 'Task' : 'Event',
-              hintStyle: context.text.title28.copyWith(color: theme.ink(25)),
-            ),
-            onChanged: (_) => _scheduleSave(),
-            onSubmitted: (_) => _noteFocus.requestFocus(),
+            hint: task.checkable ? 'Task' : 'Event',
+            shortLinks: true,
+            onChanged: _scheduleSave,
+            onSubmitted: _noteFocus.requestFocus,
           ),
         ),
         // A task has the circle to tick it off; an event has none. A task

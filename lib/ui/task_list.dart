@@ -10,6 +10,7 @@ import '../app_state.dart';
 import '../data/models.dart';
 import '../data/planner_store.dart';
 import '../platform.dart';
+import '../text/links.dart';
 import '../theme/app_theme.dart';
 import 'composer.dart';
 import 'context_menu.dart';
@@ -47,8 +48,16 @@ Color calendarColor(AppTheme theme, String key) {
 }
 
 /// What a row or chip says for [task]: its time, if any, and its title.
-String taskLabel(Task task, {required bool use24h}) {
-  final title = task.title.isEmpty && task.fromCalendar ? '(No title)' : task.title;
+///
+/// A web address in the title reads in its short form ([shortLink]); with
+/// [raw] it is left as typed, for a widget that shortens it itself and
+/// needs the address to open.
+String taskLabel(Task task, {required bool use24h, bool raw = false}) {
+  final title = task.title.isEmpty && task.fromCalendar
+      ? '(No title)'
+      : raw
+          ? task.title
+          : tidyText(task.title);
   return task.time == null ? title : '${formatTime(task.time!, use24h: use24h)} $title';
 }
 
@@ -128,13 +137,42 @@ class TaskPill extends StatelessWidget {
               child: Icon(AppIcons.rotateCw, size: iconSize, color: onFill),
             ),
           Flexible(
-            child: Text(
-              taskLabel(task, use24h: use24h),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              softWrap: false,
-              style: textStyle,
-            ),
+            // A web address in the title reads in its short form,
+            // underlined. It is not what a click opens here: a click on a
+            // row opens the task, wherever it lands (the row has a button
+            // for the address).
+            child: mayHaveLinks(task.title) && hasLinks(task.title)
+                ? Text.rich(
+                    TextSpan(
+                      children: [
+                        for (final piece
+                            in tidyLinks(taskLabel(task, use24h: use24h, raw: true)))
+                          TextSpan(
+                            text: piece.text,
+                            style: piece.isLink
+                                ? TextStyle(
+                                    decoration: TextDecoration.combine([
+                                      TextDecoration.underline,
+                                      if (task.done) TextDecoration.lineThrough,
+                                    ]),
+                                    decorationColor: onFill.withValues(alpha: onFill.a * 0.55),
+                                  )
+                                : null,
+                          ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: textStyle,
+                  )
+                : Text(
+                    taskLabel(task, use24h: use24h),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: textStyle,
+                  ),
           ),
         ],
       ),
@@ -366,7 +404,33 @@ class _TaskRowState extends State<TaskRow> {
     final done = task.subtasks.where((s) => !s.heading && s.done).length;
     final total = task.subtasks.where((s) => !s.heading).length;
 
+    // The first web address in the title, if it has one.
+    final link = mayHaveLinks(task.title)
+        ? linkify(task.title).where((p) => p.isLink).firstOrNull
+        : null;
+
     final marks = <Widget>[
+      // A title with an address in it: a button that opens the address.
+      if (link != null)
+        // A button of its own for a screen reader too, not part of what
+        // the row says.
+        Semantics(
+          container: true,
+          child: Pressable(
+            onTap: () => context.readOpener.open(link.url!),
+            focusable: false,
+            semanticLabel: 'Open ${shortLink(link.url!)}',
+            builder: (context, hovered, pressed) => SizedBox(
+              width: isMobile ? 32 : 20,
+              height: isMobile ? 40 : 24,
+              child: Icon(
+                AppIcons.externalLink,
+                size: style.fontSize! - 1,
+                color: hovered || pressed ? theme.text : muted,
+              ),
+            ),
+          ),
+        ),
       // A task's note is marked. An event's is not: what a calendar brings
       // nearly always says something about itself, and a mark on every such
       // row tells nothing.

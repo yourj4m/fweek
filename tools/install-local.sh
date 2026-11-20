@@ -2,7 +2,7 @@
 # Install the built app for the current user: copies the release bundle to
 # ~/.local/opt/weektodo and adds an application-menu entry and icon.
 #
-#   tools/dev flutter build linux --release   # build first
+#   tools/desktop-build.sh                    # build first
 #   tools/install-local.sh                    # install, or update
 #   tools/install-local.sh --uninstall        # remove (keeps your planner data)
 #
@@ -54,7 +54,7 @@ fi
 
 bundle="$root/build/linux/x64/release/bundle"
 if [ ! -x "$bundle/weektodo" ]; then
-  echo "No release build found. Run: tools/dev flutter build linux --release" >&2
+  echo "No release build found. Run: tools/desktop-build.sh" >&2
   exit 1
 fi
 

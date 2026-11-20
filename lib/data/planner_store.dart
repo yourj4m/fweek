@@ -673,6 +673,46 @@ class PlannerStore extends ChangeNotifier {
     return id;
   }
 
+  /// Takes in an item from outside (an event of a calendar file) under an
+  /// id of the caller's choosing: made when the planner has none under that
+  /// id, brought up to date otherwise. What the user did with it since
+  /// stays: its place in its day, whether it is a task or an event, a tick.
+  /// One that had been deleted comes back. Returns whether it was made now.
+  bool putItem(
+    String id, {
+    required Day day,
+    required String title,
+    String note = '',
+    String location = '',
+    int? time,
+    int? end,
+    ItemKind kind = ItemKind.event,
+    Recurrence? recurrence,
+    Set<Day> exdates = const {},
+  }) {
+    final known = _tasks[id];
+    final isNew = known == null;
+    _write('tasks', id, {
+      'date': day.iso,
+      'list_id': null,
+      if (isNew || known.date != day)
+        'position': _keyAt(DaySlot(day), null, except: id),
+      'title': title,
+      'note': note,
+      'location': location,
+      'time': time,
+      'end_time': time != null && end != null && end > time ? end : null,
+      'recurrence': recurrence?.toJson(),
+      'exdates': [for (final d in exdates.toList()..sort()) d.iso],
+      'deleted': false,
+      if (isNew) ...{
+        'kind': kind == ItemKind.event ? ItemKind.event.name : null,
+        'created_at': _now(),
+      },
+    });
+    return isNew;
+  }
+
   /// Makes an item a task or an event. For a repeating task this applies to
   /// the whole series; for what a calendar brought it is kept as the user's
   /// change to that event.

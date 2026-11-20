@@ -113,4 +113,40 @@ void main() {
       expect(pieces.where((p) => p.isLink).single.url, 'https://x.example/r');
     });
   });
+
+  group('a web address in a title', () {
+    test('reads as its site and the start of its path', () {
+      expect(shortLink('https://www.nature.com/articles/s41586-024-07000-1'),
+          'nature.com/articles/s41586-02…');
+      expect(shortLink('https://example.org'), 'example.org');
+      expect(shortLink('https://example.org/'), 'example.org');
+      expect(shortLink('http://WWW.Example.org/a/b/'), 'example.org/a/b');
+      // What follows a ? or # is left out, and said to be.
+      expect(shortLink('https://youtube.com/watch?v=dQw4w9WgXcQ'), 'youtube.com/watch…');
+      expect(shortLink('https://en.wikipedia.org/wiki/Sea_ice#Formation'),
+          'en.wikipedia.org/wiki/Sea_ice…');
+      // Percent signs are read out.
+      expect(shortLink('https://example.org/caf%C3%A9'), 'example.org/café');
+      expect(shortLink('mailto:ada@example.org'), 'ada@example.org');
+      expect(shortLink('https://example.org/a-very-long-path', limit: 16), 'example.org/a-v…');
+    });
+
+    test('the words around it stay as they are', () {
+      const title = 'Read https://www.example.org/papers/2026/ice-thickness.pdf before Friday';
+      expect(tidyText(title), 'Read example.org/papers/2026/ice-t… before Friday');
+      final pieces = tidyLinks(title);
+      expect(pieces.map((p) => p.isLink), [false, true, false]);
+      // What a click opens is the whole address.
+      expect(pieces[1].url, 'https://www.example.org/papers/2026/ice-thickness.pdf');
+      expect(tidyText('No address here.'), 'No address here.');
+      expect(tidyText('www.example.org'), 'example.org');
+    });
+
+    test('a quick look tells which texts can have none', () {
+      expect(mayHaveLinks('Buy oat milk'), isFalse);
+      expect(mayHaveLinks('see https://example.org'), isTrue);
+      expect(mayHaveLinks('WWW.example.org'), isTrue);
+      expect(mayHaveLinks('ada@example.org'), isTrue);
+    });
+  });
 }

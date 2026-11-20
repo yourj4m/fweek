@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/scheduler.dart';
@@ -13,6 +16,7 @@ import '../calendar/calendar_service.dart';
 import '../data/day.dart';
 import '../data/models.dart';
 import '../platform.dart';
+import '../services/file_drop.dart';
 import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import 'composer.dart';
@@ -20,6 +24,7 @@ import 'context_menu.dart';
 import 'day_progress.dart';
 import 'drag.dart';
 import 'event_rows.dart';
+import 'ics_import_dialog.dart';
 import 'month_view.dart';
 import 'search_dialog.dart';
 import 'settings_dialog.dart';
@@ -52,6 +57,7 @@ class _PlannerPageState extends State<PlannerPage> {
   @override
   void initState() {
     super.initState();
+    if (_dropping) FileDrop.listen(_dropped);
     _drag = DragController(
       onDrop: _drop,
       onEdge: (direction) =>
@@ -63,10 +69,47 @@ class _PlannerPageState extends State<PlannerPage> {
 
   @override
   void dispose() {
+    if (_dropping) FileDrop.listen(null);
     _drag.dispose();
     _composer.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  /// On a desktop: calendar files dropped anywhere on the window are taken
+  /// into the planner.
+  late final bool _dropping = defaultTargetPlatform == TargetPlatform.linux;
+
+  void _dropped(List<String> paths) {
+    if (!mounted) return;
+    final files = <CalendarFile>[];
+    var others = 0;
+    for (final path in paths) {
+      final name = path.split('/').last;
+      final lower = name.toLowerCase();
+      if (!lower.endsWith('.ics') && !lower.endsWith('.ical')) {
+        others++;
+        continue;
+      }
+      try {
+        final file = File(path);
+        // A calendar is text of modest size; anything huge is something else.
+        if (file.lengthSync() > 16 * 1024 * 1024) {
+          others++;
+          continue;
+        }
+        files.add((name: name, text: utf8.decode(file.readAsBytesSync(), allowMalformed: true)));
+      } on FileSystemException {
+        others++;
+      }
+    }
+    if (files.isEmpty) {
+      if (others > 0) {
+        context.readApp.say('Drop a calendar file (.ics) to add its events');
+      }
+      return;
+    }
+    importCalendarFiles(context, files);
   }
 
   void _drop(Task task, Slot slot, int index) {

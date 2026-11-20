@@ -43,6 +43,10 @@ platform=android-arm64; abi=arm64-v8a
 # The build number counts commits, so every build made later is an update
 # in Android's eyes and never a downgrade, which it would refuse.
 number="$(git -C "$root" rev-list --count HEAD)"
+# What earlier builds kept is thrown away first: the icon font cut down to
+# the icons in use was not always made again when the code used more (see
+# tools/desktop-build.sh).
+rm -rf "$root/.dart_tool/flutter_build" "$root/build/flutter_assets"
 "$dev" flutter build apk --release --split-per-abi --target-platform "$platform" \
   --build-number "$number"
 apk="$root/build/app/outputs/flutter-apk/app-$abi-release.apk"

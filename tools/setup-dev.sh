@@ -8,7 +8,7 @@
 #
 # Afterwards run everything through tools/dev, for example:
 #   tools/dev flutter test
-#   tools/dev flutter build linux --release
+#   tools/desktop-build.sh
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 container="${WEEKTODO_CONTAINER:-weektodo-dev}"

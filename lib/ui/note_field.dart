@@ -1,6 +1,6 @@
 import 'package:flutter/gestures.dart' show TapGestureRecognizer;
 import 'package:flutter/rendering.dart' show RenderParagraph;
-import 'package:flutter/services.dart' show TextCapitalization;
+import 'package:flutter/services.dart' show TextCapitalization, TextInputAction;
 import 'package:flutter/widgets.dart';
 import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
 
@@ -10,8 +10,11 @@ import '../theme/app_theme.dart';
 
 /// How a link looks: underlined in the text's own colour, so that it reads
 /// on any card colour without shouting.
-TextStyle _linkStyle(Color ink) => TextStyle(
-      decoration: TextDecoration.underline,
+TextStyle _linkStyle(Color ink, [TextDecoration? also]) => TextStyle(
+      // A link in a ticked task's title is struck through like the rest.
+      decoration: also == null || also == TextDecoration.none
+          ? TextDecoration.underline
+          : TextDecoration.combine([TextDecoration.underline, also]),
       decorationColor: ink.withValues(alpha: ink.a * 0.55),
     );
 
@@ -33,7 +36,7 @@ class LinkTextController extends TextEditingController {
     }
     final pieces = linkify(text);
     if (!pieces.any((p) => p.isLink)) return TextSpan(style: style, text: text);
-    final link = _linkStyle(style?.color ?? const Color(0xFF000000));
+    final link = _linkStyle(style?.color ?? const Color(0xFF000000), style?.decoration);
     return TextSpan(
       style: style,
       children: [
@@ -54,11 +57,17 @@ class LinkedText extends StatefulWidget {
     required this.style,
     this.maxLines,
     this.onTapText,
+    this.short = false,
   });
 
   final String text;
   final TextStyle style;
   final int? maxLines;
+
+  /// Web addresses read in their short form (see [shortLink]), as in a
+  /// title. A tap is then reported at the end of the text: the short form
+  /// has no place for every letter of the long one.
+  final bool short;
 
   /// Called for a tap that hit no link, with the tapped position in the
   /// text.
@@ -82,7 +91,7 @@ class _LinkedTextState extends State<LinkedText> {
   @override
   void didUpdateWidget(LinkedText old) {
     super.didUpdateWidget(old);
-    if (old.text != widget.text) _prepare();
+    if (old.text != widget.text || old.short != widget.short) _prepare();
   }
 
   @override
@@ -100,7 +109,7 @@ class _LinkedTextState extends State<LinkedText> {
 
   void _prepare() {
     _release();
-    _pieces = linkify(widget.text);
+    _pieces = widget.short ? tidyLinks(widget.text) : linkify(widget.text);
     for (final piece in _pieces) {
       if (!piece.isLink) continue;
       _recognizers.add(
@@ -112,7 +121,8 @@ class _LinkedTextState extends State<LinkedText> {
 
   @override
   Widget build(BuildContext context) {
-    final link = _linkStyle(widget.style.color ?? context.theme.text);
+    final link =
+        _linkStyle(widget.style.color ?? context.theme.text, widget.style.decoration);
     var next = 0;
     final rich = Text.rich(
       key: _key,
@@ -132,6 +142,7 @@ class _LinkedTextState extends State<LinkedText> {
       ),
       style: widget.style,
       maxLines: widget.maxLines,
+      softWrap: widget.maxLines != 1,
       overflow: widget.maxLines == null ? null : TextOverflow.ellipsis,
     );
     final onTapText = widget.onTapText;
@@ -140,7 +151,9 @@ class _LinkedTextState extends State<LinkedText> {
       behavior: HitTestBehavior.opaque,
       onTapUp: (details) {
         final paragraph = _key.currentContext?.findRenderObject();
-        if (paragraph is! RenderParagraph) return onTapText(widget.text.length);
+        if (widget.short || paragraph is! RenderParagraph) {
+          return onTapText(widget.text.length);
+        }
         final local = paragraph.globalToLocal(details.globalPosition);
         onTapText(paragraph.getPositionForOffset(local).offset);
       },
@@ -161,6 +174,8 @@ class NoteField extends StatefulWidget {
     required this.hint,
     required this.onChanged,
     this.minLines = 1,
+    this.shortLinks = false,
+    this.onSubmitted,
   });
 
   /// Should be a [LinkTextController], so links show while typing too.
@@ -170,6 +185,14 @@ class NoteField extends StatefulWidget {
   final String hint;
   final VoidCallback onChanged;
   final int minLines;
+
+  /// While not typed in, web addresses read in their short form: for a
+  /// title, where a long address would be the whole of it.
+  final bool shortLinks;
+
+  /// When set, this is a field of a single thought: Enter ends typing and
+  /// calls this, instead of starting a new line.
+  final VoidCallback? onSubmitted;
 
   @override
   State<NoteField> createState() => _NoteFieldState();
@@ -223,13 +246,18 @@ class _NoteFieldState extends State<NoteField> {
       cursorColor: theme.text,
       maxLines: null,
       minLines: widget.minLines,
-      keyboardType: TextInputType.multiline,
+      keyboardType: widget.onSubmitted == null ? TextInputType.multiline : TextInputType.text,
+      textInputAction: widget.onSubmitted == null ? null : TextInputAction.done,
       textCapitalization: TextCapitalization.sentences,
       decoration: InputDecoration.collapsed(
         hintText: widget.hint,
-        hintStyle: widget.style.copyWith(color: theme.ink(25)),
+        hintStyle: widget.style.copyWith(
+          color: theme.ink(25),
+          decoration: TextDecoration.none,
+        ),
       ),
       onChanged: (_) => widget.onChanged(),
+      onSubmitted: widget.onSubmitted == null ? null : (_) => widget.onSubmitted!(),
     );
     if (!reading) return field;
     return Stack(
@@ -263,6 +291,7 @@ class _NoteFieldState extends State<NoteField> {
                   child: LinkedText(
                     text,
                     style: widget.style,
+                    short: widget.shortLinks,
                     onTapText: (offset) {
                       widget.controller.selection = TextSelection.collapsed(
                           offset: offset.clamp(0, text.length));

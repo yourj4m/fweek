@@ -38,6 +38,11 @@ Test builds for Linux and Android, from the same code. What works:
   hex colours, repeat (presets and a custom editor), reminder, move, copy,
   delete. A click beside the card, Escape or the back gesture closes it. The
   end time shows in the card only; the week shows when things start.
+- **Links**: a web address pasted into a task does not stand there in
+  full: it reads as its site and the start of its path, underlined, with a
+  small button that opens it. A click on the row opens the task as always;
+  in the card the address is a link, and it is there in full while the
+  title is edited.
 - **Rows** show what a task carries, quietly: its time, a mark for a note,
   subtasks done of total, and the place on a second, smaller line.
 - **Places**: type one freely, or pick from suggestions while typing; a
@@ -69,6 +74,14 @@ Test builds for Linux and Android, from the same code. What works:
   headings. Your changes sync between your devices; the calendar itself is
   never changed. See
   [Calendars](#calendars).
+- **Calendar files**: drop an `.ics` file (an invitation, an export) anywhere
+  on the desktop window, or pick one in Settings → Calendars on any device,
+  and its events are added to the planner as events of your own, which
+  sync like everything else. A card lists what was added; each entry leads
+  to its day and opens it, and Undo takes them out again. The same file
+  again brings them up to date instead of doubling them. An event that
+  repeats becomes one repeating item where the planner can say its rule;
+  otherwise its dates of the coming year are taken in one by one.
 - **Export** to CSV, iCalendar and plain text; **backup and restore** as JSON.
 - **Trackpad**: two fingers swiped sideways turn to the next or previous
   week (or month).
@@ -103,7 +116,7 @@ Not there yet:
 
 ```sh
 tools/setup-dev.sh                         # once: build container + Flutter SDK
-tools/dev flutter build linux --release    # build
+tools/desktop-build.sh                     # build
 build/linux/x64/release/bundle/weektodo    # run
 tools/install-local.sh                     # optional: add to the application menu
 ```

@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/widgets.dart';
 import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
 
@@ -5,6 +6,7 @@ import '../app_state.dart';
 import '../calendar/calendar_service.dart';
 import '../platform.dart';
 import '../theme/app_theme.dart';
+import 'ics_import_dialog.dart';
 import 'icons.dart';
 import 'pickers.dart';
 import 'sync_settings.dart' show SettingsField;
@@ -340,7 +342,49 @@ class _CalendarSettingsState extends State<CalendarSettings> {
             onTap: _adding ? null : _add,
           ),
         ),
+        const SizedBox(height: 18),
+        Text('A calendar file', style: context.text.small15),
+        const SizedBox(height: 2),
+        Text(
+          'The events of an .ics file (an invitation, an export) are added '
+          'to your planner as events of your own, and sync with it. '
+          '${isMobile ? '' : 'You can also drop such a file anywhere on the window. '}'
+          'The same file again brings them up to date.',
+          style: muted,
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppButton(
+            icon: AppIcons.calendarPlus,
+            label: 'Import a calendar file…',
+            size: Dim.controlInline,
+            iconSize: 16,
+            onTap: _importFile,
+          ),
+        ),
       ],
     );
+  }
+
+  Future<void> _importFile() async {
+    final XFile? file;
+    try {
+      file = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: 'Calendar file',
+            extensions: ['ics', 'ical'],
+            mimeTypes: ['text/calendar'],
+          ),
+        ],
+      );
+      if (file == null || !mounted) return;
+      final text = await file.readAsString();
+      if (!mounted) return;
+      await importCalendarFiles(context, [(name: file.name, text: text)]);
+    } on Object catch (error) {
+      if (mounted) setState(() => _error = 'Could not read the file: $error');
+    }
   }
 }

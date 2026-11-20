@@ -44,7 +44,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bin="$root/build/linux/x64/release/bundle/weektodo"
 app_id="io.github.yourj4m.weektodo"
 folder="WeekToDo sync test $(printf '%04x' $RANDOM)"
-[ -x "$bin" ] || { echo "No release build; run: tools/dev flutter build linux --release" >&2; exit 1; }
+[ -x "$bin" ] || { echo "No release build; run: tools/desktop-build.sh" >&2; exit 1; }
 mkdir -p "$out"
 : >"$out/app.log"
 

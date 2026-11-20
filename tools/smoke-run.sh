@@ -21,7 +21,7 @@ out="${1:?output directory}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bin="$root/build/linux/x64/release/bundle/weektodo"
 app_id="io.github.yourj4m.weektodo"
-[ -x "$bin" ] || { echo "No release build; run: tools/dev flutter build linux --release" >&2; exit 1; }
+[ -x "$bin" ] || { echo "No release build; run: tools/desktop-build.sh" >&2; exit 1; }
 mkdir -p "$out"
 : >"$out/app.log"
 
@@ -35,6 +35,9 @@ cat > "$XDG_RUNTIME_DIR/sway.conf" <<'CFG'
 output HEADLESS-1 mode 1440x900 scale 1 position 0 0
 default_border none
 focus_follows_mouse no
+# The window files are dragged out of (tools/drag-source.c) floats in a
+# corner, so that the app keeps the whole screen.
+for_window [app_id="weektodo-drag-source"] floating enable, resize set 200 120, move position 1200 20
 CFG
 unset DISPLAY WAYLAND_DISPLAY
 export WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman
@@ -122,6 +125,18 @@ wait_for_change() {
   fail "$4 (only ${changed:-0} px changed)"
 }
 
+# The icons: a release build carries only those the code uses, cut out of
+# the icon font at build time. A font older than the code is one that was
+# kept from an earlier build and lacks what the code has come to use since
+# (tools/desktop-build.sh builds without that risk).
+icons="$(find "$(dirname "$bin")/data/flutter_assets" -name 'Lucide*.ttf' | head -1)"
+newest="$(find "$root/lib" -name '*.dart' -newer "$icons" 2>/dev/null | head -1)"
+if [ -n "$icons" ] && [ -z "$newest" ]; then
+  pass "the build's icon font is as new as the code"
+else
+  fail "the build's icon font is older than the code (${newest#"$root"/}): build with tools/desktop-build.sh"
+fi
+
 start_app
 shot 01-start
 assert_fills 01-start
@@ -178,6 +193,34 @@ PY
   || fail "after a trackpad swipe a task landed on '${swiped_to:-nowhere}', not on $next_monday"
 at 700 450
 send "swipe 320"; sleep 1.2
+
+# A calendar file dragged out of another program's window and dropped on
+# the planner: its event must be in the planner afterwards, and the card
+# that says so must show.
+if gcc $(pkg-config --cflags gtk+-3.0) "$root/tools/drag-source.c" \
+    -o "$XDG_RUNTIME_DIR/drag-source" $(pkg-config --libs gtk+-3.0) 2>"$out/drag-source.log"; then
+  drop_day="$(date -d "+2 days" +%Y%m%d)"
+  printf '%s\r\n' 'BEGIN:VCALENDAR' 'VERSION:2.0' 'BEGIN:VEVENT' 'UID:dropped@smoke' \
+    'SUMMARY:Dropped from a file' "DTSTART;VALUE=DATE:$drop_day" 'END:VEVENT' 'END:VCALENDAR' \
+    > "$XDG_RUNTIME_DIR/dropped.ics"
+  "$XDG_RUNTIME_DIR/drag-source" "$XDG_RUNTIME_DIR/dropped.ics" >>"$out/drag-source.log" 2>&1 &
+  source_window=$!
+  sleep 1.5
+  shot 07c-before-drop
+  at 1300 80; press; sleep 0.2
+  for x in 1280 1240 1180 1100 1000 900 800 720 700; do at "$x" 420; done
+  sleep 0.4
+  release; sleep 1.5
+  shot 07d-dropped
+  kill "$source_window" 2>/dev/null
+  [ "$(stored 'Dropped from a file')" -ge 1 ] \
+    && pass "a calendar file dragged from another window and dropped on the planner is added" \
+    || fail "the dropped calendar file's event is not in the planner"
+  key Escape; sleep 0.4
+  swaymsg "[app_id=\"$app_id\"] focus" >/dev/null; sleep 0.3
+else
+  echo "note: no compiler for the drag source; dropping a file was not tried"
+fi
 
 # Move the window to the 125 % output and back; it must fill both.
 swaymsg "[app_id=\"$app_id\"] move container to output HEADLESS-2" >/dev/null; sleep 2

@@ -77,6 +77,48 @@ List<TextPiece> linkify(String text) {
 /// Whether [text] holds at least one link.
 bool hasLinks(String text) => linkify(text).any((p) => p.isLink);
 
+/// Whether [text] could hold a link at all: a quick look that spares the
+/// full search for the many texts that have none.
+bool mayHaveLinks(String text) =>
+    text.contains('://') || text.contains('@') || text.toLowerCase().contains('www.');
+
+/// A web address as it reads in a title: the site and the start of its
+/// path, without `https://`, `www.`, what follows a `?` or `#`, or a slash
+/// at the end. Enough to know it by; short enough not to crowd a line. A
+/// mail address is the address.
+String shortLink(String url, {int limit = 30}) {
+  final uri = Uri.tryParse(url);
+  if (uri == null || uri.host.isEmpty) {
+    return url.replaceFirst(RegExp('^mailto:', caseSensitive: false), '');
+  }
+  var host = uri.host.toLowerCase();
+  if (host.startsWith('www.')) host = host.substring(4);
+  var path = uri.path;
+  while (path.endsWith('/')) {
+    path = path.substring(0, path.length - 1);
+  }
+  try {
+    path = Uri.decodeFull(path);
+  } on ArgumentError {
+    // Not properly encoded: shown as it is.
+  }
+  final whole = '$host$path';
+  if (whole.length > limit) return '${whole.substring(0, limit - 1).trimRight()}…';
+  // Something follows that is not shown.
+  return uri.hasQuery || uri.hasFragment ? '$whole…' : whole;
+}
+
+/// [text] in plain runs and links like [linkify], with each web address
+/// shortened to its [shortLink]: how a title reads on one line.
+List<TextPiece> tidyLinks(String text) => [
+      for (final piece in linkify(text))
+        piece.isLink ? TextPiece(shortLink(piece.url!), piece.url) : piece,
+    ];
+
+/// [text] with its web addresses shortened, as plain text.
+String tidyText(String text) =>
+    mayHaveLinks(text) ? tidyLinks(text).map((p) => p.text).join() : text;
+
 final _tag = RegExp(r'</?[a-zA-Z][^>]*>|<!--.*?-->', dotAll: true);
 final _anchor = RegExp(
   r'''<a\b[^>]*?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>(.*?)</a\s*>''',

@@ -479,6 +479,60 @@ void main() {
       expect(opened, hasLength(2));
     });
 
+    desktopTest('an address pasted as a task reads as a short link, with a button to open it',
+        (tester) async {
+      final store = seededStore();
+      const paper = 'https://www.nature.com/articles/s41586-024-07000-1?utm_source=mail';
+      store.addTask(DaySlot(today), paper);
+      store.addTask(DaySlot(today), 'Read https://example.org/notes/meeting today');
+      final opened = <String>[];
+      await pumpApp(tester, store, opener: recordingOpener(opened));
+      // Not the long address: its site and the start of its path.
+      expect(find.textContaining('utm_source'), findsNothing);
+      final link = find.textContaining('nature.com/articles/s41586-02…', findRichText: true);
+      expect(link, findsOneWidget);
+      // The words around an address stay.
+      expect(find.textContaining('Read example.org/notes/meeting today', findRichText: true),
+          findsOneWidget);
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/week_links.png'));
+
+      // The button after the title opens the address itself.
+      await tester.tap(find.bySemanticsLabel('Open nature.com/articles/s41586-02…'));
+      await tester.pumpAndSettle();
+      expect(opened, [paper]);
+      expect(find.bySemanticsLabel('Add subtask'), findsNothing);
+
+      // A click on the row, on the address too, opens the task like any
+      // other. In the card the title reads the same way and the address
+      // is a link; edited, it is there in full.
+      await tester.tap(link);
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Add subtask'), findsOneWidget);
+      expect(opened, hasLength(1));
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/dialog_link_title.png'));
+      final inCard = find.textContaining('Link: nature.com/articles/s41586-02…', findRichText: true);
+      expect(inCard, findsOneWidget);
+      await tester.tapAt(tester.getTopLeft(inCard) + const Offset(40, 14));
+      await tester.pumpAndSettle();
+      expect(opened, [paper, paper]);
+      expect(named(store, paper).title, paper, reason: 'what is stored is the address as pasted');
+    });
+
+    phoneTest('on a phone a tap on the row opens the task, a tap on the button the address',
+        (tester) async {
+      final store = seededStore();
+      store.addTask(DaySlot(today), 'https://example.org/notes/meeting');
+      final opened = <String>[];
+      await pumpApp(tester, store, size: const Size(411, 914), opener: recordingOpener(opened));
+      await tester.tap(find.bySemanticsLabel('Open example.org/notes/meeting'));
+      await tester.pumpAndSettle();
+      expect(opened, ['https://example.org/notes/meeting']);
+      await tester.tap(find.textContaining('example.org/notes/meeting', findRichText: true));
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Add subtask'), findsOneWidget);
+      expect(opened, hasLength(1));
+    });
+
     desktopTest('links in a calendar\'s description open too', (tester) async {
       final store = seededStore();
       final opened = <String>[];

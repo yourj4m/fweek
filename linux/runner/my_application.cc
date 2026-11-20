@@ -7,6 +7,8 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // Tells the app which files were dropped on the window.
+  FlMethodChannel* drop_channel;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -14,6 +16,36 @@ G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+}
+
+// Files dragged from a file manager and dropped anywhere on the window:
+// their paths go to the app (channel "weektodo/drop", method "files"), which
+// takes calendar files into the planner.
+static void drag_data_received_cb(GtkWidget* widget,
+                                  GdkDragContext* context,
+                                  gint x,
+                                  gint y,
+                                  GtkSelectionData* data,
+                                  guint info,
+                                  guint time,
+                                  gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  g_auto(GStrv) uris = gtk_selection_data_get_uris(data);
+  g_autoptr(FlValue) paths = fl_value_new_list();
+  if (uris != nullptr) {
+    for (gchar** uri = uris; *uri != nullptr; uri++) {
+      g_autofree gchar* path = g_filename_from_uri(*uri, nullptr, nullptr);
+      if (path != nullptr) {
+        fl_value_append_take(paths, fl_value_new_string(path));
+      }
+    }
+  }
+  const gboolean any = fl_value_get_length(paths) > 0;
+  if (any && self->drop_channel != nullptr) {
+    fl_method_channel_invoke_method(self->drop_channel, "files", paths,
+                                    nullptr, nullptr, nullptr);
+  }
+  gtk_drag_finish(context, any, FALSE, time);
 }
 
 // Implements GApplication::activate.
@@ -57,6 +89,18 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+
+  // The whole view takes dropped files.
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  g_clear_object(&self->drop_channel);
+  self->drop_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+      "weektodo/drop", FL_METHOD_CODEC(codec));
+  gtk_drag_dest_set(GTK_WIDGET(view), GTK_DEST_DEFAULT_ALL, nullptr, 0,
+                    GDK_ACTION_COPY);
+  gtk_drag_dest_add_uri_targets(GTK_WIDGET(view));
+  g_signal_connect(view, "drag-data-received",
+                   G_CALLBACK(drag_data_received_cb), self);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
@@ -104,6 +148,7 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  g_clear_object(&self->drop_channel);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 
