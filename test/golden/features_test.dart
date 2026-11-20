@@ -24,6 +24,7 @@ void main() {
   setUpAll(loadFonts);
 
   final today = referenceToday;
+  final monday = referenceToday.startOfWeek();
   List<String> titles(Iterable<Task> tasks) => [for (final t in tasks) t.title];
   Task named(PlannerStore store, String title) =>
       store.allTasks.firstWhere((t) => t.title == title);
@@ -1055,6 +1056,83 @@ void main() {
       await tester.pumpAndSettle();
       expect(named(store, 'Evening run').waitsForWord, isFalse);
       expect(named(store, 'Evening run').date, referenceToday);
+    });
+  });
+
+  group('the wide week fits its window', () {
+    double scrollRoom(WidgetTester tester) =>
+        tester.state<ScrollableState>(find.byType(Scrollable).first).position.maxScrollExtent;
+    double rowsOf(WidgetTester tester, Day day) =>
+        tester.getSize(find.byWidgetPredicate((w) => w is TaskListBody && w.slot == DaySlot(day))).height /
+        42;
+    /// The reference week with a quiet weekend (the two days stacked in
+    /// the last column need rows of their own for what they hold) and
+    /// [more] lists besides Someday.
+    PlannerStore withLists(int more) {
+      final store = seededStore();
+      for (final day in [monday.addDays(5), monday.addDays(6)]) {
+        for (final task in store.tasksOn(day).skip(1).toList()) {
+          store.deleteTask(task.id, wholeSeries: true);
+        }
+      }
+      for (var i = 0; i < more; i++) {
+        store.addTask(ListSlot(store.addList('List ${i + 2}')), 'Something');
+      }
+      return store;
+    }
+
+    desktopTest('a maximized window on a 1920×1080 screen at 125 %: week and lists, no scrolling',
+        (tester) async {
+      // Four lists: two rows of them under the week.
+      final store = withLists(3);
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      expect(scrollRoom(tester), 0);
+      expect(rowsOf(tester, monday), 7, reason: 'fewer rows than the usual ten');
+      expect(find.text('List 4'), findsOneWidget);
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/week_1536_fit.png'));
+    });
+
+    desktopTest('with a band of several-day events over the week it still fits', (tester) async {
+      final store = withLists(3);
+      await pumpApp(tester, store,
+          size: const Size(1536, 790), calendars: await calendarWith(tester, store));
+      expect(scrollRoom(tester), 0);
+      expect(rowsOf(tester, monday), 6);
+    });
+
+    desktopTest('with room to spare it is the generous layout: ten rows', (tester) async {
+      await pumpApp(tester, withLists(0), size: const Size(1536, 790));
+      expect(scrollRoom(tester), 0);
+      expect(rowsOf(tester, monday), 10);
+      // A tall window never gets more than ten.
+      await pumpApp(tester, withLists(3), size: const Size(1536, 1400));
+      expect(rowsOf(tester, monday), 10);
+    });
+
+    desktopTest('a day that holds more than fits grows, and then the page scrolls', (tester) async {
+      final store = withLists(3);
+      for (var i = 0; i < 9; i++) {
+        store.addTask(DaySlot(monday.addDays(1)), 'Task $i');
+      }
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      expect(rowsOf(tester, monday), 10, reason: 'nine tasks and the line to type on');
+      expect(scrollRoom(tester), greaterThan(0));
+    });
+
+    desktopTest('a short window keeps the rows its days need, at least four, and scrolls',
+        (tester) async {
+      await pumpApp(tester, withLists(3), size: const Size(1536, 520));
+      // Saturday and Sunday, one task each and a line to type on, with the
+      // second heading and the gap between them: six.
+      expect(rowsOf(tester, monday), 6);
+      expect(scrollRoom(tester), greaterThan(0));
+
+      final store = withLists(3);
+      for (final day in [monday.addDays(5), monday.addDays(6)]) {
+        store.deleteTask(store.tasksOn(day).single.id, wholeSeries: true);
+      }
+      await pumpApp(tester, store, size: const Size(1536, 520));
+      expect(rowsOf(tester, monday), 4);
     });
   });
 

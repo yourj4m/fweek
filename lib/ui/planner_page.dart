@@ -851,6 +851,70 @@ class _LocalRowsState extends State<_LocalRows> {
 
 // ------------------------------------------------------------ wide layout
 
+/// How the wide week is laid out in a window of a given height, so that
+/// the week and the lists show at once wherever that is possible: fewer
+/// ruled rows per day than the usual ten, and gaps no wider than there is
+/// room for. With room to spare it is the generous layout; without, the
+/// page scrolls, as it always did when a day holds many things.
+class _Fit {
+  const _Fit({
+    required this.rows,
+    required this.headerGap,
+    required this.somedayGap,
+    required this.listGap,
+    required this.bottom,
+  });
+
+  /// Ruled rows of a weekday, unless a day needs more.
+  final int rows;
+  final double headerGap, somedayGap, listGap, bottom;
+
+  /// Never fewer rows than this: a shorter window scrolls.
+  static const fewestRows = 4;
+
+  /// For a page [height] high inside its padding, with [listRows] rows of
+  /// Someday lists under the week and a band of several-day events [band]
+  /// high over it.
+  factory _Fit.of(double height, {required int listRows, required double band}) {
+    const tight = (header: 20.0, someday: 24.0, list: 20.0, bottom: 8.0);
+    const loose = (
+      header: Dim.headerGap,
+      someday: Dim.somedayGap,
+      list: Dim.somedayGap,
+      bottom: 20.0,
+    );
+    final fixed = Dim.headerHeight +
+        Dim.dayHeader +
+        band +
+        listRows * (Dim.listHeading + Dim.somedayRows * Dim.row) +
+        tight.header +
+        tight.someday +
+        (listRows - 1) * tight.list +
+        tight.bottom;
+    final rows =
+        ((height - fixed) / Dim.row).floor().clamp(fewestRows, Dim.weekdayRows);
+    // What is left over goes into the gaps, the one under the header first.
+    var spare = height - fixed - rows * Dim.row;
+    double widen(double from, double to, [int times = 1]) {
+      if (spare <= 0 || times == 0) return from;
+      final by = (spare / times).clamp(0.0, to - from);
+      spare -= by * times;
+      return from + by;
+    }
+
+    final headerGap = widen(tight.header, loose.header);
+    final somedayGap = widen(tight.someday, loose.someday);
+    final listGap = widen(tight.list, loose.list, listRows - 1);
+    return _Fit(
+      rows: rows,
+      headerGap: headerGap,
+      somedayGap: somedayGap,
+      listGap: listGap,
+      bottom: widen(tight.bottom, loose.bottom),
+    );
+  }
+}
+
 class _WideLayout extends StatelessWidget {
   const _WideLayout({required this.onOpen});
 
@@ -859,27 +923,51 @@ class _WideLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.app;
-    return _TrackpadTurn(
-      child: _ScrollArea(
-      padding: const EdgeInsets.all(Dim.pagePadding) +
-          MediaQuery.paddingOf(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const _Header(narrow: false),
-          const SizedBox(height: Dim.headerGap),
-          if (app.monthView)
-            MonthView(onOpen: onOpen)
-          else ...[
-            _WeekGrid(onOpen: onOpen),
-            const SizedBox(height: Dim.somedayGap),
-            _SomedayGrid(onOpen: onOpen, columns: 3, narrow: false),
-          ],
-          const SizedBox(height: 20),
-        ],
-      ),
-      ),
-    );
+    final padding =
+        const EdgeInsets.all(Dim.pagePadding) + MediaQuery.paddingOf(context);
+    return LayoutBuilder(builder: (context, constraints) {
+      const columns = 3;
+      // There is always a blank column after the lists (see _SomedayGrid).
+      final listRows = (context.store.lists.length + columns) ~/ columns;
+      final first = app.weekStart;
+      final band = app.monthView
+          ? 0
+          : SpanLanes.pack(
+              context.calendars.eventsBetween(first, first.addDays(6)).spans,
+              first,
+              first.addDays(5),
+            ).length;
+      final fit = _Fit.of(
+        constraints.maxHeight - padding.vertical,
+        listRows: listRows,
+        band: band == 0 ? 0 : 6 + band * SpanBar.lane,
+      );
+      return _TrackpadTurn(
+        child: _ScrollArea(
+          padding: padding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _Header(narrow: false),
+              SizedBox(height: app.monthView ? Dim.headerGap : fit.headerGap),
+              if (app.monthView)
+                MonthView(onOpen: onOpen)
+              else ...[
+                _WeekGrid(onOpen: onOpen, minRows: fit.rows),
+                SizedBox(height: fit.somedayGap),
+                _SomedayGrid(
+                  onOpen: onOpen,
+                  columns: columns,
+                  narrow: false,
+                  gap: fit.listGap,
+                ),
+              ],
+              SizedBox(height: app.monthView ? 20 : fit.bottom),
+            ],
+          ),
+        ),
+      );
+    });
   }
 }
 
@@ -955,9 +1043,13 @@ class _TrackpadTurnState extends State<_TrackpadTurn> {
 }
 
 class _WeekGrid extends StatelessWidget {
-  const _WeekGrid({required this.onOpen});
+  const _WeekGrid({required this.onOpen, this.minRows = Dim.weekdayRows});
 
   final ValueChanged<Task> onOpen;
+
+  /// Ruled rows of a weekday when no day needs more: as many as the window
+  /// has room for (see [_Fit]).
+  final int minRows;
 
   @override
   Widget build(BuildContext context) {
@@ -985,13 +1077,16 @@ class _WeekGrid extends StatelessWidget {
     /// fewer than [minimum].
     int lines(Day d, int minimum) => _rowsNeeded(drag, DaySlot(d), tasks(d), minimum);
 
-    var rows = Dim.weekdayRows;
+    var rows = minRows;
     for (final d in days.take(5)) {
-      final needed = lines(d, Dim.weekdayRows);
+      final needed = lines(d, minRows);
       if (needed > rows) rows = needed;
     }
-    final upperRows = lines(upper, Dim.weekendRows);
-    var lowerRows = lines(lower, Dim.weekendRows) + lowerSpans.length;
+    // The two days stacked in the last column share what a weekday has:
+    // with few rows, each gets fewer than its usual four.
+    final weekend = ((minRows - 2) ~/ 2).clamp(1, Dim.weekendRows);
+    final upperRows = lines(upper, weekend);
+    var lowerRows = lines(lower, weekend) + lowerSpans.length;
     // Both stacks share a height in rows: a weekday is its rows; the
     // weekend is both bodies, a one-row gap and the second heading.
     final stacked = upperRows + lowerRows + 2;
@@ -1073,11 +1168,15 @@ class _SomedayGrid extends StatelessWidget {
     required this.onOpen,
     required this.columns,
     required this.narrow,
+    this.gap = Dim.somedayGap,
   });
 
   final ValueChanged<Task> onOpen;
   final int columns;
   final bool narrow;
+
+  /// Space between two rows of lists in the wide layout.
+  final double gap;
 
   @override
   Widget build(BuildContext context) {
@@ -1127,7 +1226,7 @@ class _SomedayGrid extends StatelessWidget {
     final total = ((lists.length + 1 + columns - 1) ~/ columns) * columns;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: Dim.somedayGap,
+      spacing: gap,
       children: [
         for (var start = 0; start < total; start += columns)
           Builder(builder: (context) {
