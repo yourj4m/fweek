@@ -676,6 +676,9 @@ class _TouchPickUp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => GestureDetector(
+        // The whole row, not only where its text is: a press beside a short
+        // title picks the task up as well.
+        behavior: HitTestBehavior.opaque,
         supportedDevices: const {
           PointerDeviceKind.touch,
           PointerDeviceKind.stylus,

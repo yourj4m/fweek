@@ -497,6 +497,47 @@ void main() {
       expect(store.lists, hasLength(3));
     });
 
+    phoneTest('a long press anywhere on a row picks the task up; let go, it opens its menu',
+        (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: phone);
+      await tester.tap(find.bySemanticsLabel('Tasks'));
+      await tester.pumpAndSettle();
+      // Beside the short title, where the row is blank.
+      final row = tester.getRect(find.text('Call the bank'));
+      final finger = await tester.startGesture(Offset(row.right + 120, row.center.dy),
+          kind: PointerDeviceKind.touch);
+      await tester.pump(const Duration(milliseconds: 900));
+      await finger.up();
+      await tester.pumpAndSettle();
+      expect(find.text('Plan for'), findsOneWidget);
+      expect(find.bySemanticsLabel('Add subtask'), findsNothing);
+      await tester.tap(find.text('Plan for'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tomorrow'));
+      await tester.pumpAndSettle();
+      expect(named(store, 'Call the bank').date, today.addDays(1));
+
+      // Held on, and carried to the other tab of the bar, it is taken to
+      // the week, where it is dropped on a day.
+      final from = tester.getCenter(find.text('Renew the passport'));
+      final carry = await tester.startGesture(from, kind: PointerDeviceKind.touch);
+      await tester.pump(const Duration(milliseconds: 700));
+      await carry.moveBy(const Offset(10, 30));
+      await tester.pump();
+      await carry.moveTo(tester.getCenter(find.bySemanticsLabel('Week')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pumpAndSettle();
+      expect(find.text('November'), findsOneWidget);
+      await carry.moveTo(tester.getCenter(find.text('Water the plants')) + const Offset(0, 40));
+      await tester.pumpAndSettle();
+      await carry.up();
+      await tester.pumpAndSettle();
+      final passport = named(store, 'Renew the passport');
+      expect((passport.date, passport.listId), (today, store.lists.first.id));
+    });
+
     phoneTest('a task typed in a list gets a note and a colour from the bar, but no time',
         (tester) async {
       final store = listsStore();
