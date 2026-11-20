@@ -15,8 +15,10 @@ before being published.
 
 Test builds for Linux and Android, from the same code. What works:
 
-- **Week view**: five weekday columns plus a stacked weekend, ten ruled rows
-  that grow with your tasks; a single-column layout below 1024 px.
+- **Week view**: five weekday columns plus a stacked weekend, with as many
+  ruled rows as the window has room for (ten at most, more when a day holds
+  more), so that the week and the lists show at once in a maximized window;
+  a single-column layout below 1024 px.
 - **Tasks and events**: an item is a task, with a circle to tick it off, or
   an event, with none: an event is marked by a bar at its left and turns
   faint once it is over. New items are tasks unless Settings → "New items
@@ -49,7 +51,13 @@ Test builds for Linux and Android, from the same code. What works:
   filters; twelve **themes**: light ones, dark ones, and five semi-dark ones
   in deep, muted colours (Wine, Plum, Forest, Midnight, Cocoa).
 - **Today** is marked by a thin bar under its heading that fills over the
-  day, from midnight to midnight.
+  day, from midnight to midnight. The day's timed items are on it: a dot
+  where one starts, a pill from start to end for one with an end, in the
+  item's colour; where two overlap, their colours are checkered.
+- **Left unticked**: a task moved to today because it was not ticked the
+  day before shows a green check and a red cross. Green: it was done that
+  day; it goes back exactly where it stood, ticked. Red: it is still to do
+  and stays on today.
 - **Settings**: week start, 12/24-hour time, move unfinished tasks to today,
   sort or hide completed tasks.
 - **Sync** through Nextcloud (Settings → Sync): on start, every five minutes,
@@ -62,6 +70,8 @@ Test builds for Linux and Android, from the same code. What works:
   never changed. See
   [Calendars](#calendars).
 - **Export** to CSV, iCalendar and plain text; **backup and restore** as JSON.
+- **Trackpad**: two fingers swiped sideways turn to the next or previous
+  week (or month).
 - **Shortcuts**: ← → previous/next, T today, M month view, Ctrl+F search,
   Ctrl+, settings, Esc close. Tab and the arrow keys reach every button and
   row; on a row, Enter opens, Space completes, Delete deletes and the menu
@@ -275,8 +285,11 @@ another time or end, a place, subtasks or a reminder, drag it to another
 day, hide it. Its note is what the calendar says about it (the event's
 description); click it to edit it, and from then on the note is yours.
 Being an event it has nothing to tick; "Turn into a task" in its menu gives
-it the circle, and that too is a change of yours that syncs. An event over
-several days is a bar in a band under the day headings, across its days.
+it the circle, and that too is a change of yours that syncs. It stands above
+the day's tasks, in time order, until you drag it somewhere: then it keeps
+that place among them, between or under tasks, on its day or another. An
+event over several days is a bar in a band under the day headings, across
+its days.
 The menu (☰ → Calendars) shows or hides a whole calendar with one click,
 and brings hidden events back.
 
@@ -290,8 +303,8 @@ What happens to such changes:
   your changes.
 - **Your changes sync; the calendar does not.** What you arrange — each
   calendar's name, colour and whether it is shown, and your changes to
-  single events — is part of your planner and syncs through Nextcloud like
-  tasks do. The calendar's address and its events never enter the Nextcloud
+  single events, where they stand in their day included — is part of your
+  planner and syncs through Nextcloud like tasks do. The calendar's address and its events never enter the Nextcloud
   folder, a backup or an export, and neither does anything about an event
   you left as it is. In synced data a calendar is named by a fingerprint
   (SHA-256) of its address and an event by a fingerprint of its identifier,
@@ -366,7 +379,7 @@ file refuses to open it rather than damage it, so update all devices before
 relying on what is new.
 
 Before a file is brought up to date, a copy of it as it was is kept beside
-it (`planner.db.v2` for a file of the second version). To go back to the
+it (`planner.db.v3` for a file of the third version). To go back to the
 earlier build, close the app, put that copy in the place of `planner.db`
 (and delete `planner.db-wal` and `planner.db-shm`), and start the earlier
 build; what was changed since the update is then missing on that device

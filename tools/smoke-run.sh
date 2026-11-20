@@ -156,6 +156,29 @@ type_text t; type_text m
 shot 07-month
 type_text m
 
+# Trackpad: two fingers swiped to the left turn to the next week, to the
+# right back again. A task typed into the first column after the first
+# swipe must be on next week's Monday.
+at 700 450
+send "swipe -320"; sleep 1.2
+shot 07b-swiped
+click 130 207
+type_text "Typed after a swipe"; key Return; key Escape
+sleep 0.4
+next_monday="$(date -d "$(date +%F) -$(( $(date +%u) - 1 )) days +7 days" +%F)"
+swiped_to="$(python3 - "$data/planner.db" <<'PY'
+import sqlite3, sys
+row = sqlite3.connect(sys.argv[1]).execute(
+    "select date from tasks where title = 'Typed after a swipe'").fetchone()
+print(row[0] if row else "")
+PY
+)"
+[ "$swiped_to" = "$next_monday" ] \
+  && pass "a two-finger swipe on the trackpad turns to the next week" \
+  || fail "after a trackpad swipe a task landed on '${swiped_to:-nowhere}', not on $next_monday"
+at 700 450
+send "swipe 320"; sleep 1.2
+
 # Move the window to the 125 % output and back; it must fill both.
 swaymsg "[app_id=\"$app_id\"] move container to output HEADLESS-2" >/dev/null; sleep 2
 shot 08-on-125-percent HEADLESS-2
