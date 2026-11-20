@@ -69,6 +69,8 @@ const _schema = <String, Map<String, _Kind>>{
     'geo': _Kind.text,
     'kind': _Kind.text,
     'end_time': _Kind.integer,
+    'rolled_from': _Kind.text,
+    'rolled_pos': _Kind.text,
   },
   // What the user changed about an event of a subscribed calendar. The row
   // id is a fingerprint of the calendar and the event (see
@@ -90,6 +92,7 @@ const _schema = <String, Map<String, _Kind>>{
     'subtasks': _Kind.json,
     'kind': _Kind.text,
     'end_time': _Kind.integer,
+    'position': _Kind.text,
   },
   // Subscribed calendars as the user arranged them: the row id is a
   // fingerprint of the calendar's address, which itself is never stored here.
@@ -129,7 +132,7 @@ class PlannerDatabase {
   }
 
   /// Before a file written by an earlier version is brought up to date, a
-  /// copy of it as it was is put beside it (`planner.db.v2`): the earlier
+  /// copy of it as it was is put beside it (`planner.db.v3`): the earlier
   /// version cannot open the file afterwards, and with the copy it can.
   static void _keepCopy(Database db, String path) {
     try {
@@ -156,7 +159,7 @@ class PlannerDatabase {
   late final String deviceId;
   late final Hlc clock;
 
-  static const _schemaVersion = 3;
+  static const _schemaVersion = 4;
 
   /// Tables and columns each schema version added, for [_replay]. A null
   /// column set means the whole table is new.
@@ -169,6 +172,10 @@ class PlannerDatabase {
     3: {
       'tasks': {'kind', 'end_time'},
       'events': {'kind', 'end_time'},
+    },
+    4: {
+      'tasks': {'rolled_from', 'rolled_pos'},
+      'events': {'position'},
     },
   };
 
@@ -279,6 +286,16 @@ class PlannerDatabase {
         alter table events add column kind text;
         alter table events add column end_time integer;
         pragma user_version = 3;
+      ''');
+    }
+    if (version < 4) {
+      // Where a task moved to today came from; where an event was put
+      // among the items of its day.
+      _db.execute('''
+        alter table tasks add column rolled_from text;
+        alter table tasks add column rolled_pos text;
+        alter table events add column position text;
+        pragma user_version = 4;
       ''');
     }
     return version;

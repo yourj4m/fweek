@@ -894,6 +894,113 @@ void main() {
     });
   });
 
+  group('a task moved to today unfinished', () {
+    final yesterday = referenceToday.addDays(-1);
+
+    /// Yesterday: three tasks, the middle one left unticked; then the daily
+    /// move of the next morning.
+    PlannerStore moved() {
+      final store = seededStore();
+      final first = store.addTask(DaySlot(yesterday), 'Morning swim')!;
+      store.addTask(DaySlot(yesterday), 'Evening run');
+      final last = store.addTask(DaySlot(yesterday), 'Read a chapter')!;
+      store.setDone(first, true);
+      store.setDone(last, true);
+      store.setSetting(Settings.rollover, true);
+      expect(store.rollOver(), greaterThan(0));
+      return store;
+    }
+
+    Finder rowOf(String label) =>
+        find.ancestor(of: find.text(label), matching: find.byType(TaskRow));
+    Finder yes() => find.bySemanticsLabel(RegExp('^Done on 12 Nov: put it back there'));
+    Finder no() => find.bySemanticsLabel('Still to do: keep it on today');
+
+    desktopTest('shows a green check and a red cross in place of the circle, without hovering',
+        (tester) async {
+      final store = moved();
+      await pumpApp(tester, store);
+      expect(named(store, 'Evening run').date, referenceToday);
+      final row = rowOf('Evening run');
+      expect(find.descendant(of: row, matching: find.byType(MovedAnswer)), findsOneWidget);
+      expect(find.descendant(of: row, matching: find.byType(CheckToggle)), findsNothing);
+      expect(find.descendant(of: row, matching: yes()), findsOneWidget);
+      expect(find.descendant(of: row, matching: no()), findsOneWidget);
+      // A task that was on today anyway has its circle.
+      expect(find.descendant(of: rowOf('Water the plants'), matching: find.byType(MovedAnswer)),
+          findsNothing);
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/week_moved_task.png'));
+    });
+
+    desktopTest('green: it was done that day; back where it stood, ticked, and Undo brings it back',
+        (tester) async {
+      final store = moved();
+      await pumpApp(tester, store);
+      await tester.tap(find.descendant(of: rowOf('Evening run'), matching: yes()));
+      await tester.pumpAndSettle();
+      final task = named(store, 'Evening run');
+      expect((task.date, task.done), (yesterday, true));
+      expect([for (final t in store.tasksOn(yesterday)) t.title],
+          ['Morning swim', 'Evening run', 'Read a chapter']);
+      expect(find.text('Ticked on 12 Nov'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect((named(store, 'Evening run').date, named(store, 'Evening run').done),
+          (referenceToday, false));
+      expect(find.descendant(of: rowOf('Evening run'), matching: find.byType(MovedAnswer)),
+          findsOneWidget);
+    });
+
+    desktopTest('red: still to do; it stays on today with the usual circle', (tester) async {
+      final store = moved();
+      await pumpApp(tester, store);
+      await tester.tap(find.descendant(of: rowOf('Evening run'), matching: no()));
+      await tester.pumpAndSettle();
+      final task = named(store, 'Evening run');
+      expect((task.date, task.done, task.waitsForWord), (referenceToday, false, false));
+      final row = rowOf('Evening run');
+      expect(find.descendant(of: row, matching: find.byType(MovedAnswer)), findsNothing);
+      expect(find.descendant(of: row, matching: find.byType(CheckToggle)), findsOneWidget);
+    });
+
+    desktopTest('the menu and the card ask the same', (tester) async {
+      final store = moved();
+      await pumpApp(tester, store);
+      await rightClick(tester, find.text('Evening run'));
+      expect(find.text('Done on 12 Nov'), findsOneWidget);
+      expect(find.text('Still to do'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Evening run'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Not ticked on Thu, 12 Nov 2026'), findsOneWidget);
+      // The card's own pair, beside the title.
+      final inCard = find.descendant(
+          of: find.ancestor(
+              of: find.textContaining('Not ticked on'), matching: find.byType(Column)).first,
+          matching: yes());
+      expect(inCard, findsOneWidget);
+      await tester.tap(inCard);
+      await tester.pumpAndSettle();
+      expect((named(store, 'Evening run').date, named(store, 'Evening run').done), (yesterday, true));
+      // The card stays on the task, which is a ticked task now.
+      expect(find.bySemanticsLabel('Mark as not done'), findsOneWidget);
+    });
+
+    phoneTest('on a phone both buttons are there to tap', (tester) async {
+      final store = moved();
+      await pumpApp(tester, store, size: const Size(411, 914));
+      final row = rowOf('Evening run');
+      expect(find.descendant(of: row, matching: yes()), findsOneWidget);
+      await tester.tap(find.descendant(of: row, matching: no()));
+      await tester.pumpAndSettle();
+      expect(named(store, 'Evening run').waitsForWord, isFalse);
+      expect(named(store, 'Evening run').date, referenceToday);
+    });
+  });
+
   group('search', () {
     desktopTest('finds events too and opens them', (tester) async {
       final store = seededStore();

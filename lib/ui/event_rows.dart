@@ -9,56 +9,8 @@ import '../data/planner_store.dart';
 import '../platform.dart';
 import '../theme/app_theme.dart';
 import 'context_menu.dart';
-import 'drag.dart';
 import 'task_list.dart';
 import 'widgets/controls.dart';
-
-/// A day's imported events that fall within the day, as ruled rows above
-/// its tasks. They are rows like any other ([TaskRow]); the bar in their
-/// calendar's colour tells them apart.
-class EventRows extends StatelessWidget {
-  const EventRows({
-    super.key,
-    required this.events,
-    required this.compact,
-    required this.onOpen,
-  });
-
-  final List<Task> events;
-
-  /// Narrow layout: the larger text, as for tasks.
-  final bool compact;
-  final ValueChanged<Task> onOpen;
-
-  /// How many of [events] show while [drag] carries one of them away.
-  static int shownCount(List<Task> events, DragController drag) {
-    final dragged = drag.task?.id;
-    if (dragged == null) return events.length;
-    return events.where((e) => e.id != dragged).length;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final rule = context.theme.rule;
-    final dragged = DragScope.layoutOf(context).task?.id;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final event in events)
-          if (event.id != dragged)
-            DecoratedBox(
-              key: ValueKey(event.id),
-              position: DecorationPosition.foreground,
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: rule)),
-              ),
-              child: TaskRow(task: event, compact: compact, onOpen: onOpen),
-            ),
-      ],
-    );
-  }
-}
 
 /// An imported event that runs over several days, drawn as a bar: tinted in
 /// its calendar's colour (or filled in the colour the user gave it), with

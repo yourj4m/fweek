@@ -804,22 +804,21 @@ class _DayColumn extends StatelessWidget {
     required this.rows,
     required this.narrow,
     required this.onOpen,
-    this.events = const [],
     this.spans = const [],
     this.spanRow,
     this.heading = true,
   });
 
   final Day day;
+
+  /// The day's items in the order shown: its tasks and what calendars bring
+  /// within the day, as one list (see [PlannerStore.arrangeDay]).
   final List<Task> tasks;
 
-  /// Ruled lines for tasks; the day's [events] take their own lines above.
+  /// Ruled lines for them.
   final int rows;
   final bool narrow;
   final ValueChanged<Task> onOpen;
-
-  /// Events from subscribed calendars within this day.
-  final List<Task> events;
 
   /// Events over several days that cover this day, when they are shown per
   /// day rather than in a band across the week.
@@ -839,8 +838,6 @@ class _DayColumn extends StatelessWidget {
           if (heading) _DayHeader(day: day, narrow: narrow),
           if (spans.isNotEmpty)
             DaySpans(day: day, spans: spans, onOpen: onOpen, rowHeight: spanRow),
-          if (events.isNotEmpty)
-            EventRows(events: events, compact: narrow, onOpen: onOpen),
           TaskListBody(
             slot: DaySlot(day),
             tasks: tasks,
@@ -972,11 +969,12 @@ class _WeekGrid extends StatelessWidget {
     final first = context.app.weekStart;
     final days = [for (var i = 0; i < 7; i++) first.addDays(i)];
     final byDay = store.tasksBetween(days.first, days.last);
-    List<Task> tasks(Day d) => byDay[d] ?? const [];
-
     final range = context.calendars.eventsBetween(days.first, days.last);
-    List<Task> eventsOn(Day d) => range.on(d);
-    int eventLines(Day d) => EventRows.shownCount(eventsOn(d), drag);
+    // Each day's tasks and events as one list, in one order.
+    final items = {
+      for (final d in days) d: store.arrangeDay(byDay[d] ?? const [], range.on(d)),
+    };
+    List<Task> tasks(Day d) => items[d]!;
 
     // Five single columns, then the last two days stacked in the sixth.
     // Events over several days lie in a band across the six columns, right
@@ -986,12 +984,9 @@ class _WeekGrid extends StatelessWidget {
     final band = SpanLanes.pack(range.spans, days.first, upper);
     final lowerSpans = range.spansOn(lower).toList();
 
-    /// Lines a day takes in all: its events, its tasks and the line to type
-    /// on, but no fewer than [minimum].
-    int lines(Day d, int minimum) {
-      final needed = eventLines(d) + _rowsNeeded(drag, DaySlot(d), tasks(d), 1);
-      return needed > minimum ? needed : minimum;
-    }
+    /// Lines a day takes in all: its items and the line to type on, but no
+    /// fewer than [minimum].
+    int lines(Day d, int minimum) => _rowsNeeded(drag, DaySlot(d), tasks(d), minimum);
 
     var rows = Dim.weekdayRows;
     for (final d in days.take(5)) {
@@ -1037,8 +1032,7 @@ class _WeekGrid extends StatelessWidget {
                   day: d,
                   heading: false,
                   tasks: tasks(d),
-                  events: eventsOn(d),
-                  rows: rows - eventLines(d),
+                  rows: rows,
                   narrow: false,
                   onOpen: onOpen,
                 ),
@@ -1051,8 +1045,7 @@ class _WeekGrid extends StatelessWidget {
                     day: upper,
                     heading: false,
                     tasks: tasks(upper),
-                    events: eventsOn(upper),
-                    rows: upperRows - eventLines(upper),
+                    rows: upperRows,
                     narrow: false,
                     onOpen: onOpen,
                   ),
@@ -1060,10 +1053,9 @@ class _WeekGrid extends StatelessWidget {
                   _DayColumn(
                     day: lower,
                     tasks: tasks(lower),
-                    events: eventsOn(lower),
                     spans: lowerSpans,
                     spanRow: Dim.row,
-                    rows: lowerRows - lowerSpans.length - eventLines(lower),
+                    rows: lowerRows - lowerSpans.length,
                     narrow: false,
                     onOpen: onOpen,
                   ),
@@ -1795,6 +1787,10 @@ class _WeekPageState extends State<_WeekPage> {
     final days = [for (var i = 0; i < 7; i++) widget.first.addDays(i)];
     final byDay = store.tasksBetween(days.first, days.last);
     final range = context.calendars.eventsBetween(days.first, days.last);
+    // Each day's tasks and events as one list, in one order.
+    final items = {
+      for (final d in days) d: store.arrangeDay(byDay[d] ?? const [], range.on(d)),
+    };
 
     return _ScrollArea(
       controller: _scroll,
@@ -1807,12 +1803,11 @@ class _WeekPageState extends State<_WeekPage> {
             _LocalRows(
               key: _dayKeys.putIfAbsent(d, GlobalKey.new),
               slot: DaySlot(d),
-              tasks: byDay[d] ?? const [],
+              tasks: items[d]!,
               minimum: d == store.today ? 2 : 1,
               builder: (context, rows) => _DayColumn(
                 day: d,
-                tasks: byDay[d] ?? const [],
-                events: range.on(d),
+                tasks: items[d]!,
                 spans: range.spans.isEmpty ? const [] : range.spansOn(d).toList(),
                 rows: rows,
                 narrow: true,

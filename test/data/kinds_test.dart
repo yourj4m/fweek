@@ -174,7 +174,7 @@ void main() {
     test('a backup carries them and reads back', () {
       final store = populated();
       final backup = Export.backup(store);
-      expect(jsonDecode(backup)['version'], 3);
+      expect(jsonDecode(backup)['version'], 4);
       final copy = planner();
       Export.restore(copy, backup);
       final seminar = copy.tasksOn(friday).firstWhere((t) => t.title == 'Seminar');

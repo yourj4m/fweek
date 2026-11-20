@@ -174,6 +174,20 @@ class _TaskMenuState extends State<_TaskMenu> {
               open != null ? open(task) : showTaskDialog(_root, task.id);
             }),
           ),
+          // Moved to today unfinished: done on its day after all, or
+          // still to do?
+          if (task.rolledFrom case final from? when task.waitsForWord) ...[
+            MenuRow(
+              icon: AppIcons.circleCheck,
+              label: 'Done on ${Strings.dayMonth(from)}',
+              onTap: () => _run(() => doneWhereItWas(_root, task)),
+            ),
+            MenuRow(
+              icon: AppIcons.circleX,
+              label: 'Still to do',
+              onTap: () => _run(() => _root.readStore.stillToDo(task.id)),
+            ),
+          ],
           if (task.checkable)
             MenuRow(
               icon: AppIcons.circleCheck,

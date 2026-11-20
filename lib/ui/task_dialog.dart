@@ -903,8 +903,12 @@ class _TaskDialogState extends State<_TaskDialog> {
             onSubmitted: (_) => _noteFocus.requestFocus(),
           ),
         ),
-        // A task has the circle to tick it off; an event has none.
-        if (task.checkable) ...[
+        // A task has the circle to tick it off; an event has none. A task
+        // moved to today unfinished is first asked whether it was done.
+        if (task.waitsForWord) ...[
+          const SizedBox(width: 8),
+          SizedBox(height: 34, child: MovedAnswer(task: task, size: 24)),
+        ] else if (task.checkable) ...[
           const SizedBox(width: 8),
           SizedBox(
             height: 34,
@@ -1091,6 +1095,12 @@ class _TaskDialogState extends State<_TaskDialog> {
     );
 
     final details = <Widget>[
+      if (task.rolledFrom case final from? when task.waitsForWord)
+        _Detail(
+          icon: AppIcons.history,
+          text: 'Not ticked on ${Strings.fullDate(from)}, so moved to today. '
+              'Green if it was done that day, red if it is still to do.',
+        ),
       if (task.repeats && date != null)
         _Detail(
           icon: AppIcons.rotateCw,

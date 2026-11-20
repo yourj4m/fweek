@@ -237,6 +237,7 @@ class CalendarService extends ChangeNotifier {
         _parse = parse ?? _parseOffThread {
     _client.userAgent = 'WeekToDo';
     store.eventResolver = eventTask;
+    store.dayEventsResolver = _eventsOn;
     _seenOverlay = store.overlayRevision;
     store.addListener(_onStore);
   }
@@ -831,6 +832,8 @@ class CalendarService extends ChangeNotifier {
     return Task(
       id: '${Task.eventPrefix}$key',
       date: occurrence.firstDay.addDays(shift),
+      // Where the user put it among the day's items, if anywhere.
+      position: override?.position ?? '',
       title: override?.title ?? occurrence.title.trim(),
       // The calendar's description is the note, until the user edits it.
       note: override?.note ?? description,
@@ -980,6 +983,8 @@ class CalendarService extends ChangeNotifier {
     return _ranges[(first, last, showHidden)] = RangeEvents(byDay, spans, hidden);
   }
 
+  List<Task> _eventsOn(Day day) => eventsBetween(day, day).on(day);
+
   /// Events without a time first, then by start time, then by title.
   static int _compare(Task a, Task b) {
     final timedA = a.time == null ? 0 : 1, timedB = b.time == null ? 0 : 1;
@@ -1025,6 +1030,7 @@ class CalendarService extends ChangeNotifier {
     _status.dispose();
     store.removeListener(_onStore);
     if (store.eventResolver == eventTask) store.eventResolver = null;
+    if (store.dayEventsResolver == _eventsOn) store.dayEventsResolver = null;
     if (_ownsClient) _client.close(force: true);
     super.dispose();
   }

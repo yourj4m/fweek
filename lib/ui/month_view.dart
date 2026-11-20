@@ -135,15 +135,14 @@ class _MonthCell extends StatelessWidget {
     final use24h = context.store.setting<bool>(Settings.use24h);
     // Days outside the month are drawn faint, by their colours.
     final faint = inMonth ? 1.0 : 0.35;
-    // Events come first, as in the week; together with the tasks they share
-    // the cell's few lines.
-    final total = spans.length + events.length + tasks.length;
+    // The day's events and tasks in the order the week shows them; with
+    // the bars of events over several days they share the cell's few lines.
+    final items = context.store.arrangeDay(tasks, events);
+    final total = spans.length + items.length;
     final room = total > maxChips ? maxChips - 1 : maxChips;
     final shownSpans = spans.take(room).toList();
-    final shownEvents = events.take(room - shownSpans.length).toList();
-    final shown =
-        tasks.take(room - shownSpans.length - shownEvents.length).toList();
-    final hidden = total - shownSpans.length - shownEvents.length - shown.length;
+    final shown = items.take(room - shownSpans.length).toList();
+    final hidden = total - shownSpans.length - shown.length;
     void openWeek() {
       final app = context.readApp;
       app.show(day);
@@ -218,43 +217,44 @@ class _MonthCell extends StatelessWidget {
                   ),
                 ),
               ),
-            for (final event in shownEvents)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2, right: 8),
-                child: _EventChip(
-                  event: event,
-                  label: taskLabel(event, use24h: use24h),
-                  faint: faint,
-                  onOpen: onOpen,
-                ),
-              ),
             for (final task in shown)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2, right: 8),
-                child: Builder(
-                  builder: (anchor) => GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => onOpen(task),
-                    onSecondaryTapUp: (details) => showTaskMenu(anchor, task,
-                        anchor: details.globalPosition & Size.zero, onOpen: onOpen),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Opacity(
-                          opacity: faint,
-                          child: TaskPill(
-                            task: task,
-                            height: 18,
-                            style: context.text.tiny12,
-                            over: task.overAt(context.readStore.clock),
+              if (task.fromCalendar)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2, right: 8),
+                  child: _EventChip(
+                    event: task,
+                    label: taskLabel(task, use24h: use24h),
+                    faint: faint,
+                    onOpen: onOpen,
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2, right: 8),
+                  child: Builder(
+                    builder: (anchor) => GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onOpen(task),
+                      onSecondaryTapUp: (details) => showTaskMenu(anchor, task,
+                          anchor: details.globalPosition & Size.zero, onOpen: onOpen),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Opacity(
+                            opacity: faint,
+                            child: TaskPill(
+                              task: task,
+                              height: 18,
+                              style: context.text.tiny12,
+                              over: task.overAt(context.readStore.clock),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
             if (hidden > 0)
               Padding(
                 padding: const EdgeInsets.only(left: 6, top: 1),

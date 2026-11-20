@@ -156,9 +156,15 @@ class EventOverride {
     this.subtasks = const [],
     this.kind,
     this.end,
+    this.position,
   });
 
   final String id;
+
+  /// Where the event stands among the items of its day, once the user has
+  /// placed it; an ordering key like a task's. Null for an event that was
+  /// never placed: such events stand above everything else, in time order.
+  final String? position;
 
   /// Whether the event is shown as a task after all. Null follows the rule
   /// for calendars, see [shownAs].
@@ -274,6 +280,8 @@ class Task {
     this.event,
     this.kind = ItemKind.task,
     this.end,
+    this.rolledFrom,
+    this.rolledPosition,
   });
 
   /// Ids of imported events start with this.
@@ -305,6 +313,16 @@ class Task {
   /// When it ends, in minutes after midnight of its day; only with a [time],
   /// and later than it. Shown in the card, not in the week.
   final int? end;
+
+  /// For a task that the daily move of unfinished tasks brought to today:
+  /// the day it comes from and where it stood there. Kept until the user
+  /// says whether it had been done after all ([waitsForWord]).
+  final Day? rolledFrom;
+  final String? rolledPosition;
+
+  /// Moved to today unfinished, and not yet told apart: done that day and
+  /// only left unticked, or really still to do.
+  bool get waitsForWord => rolledFrom != null && checkable && !done;
 
   /// How long an event without an end is taken to last, to tell when it is
   /// over.
@@ -408,6 +426,8 @@ class Task {
     EventSource? Function()? event,
     ItemKind? kind,
     int? Function()? end,
+    Day? Function()? rolledFrom,
+    String? Function()? rolledPosition,
   }) =>
       Task(
         id: id ?? this.id,
@@ -434,6 +454,9 @@ class Task {
         event: event != null ? event() : this.event,
         kind: kind ?? this.kind,
         end: end != null ? end() : this.end,
+        rolledFrom: rolledFrom != null ? rolledFrom() : this.rolledFrom,
+        rolledPosition:
+            rolledPosition != null ? rolledPosition() : this.rolledPosition,
       );
 }
 

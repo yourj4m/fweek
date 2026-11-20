@@ -9,7 +9,7 @@ import 'recurrence.dart';
 /// Export and backup formats.
 abstract final class Export {
   static const backupFormat = 'weektodo-backup';
-  static const backupVersion = 3;
+  static const backupVersion = 4;
 
   static List<Task> _ordered(PlannerStore store) => store.allTasks.toList()
     ..sort((a, b) {
@@ -69,6 +69,8 @@ abstract final class Export {
             if (t.reminder != null) 'reminder': _localStamp(t.reminder!),
             if (t.location.isNotEmpty) 'location': t.location,
             if (t.geo != null) 'geo': t.geo,
+            if (t.rolledFrom != null) 'rolled_from': t.rolledFrom!.iso,
+            if (t.rolledPosition != null) 'rolled_pos': t.rolledPosition,
             'created_at': t.createdAt,
           },
       ],
@@ -102,6 +104,7 @@ abstract final class Export {
             if (e.time != null) 'time': e.time,
             if (e.end != null) 'end_time': e.end,
             if (e.kind != null) 'kind': e.kind!.name,
+            if (e.position != null) 'position': e.position,
             if (e.done) 'done': true,
             if (e.doneAt != null) 'done_at': e.doneAt,
             if (e.reminder != null) 'reminder': _localStamp(e.reminder!),
@@ -171,6 +174,8 @@ abstract final class Export {
           'reminder': t['reminder'],
           'location': t['location'],
           'geo': t['geo'],
+          'rolled_from': t['rolled_from'],
+          'rolled_pos': t['rolled_pos'],
           'created_at': t['created_at'] ?? 0,
           'deleted': false,
         }));
@@ -207,6 +212,7 @@ abstract final class Export {
           'time': e['time'],
           'end_time': e['end_time'],
           'kind': e['kind'],
+          'position': e['position'],
           'done': e['done'] == true,
           'done_at': e['done_at'],
           'reminder': e['reminder'],

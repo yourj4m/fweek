@@ -109,6 +109,10 @@ class PlannerStore extends ChangeNotifier {
   /// calendars' events; the store holds only what was changed about them.
   Task? Function(String id)? eventResolver;
 
+  /// Hands out what the calendars bring within one day (set by the calendar
+  /// service), so that the planner's own tasks can be placed among it.
+  List<Task> Function(Day day)? dayEventsResolver;
+
   Day get today => _today();
 
   /// The time now, by the clock the store was given.
@@ -282,6 +286,8 @@ class PlannerStore extends ChangeNotifier {
       deleted: row['deleted'] == 1,
       location: row['location'] as String? ?? '',
       geo: row['geo'] as String?,
+      rolledFrom: Day.tryParse(row['rolled_from'] as String?),
+      rolledPosition: row['rolled_pos'] as String?,
     );
   }
 
@@ -310,6 +316,10 @@ class PlannerStore extends ChangeNotifier {
       ],
       kind: ItemKind.tryParse(row['kind']),
       end: row['end_time'] as int?,
+      position: switch (row['position']) {
+        final String key when key.isNotEmpty => key,
+        _ => null,
+      },
     );
   }
 
@@ -532,8 +542,36 @@ class PlannerStore extends ChangeNotifier {
   List<Task> tasksIn(String listId) =>
       _arrange(_tasks.values.where((t) => t.listId == listId).toList());
 
-  List<Task> _tasksAt(Slot slot) => switch (slot) {
-        DaySlot(:final day) => tasksOn(day),
+  /// The items of one day as they are shown: [tasks] (as [tasksOn] gives
+  /// them) and the [events] calendars bring within that day, as one list.
+  ///
+  /// An event the user has placed stands where its key puts it, among the
+  /// tasks. One never placed has no key: those come first, in the order
+  /// given (by time). Completed tasks go last when that is the setting.
+  List<Task> arrangeDay(List<Task> tasks, List<Task> events) {
+    if (events.isEmpty) return tasks;
+    final loose = <Task>[], keyed = <Task>[...tasks];
+    for (final event in events) {
+      (event.position.isEmpty ? loose : keyed).add(event);
+    }
+    if (keyed.length > tasks.length) {
+      keyed.sort(_compare);
+      if (setting<bool>(Settings.sortDoneDown)) {
+        final open = keyed.where((t) => !t.done).toList();
+        keyed
+          ..retainWhere((t) => t.done)
+          ..insertAll(0, open);
+      }
+    }
+    return [...loose, ...keyed];
+  }
+
+  /// Everything shown on [day], in order: see [arrangeDay].
+  List<Task> itemsOn(Day day) =>
+      arrangeDay(tasksOn(day), dayEventsResolver?.call(day) ?? const []);
+
+  List<Task> _itemsAt(Slot slot) => switch (slot) {
+        DaySlot(:final day) => itemsOn(day),
         ListSlot(:final listId) => tasksIn(listId),
       };
 
@@ -574,10 +612,25 @@ class PlannerStore extends ChangeNotifier {
   /// An ordering key that places a task at [index] among the tasks at [slot],
   /// ignoring the task [except] (the one being moved).
   String _keyAt(Slot slot, int? index, {String? except}) {
-    final shown = _tasksAt(slot).where((t) => t.id != except).toList();
+    List<Task> others() => _itemsAt(slot).where((t) => t.id != except).toList();
+    var shown = others();
     final i = index == null ? shown.length : index.clamp(0, shown.length);
-    final before = i > 0 ? shown[i - 1].position : null;
-    var after = i < shown.length ? shown[i].position : null;
+    // What a calendar brought and was never placed has no key and stands
+    // above all that has one. To put something among such events, or above
+    // them, they are given keys first, in the order they stand in.
+    final loose = shown.takeWhile((t) => t.position.isEmpty).toList();
+    if (i < loose.length) {
+      final first = loose.length < shown.length ? shown[loose.length].position : null;
+      final keys = orderKeysBetween(null, first, loose.length);
+      for (var k = 0; k < loose.length; k++) {
+        final source = loose[k].event;
+        if (source != null) _writeEvent(source, {'position': keys[k]});
+      }
+      shown = others();
+    }
+    String? key(Task t) => t.position.isEmpty ? null : t.position;
+    final before = i > 0 ? key(shown[i - 1]) : null;
+    var after = i < shown.length ? key(shown[i]) : null;
     if (before != null && after != null && before.compareTo(after) >= 0) {
       // The list is not shown in stored order (done tasks sorted down), or
       // two devices issued the same key: go directly after the upper
@@ -826,6 +879,7 @@ class PlannerStore extends ChangeNotifier {
       'subtasks': null,
       'kind': null,
       'end_time': null,
+      'position': null,
     });
   }
 
@@ -905,8 +959,55 @@ class PlannerStore extends ChangeNotifier {
       return id;
     }
     final target = detach(id);
-    _write('tasks', target, {'done': done, 'done_at': done ? _now() : null});
+    _write('tasks', target, {
+      'done': done,
+      'done_at': done ? _now() : null,
+      // Ticked where the daily move put it: no question left to answer.
+      if (done && _tasks[target]?.rolledFrom != null) ...{
+        'rolled_from': null,
+        'rolled_pos': null,
+      },
+    });
     return target;
+  }
+
+  /// For a task the daily move of unfinished tasks brought to today: it had
+  /// been done on the day it comes from, only not ticked. Puts it back
+  /// exactly where it stood, ticked.
+  void doneWhereItWas(String id) {
+    final task = _tasks[id];
+    final from = task?.rolledFrom;
+    if (task == null || from == null) return;
+    _write('tasks', id, {
+      'date': from.iso,
+      'list_id': null,
+      'position': task.rolledPosition ?? task.position,
+      'done': true,
+      'done_at': _now(),
+      'rolled_from': null,
+      'rolled_pos': null,
+    });
+  }
+
+  /// For such a task: it is still to be done. It stays where the move put
+  /// it, a task like any other from now on.
+  void stillToDo(String id) {
+    if (_tasks[id]?.rolledFrom == null) return;
+    _write('tasks', id, {'rolled_from': null, 'rolled_pos': null});
+  }
+
+  /// Takes [doneWhereItWas] back: the task is as [before] again.
+  void restoreMoved(Task before) {
+    if (!_tasks.containsKey(before.id)) return;
+    _write('tasks', before.id, {
+      'date': before.date?.iso,
+      'list_id': before.listId,
+      'position': before.position,
+      'done': before.done,
+      'done_at': before.doneAt,
+      'rolled_from': before.rolledFrom?.iso,
+      'rolled_pos': before.rolledPosition,
+    });
   }
 
   /// Sets or clears how a task repeats. Returns the id under which the task
@@ -952,7 +1053,12 @@ class PlannerStore extends ChangeNotifier {
       if (source == null) return id;
       switch (slot) {
         case DaySlot(:final day):
-          _writeEvent(source, {'date': day == source.originalDay ? null : day.iso});
+          _writeEvent(source, {
+            'date': day == source.originalDay ? null : day.iso,
+            // Dropped at a place among the day's items: it stands there.
+            // Sent to a day without one: among that day's events, by time.
+            'position': index == null ? null : _keyAt(slot, index, except: id),
+          });
           return id;
         case ListSlot():
           final copy = copyTask(id, slot);
@@ -965,6 +1071,11 @@ class PlannerStore extends ChangeNotifier {
       ..._slotColumns(slot),
       'position': _keyAt(slot, index, except: target),
       if (slot is ListSlot) 'recurrence': null,
+      // Moved by hand after the daily move: the user has dealt with it.
+      if (_tasks[target]?.rolledFrom != null) ...{
+        'rolled_from': null,
+        'rolled_pos': null,
+      },
     });
     return target;
   }
@@ -1037,7 +1148,8 @@ class PlannerStore extends ChangeNotifier {
   /// Moves unfinished tasks from past days to the top of today, once per day,
   /// when the setting is on. Repeating tasks are left where they are: their
   /// next occurrence comes round on its own. Events stay on their day: they
-  /// took place. Returns how many tasks moved.
+  /// took place. Each task remembers where it came from ([Task.rolledFrom]),
+  /// see [doneWhereItWas]. Returns how many tasks moved.
   int rollOver() {
     final now = today;
     if (!setting<bool>(Settings.rollover)) return 0;
@@ -1054,10 +1166,14 @@ class PlannerStore extends ChangeNotifier {
         final byDate = a.date!.compareTo(b.date!);
         return byDate != 0 ? byDate : _compare(a, b);
       });
-    final existing = [...tasksOn(now)]..sort(_compare);
+    // Above everything that has a place on today, placed events included.
+    final placed = [
+      for (final item in itemsOn(now))
+        if (item.position.isNotEmpty) item.position,
+    ]..sort();
     final keys = orderKeysBetween(
       null,
-      existing.isEmpty ? null : existing.first.position,
+      placed.isEmpty ? null : placed.first,
       overdue.length,
     );
     final changes = <Change>[
@@ -1065,6 +1181,13 @@ class PlannerStore extends ChangeNotifier {
         ...db.stamp('tasks', overdue[i].id, {
           'date': now.iso,
           'position': keys[i],
+          // Where it comes from, so that it can go back there: it may have
+          // been done and only left unticked. A task moved along day after
+          // day keeps the place it first stood in.
+          if (overdue[i].rolledFrom == null) ...{
+            'rolled_from': overdue[i].date!.iso,
+            'rolled_pos': overdue[i].position,
+          },
         }),
       ...db.stamp('settings', Settings.lastRollover, {'value': now.iso}),
     ];

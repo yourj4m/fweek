@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart' show MaterialApp, TextField;
+import 'package:weektodo/data/day.dart';
 import 'package:weektodo/data/models.dart';
 import 'package:weektodo/data/planner_store.dart';
 import 'package:weektodo/ui/event_rows.dart';
@@ -38,6 +39,49 @@ void main() {
         of: find.textContaining('Buy oat milk'), matching: find.byType(TaskRow));
     expect(find.descendant(of: task, matching: find.byType(CheckToggle)), findsOneWidget);
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/week_1440_events.png'));
+  });
+
+  desktopTest('an event is dragged between tasks, under them, and to a place on another day',
+      (tester) async {
+    final store = seededStore();
+    await pumpApp(tester, store, calendars: await calendarWith(tester, store));
+    List<String> shown(Day day) => [for (final t in store.itemsOn(day)) t.title.split(' and ').first];
+    expect(shown(monday), ['Team meeting', 'Buy oat milk', 'Second task', 'Call dentist']);
+
+    // Picks [what] up and lets it go on the line with number [index] of
+    // [day]: the gap that opens for it follows the pointer line by line.
+    Future<void> drag(String what, Day day, int index) async {
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.text(what)), kind: PointerDeviceKind.mouse);
+      await gesture.moveBy(const Offset(8, 10));
+      await tester.pumpAndSettle();
+      final list = tester.getRect(
+          find.byWidgetPredicate((w) => w is TaskListBody && w.slot == DaySlot(day)));
+      await gesture.moveTo(list.topLeft + Offset(60, (index + 0.5) * 42));
+      await tester.pumpAndSettle();
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    // Between "Second task" and "Call dentist".
+    await drag('10:00 Team meeting', monday, 2);
+    expect(shown(monday), ['Buy oat milk', 'Second task', 'Team meeting', 'Call dentist']);
+    await expectLater(
+        find.byType(MaterialApp), matchesGoldenFile('goldens/week_1440_event_placed.png'));
+
+    // Below the last task.
+    await drag('10:00 Team meeting', monday, 3);
+    expect(shown(monday), ['Buy oat milk', 'Second task', 'Call dentist', 'Team meeting']);
+
+    // A task goes above an event nobody placed (Friday's committee).
+    await drag('Water the plants', referenceToday, 0);
+    expect(shown(referenceToday), ['Water the plants', 'Thesis committee']);
+
+    // To another day, between that day's tasks.
+    await drag('10:00 Team meeting', monday.addDays(5), 1);
+    final saturday = monday.addDays(5);
+    expect(shown(saturday), ['Mark me complete', 'Team meeting', 'Tap', 'Drag to the next day']);
+    expect(store.itemsOn(monday).any((t) => t.title == 'Team meeting'), isFalse);
   });
 
   desktopTest('an event turned into a task gets the circle, and the change is the user\'s',

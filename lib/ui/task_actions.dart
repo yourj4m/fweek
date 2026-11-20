@@ -53,6 +53,22 @@ void deleteWithUndo(BuildContext context, Task task, {bool wholeSeries = false})
   );
 }
 
+/// For a task the daily move of unfinished tasks brought to today: it had
+/// been done on its day after all. Back it goes to where it stood, ticked;
+/// since that takes it out of sight, there is a way to take it back.
+void doneWhereItWas(BuildContext context, Task task) {
+  final store = context.readStore;
+  final before = store.task(task.id);
+  final from = before?.rolledFrom;
+  if (before == null || from == null) return;
+  store.doneWhereItWas(task.id);
+  context.readApp.say(
+    'Ticked on ${Strings.dayMonth(from)}',
+    action: 'Undo',
+    onAction: () => store.restoreMoved(before),
+  );
+}
+
 /// Hides one imported event and offers to undo.
 void hideWithUndo(BuildContext context, Task event) {
   final store = context.readStore;

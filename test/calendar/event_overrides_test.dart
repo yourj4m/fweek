@@ -121,6 +121,8 @@ void main() {
 
   Task only(CalendarService calendars, Day day) =>
       calendars.eventsBetween(day, day).on(day).single;
+  String only0(CalendarService calendars, Day day, String title) =>
+      calendars.eventsBetween(day, day).on(day).firstWhere((t) => t.title == title).id;
   List<String> titles(Iterable<Task> tasks) => [for (final t in tasks) t.title];
 
   group('an event as the planner shows it', () {
@@ -358,6 +360,143 @@ void main() {
       // A task is never over, only done.
       device.store.setKind(event.id, ItemKind.task);
       expect(only(calendars, monday).overAt(DateTime(2026, 11, 20)), isFalse);
+    });
+  });
+
+  group('placing an event among the tasks of its day', () {
+    List<String> shown(Device device, Day day) => titles(device.store.itemsOn(day));
+    List<String> review({String day = '20261109'}) => [
+          'UID:review@test',
+          'SUMMARY:Review',
+          'DTSTART:${day}T130000Z',
+          'DTEND:${day}T140000Z',
+        ];
+
+    test('an event nobody placed stands above the tasks; tasks keep their order', () async {
+      final device = Device(text: feed([meeting(), review()]));
+      await device.start();
+      device.store.addTask(DaySlot(monday), 'A');
+      device.store.addTask(DaySlot(monday), 'B');
+      expect(shown(device, monday), ['Team meeting', 'Review', 'A', 'B']);
+      expect(device.store.eventOverrides, isEmpty);
+    });
+
+    test('dropped between two tasks it stands there, and that is all that changes', () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      final store = device.store;
+      store.addTask(DaySlot(monday), 'A');
+      store.addTask(DaySlot(monday), 'B');
+      final id = only(calendars, monday).id;
+      // The place counts among the others: A, B.
+      store.moveTask(id, DaySlot(monday), index: 1);
+      expect(shown(device, monday), ['A', 'Team meeting', 'B']);
+      final change = store.eventOverrides.single;
+      expect(change.position, isNotNull);
+      expect(change.date, isNull, reason: 'it did not change its day');
+      expect(only(calendars, monday).event!.edited, isFalse,
+          reason: 'where it stands is not an edit of the event');
+
+      store.moveTask(id, DaySlot(monday), index: 2);
+      expect(shown(device, monday), ['A', 'B', 'Team meeting']);
+      store.moveTask(id, DaySlot(monday), index: 0);
+      expect(shown(device, monday), ['Team meeting', 'A', 'B']);
+    });
+
+    test('a task typed afterwards goes to the end, below an event placed last', () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      final store = device.store;
+      store.addTask(DaySlot(monday), 'A');
+      store.moveTask(only(calendars, monday).id, DaySlot(monday), index: 1);
+      store.addTask(DaySlot(monday), 'B');
+      expect(shown(device, monday), ['A', 'Team meeting', 'B']);
+    });
+
+    test('a task dropped above or between events that were never placed: they keep their order',
+        () async {
+      final device = Device(text: feed([meeting(), review()]));
+      await device.start();
+      final store = device.store;
+      final a = store.addTask(DaySlot(monday), 'A')!;
+      store.addTask(DaySlot(monday), 'B');
+      // Among the others (Team meeting, Review, B): between the two events.
+      store.moveTask(a, DaySlot(monday), index: 1);
+      expect(shown(device, monday), ['Team meeting', 'A', 'Review', 'B']);
+      store.moveTask(a, DaySlot(monday), index: 0);
+      expect(shown(device, monday), ['A', 'Team meeting', 'Review', 'B']);
+      // A new event of the calendar, not placed by anyone, comes first.
+      await device.download(feed([
+        meeting(),
+        review(),
+        ['UID:new@test', 'SUMMARY:Lunch', 'DTSTART:20261109T110000Z', 'DTEND:20261109T120000Z'],
+      ]));
+      expect(shown(device, monday), ['Lunch', 'A', 'Team meeting', 'Review', 'B']);
+    });
+
+    test('dropped on another day at a place, it stands there; sent there by the menu, among that '
+        'day\'s events', () async {
+      final device = Device(text: feed([meeting(), review(day: '20261110')]));
+      final calendars = await device.start();
+      final store = device.store;
+      final tuesday = monday.addDays(1);
+      store.addTask(DaySlot(tuesday), 'A');
+      store.addTask(DaySlot(tuesday), 'B');
+      final id = only(calendars, monday).id;
+      // Among Review, A, B: under A.
+      store.moveTask(id, DaySlot(tuesday), index: 2);
+      expect(shown(device, tuesday), ['Review', 'A', 'Team meeting', 'B']);
+      expect(store.eventOverrides.single.date, tuesday);
+
+      store.moveTask(id, DaySlot(monday));
+      expect(shown(device, monday), ['Team meeting']);
+      store.moveTask(id, DaySlot(tuesday));
+      // 10:00 before 14:00, both above the tasks.
+      expect(shown(device, tuesday), ['Team meeting', 'Review', 'A', 'B']);
+    });
+
+    test('completed tasks sorted down go below it too', () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      final store = device.store;
+      final a = store.addTask(DaySlot(monday), 'A')!;
+      store.addTask(DaySlot(monday), 'B');
+      store.moveTask(only(calendars, monday).id, DaySlot(monday), index: 2);
+      store.setDone(a, true);
+      store.setSetting(Settings.sortDoneDown, true);
+      expect(shown(device, monday), ['B', 'Team meeting', 'A']);
+    });
+
+    test('"Reset" lets it go back above the tasks', () async {
+      final device = Device(text: feed([meeting()]));
+      final calendars = await device.start();
+      device.store.addTask(DaySlot(monday), 'A');
+      final id = only(calendars, monday).id;
+      device.store.moveTask(id, DaySlot(monday), index: 1);
+      device.store.resetEvent(id);
+      expect(shown(device, monday), ['Team meeting', 'A']);
+    });
+
+    test('the other device shows the same order', () async {
+      final folder = MemoryStorage();
+      Future<void> sync(Device device) =>
+          SyncEngine(device.store, folder, folder: 'WeekToDo').sync();
+      final desk = Device(text: feed([meeting(), review()]));
+      final phone = Device(text: feed([meeting(), review()]));
+      final onDesk = await desk.start();
+      await phone.start();
+      final a = desk.store.addTask(DaySlot(monday), 'A')!;
+      desk.store.addTask(DaySlot(monday), 'B');
+      desk.store.moveTask(only0(onDesk, monday, 'Review'), DaySlot(monday), index: 3);
+      desk.store.moveTask(a, DaySlot(monday), index: 0);
+      expect(shown(desk, monday), ['A', 'Team meeting', 'B', 'Review']);
+      await sync(desk);
+      await sync(phone);
+      expect(shown(phone, monday), ['A', 'Team meeting', 'B', 'Review']);
+      // Nothing of the events themselves went along: fingerprints and keys.
+      final sent = folder.files.values.map(utf8.decode).join();
+      expect(sent, isNot(contains('Team meeting')));
+      expect(sent, isNot(contains('Review')));
     });
   });
 

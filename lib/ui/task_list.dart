@@ -14,6 +14,7 @@ import '../theme/app_theme.dart';
 import 'composer.dart';
 import 'context_menu.dart';
 import 'drag.dart';
+import 'strings.dart';
 import 'task_actions.dart';
 import 'widgets/controls.dart';
 
@@ -185,6 +186,59 @@ class CheckToggle extends StatelessWidget {
   }
 }
 
+/// Shown in place of the circle on a task that the daily move of unfinished
+/// tasks brought to today. Often such a task was done on its day and only
+/// left unticked. Green: it was; it goes back to where it stood, ticked.
+/// Red: it is still to do; it stays here, with the usual circle.
+class MovedAnswer extends StatelessWidget {
+  const MovedAnswer({super.key, required this.task, this.size = 22});
+
+  final Task task;
+  final double size;
+
+  static const yes = Color(0xFF2FA36B);
+  static const no = AppTheme.danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final from = task.rolledFrom;
+    if (from == null) return const SizedBox.shrink();
+    Widget button(IconData icon, Color color, String label, VoidCallback onTap) => Pressable(
+          onTap: onTap,
+          focusable: false,
+          semanticLabel: label,
+          builder: (context, hovered, pressed) => SizedBox(
+            width: size + (isMobile ? 16 : 8),
+            height: double.infinity,
+            child: Center(
+              child: Icon(
+                icon,
+                size: size - 1,
+                color: color.withValues(alpha: hovered || pressed ? 0.65 : 1),
+              ),
+            ),
+          ),
+        );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        button(
+          AppIcons.circleCheck,
+          yes,
+          'Done on ${Strings.dayMonth(from)}: put it back there, ticked',
+          () => doneWhereItWas(context, task),
+        ),
+        button(
+          AppIcons.circleX,
+          no,
+          'Still to do: keep it on today',
+          () => context.readStore.stillToDo(task.id),
+        ),
+      ],
+    );
+  }
+}
+
 /// One task or one event on one ruled line.
 ///
 /// A task has a circle to tick it off. An event has none; it is set apart
@@ -296,6 +350,7 @@ class _TaskRowState extends State<TaskRow> {
         task.checkable && (widget.compact || ((_hovered || keyed) && !dragging));
     final style = widget.compact ? context.text.taskCompact : context.text.task14;
     final over = task.overAt(context.readStore.clock);
+    final waits = task.waitsForWord;
     final faint = task.done || over || (source?.hidden ?? false);
     // What marks an event, or what a calendar brought: a bar in the
     // calendar's colour, or a plain one for an event made here.
@@ -312,7 +367,11 @@ class _TaskRowState extends State<TaskRow> {
     final total = task.subtasks.where((s) => !s.heading).length;
 
     final marks = <Widget>[
-      if (task.hasNote) Icon(AppIcons.text, size: style.fontSize! - 2, color: muted),
+      // A task's note is marked. An event's is not: what a calendar brings
+      // nearly always says something about itself, and a mark on every such
+      // row tells nothing.
+      if (task.hasNote && !task.happens && !task.fromCalendar)
+        Icon(AppIcons.text, size: style.fontSize! - 2, color: muted),
       if (total > 0) Text('$done/$total', style: small),
       if (source?.hidden ?? false)
         Icon(AppIcons.eyeOff, size: style.fontSize! - 2, color: muted),
@@ -402,9 +461,24 @@ class _TaskRowState extends State<TaskRow> {
                   height: Dim.row,
                   child: Stack(
                     children: [
-                      // An event has no circle and uses the room.
-                      Positioned.fill(right: task.checkable ? 35 : 6, child: content),
-                      if (task.checkable)
+                      // An event has no circle and uses the room; a task
+                      // moved to today unfinished has two buttons there.
+                      Positioned.fill(
+                        right: waits
+                            ? (isMobile ? 80 : 64)
+                            : task.checkable
+                                ? 35
+                                : 6,
+                        child: content,
+                      ),
+                      if (waits)
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          bottom: 0,
+                          child: MovedAnswer(task: task),
+                        )
+                      else if (task.checkable)
                       Positioned(
                         right: 0,
                         top: 0,
@@ -751,8 +825,7 @@ class _TaskListBodyState extends State<TaskListBody> {
     final target = drag.targetSlot == widget.slot;
     return (
       widget.tasks.any((t) => t.id == dragged.id),
-      // An event has no place among the tasks; its gap opens at the top.
-      !target ? -1 : dragged.fromCalendar ? 0 : drag.targetIndex,
+      !target ? -1 : drag.targetIndex,
     );
   }
 

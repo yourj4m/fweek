@@ -194,8 +194,60 @@ void main() {
       copy.close();
       // Opened again, it is this version's file.
       final again = PlannerDatabase.open(path);
-      expect(again.foundVersion, 3);
+      expect(again.foundVersion, 4);
       again.close();
+    });
+  });
+
+  group('a planner written by the third version', () {
+    String oldFile() {
+      final path = '${folder.path}/planner.db';
+      final db = sqlite3.open(path)
+        ..execute(_version1)
+        ..execute(_version2)
+        ..execute('''
+          alter table tasks add column kind text;
+          alter table tasks add column end_time integer;
+          alter table events add column kind text;
+          alter table events add column end_time integer;
+          pragma user_version = 3;
+        ''');
+      db.execute("insert into meta(key, value) values('device_id', 'aaaaaaaa')");
+      db.execute("insert into tasks(id, date, position, title, kind) "
+          "values('t1', '2026-11-13', 'V', 'Seminar', 'event')");
+      db.execute("insert into tasks(id, date, position, title) values('t2', '2026-11-13', 'W', 'Buy oat milk')");
+      db.execute("insert into lists(id, title, position) values('someday', '', 'V')");
+      db.execute("insert into events(id, cal, origin, kind) values('e1', 'k1', '2026-11-13', 'task')");
+      void logged(String hlc, String table, String row, String column, Object? value) => db.execute(
+          'insert into changes(hlc, tbl, row, col, value) values(?, ?, ?, ?, ?)',
+          [hlc, table, row, column, jsonEncode(value)]);
+      // Sent by a device that was updated first, and kept in the log.
+      logged('01a000000001-0000-bbbbbbbb', 'tasks', 't2', 'rolled_from', '2026-11-12');
+      logged('01a000000001-0001-bbbbbbbb', 'tasks', 't2', 'rolled_pos', 'K');
+      logged('01a000000002-0000-bbbbbbbb', 'events', 'e1', 'position', 'Vn');
+      db.close();
+      return path;
+    }
+
+    test('opens with what it had, and what a newer device had sent takes effect', () {
+      final store = PlannerStore(PlannerDatabase.open(oldFile()), today: () => friday);
+      addTearDown(store.db.close);
+      expect(store.db.foundVersion, 3);
+      expect(store.task('t1')!.kind, ItemKind.event);
+      final milk = store.task('t2')!;
+      expect((milk.rolledFrom, milk.rolledPosition), (Day(2026, 11, 12), 'K'));
+      expect(milk.waitsForWord, isTrue);
+      expect(store.eventOverride('e1')!.position, 'Vn');
+      expect(store.eventOverride('e1')!.kind, ItemKind.task);
+    });
+
+    test('a copy of the file as it was is kept beside it', () {
+      final path = oldFile();
+      PlannerDatabase.open(path).close();
+      final copy = sqlite3.open('$path.v3');
+      expect(copy.select('pragma user_version').first.columnAt(0), 3);
+      expect(copy.select('pragma table_info(tasks)').map((r) => r['name']), isNot(contains('rolled_from')));
+      copy.close();
     });
   });
 
@@ -291,7 +343,7 @@ void main() {
         'hidden': true,
       })));
       final backup = Export.backup(store);
-      expect(jsonDecode(backup)['version'], 3);
+      expect(jsonDecode(backup)['version'], 4);
 
       final copy = PlannerStore(PlannerDatabase.inMemory(), today: () => friday);
       Export.restore(copy, backup);

@@ -1,9 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:weektodo/data/database.dart';
 import 'package:weektodo/data/day.dart';
+import 'package:weektodo/data/export.dart';
 import 'package:weektodo/data/models.dart';
 import 'package:weektodo/data/planner_store.dart';
 import 'package:weektodo/data/recurrence.dart';
+import 'package:weektodo/sync/storage.dart';
+import 'package:weektodo/sync/sync_engine.dart';
 
 void main() {
   late PlannerDatabase db;
@@ -212,6 +215,101 @@ void main() {
       store.addTask(DaySlot(monday), 'old');
       expect(store.rollOver(), 0);
       expect(titles(store.tasksOn(monday)), ['old']);
+    });
+
+    group('a task it moved', () {
+      late String first, evening, last;
+      setUp(() {
+        first = store.addTask(DaySlot(monday), 'first')!;
+        evening = store.addTask(DaySlot(monday), 'evening run')!;
+        last = store.addTask(DaySlot(monday), 'last')!;
+        store.setDone(first, true);
+        store.setDone(last, true);
+        store.addTask(DaySlot(today), 'today');
+        store.rollOver();
+      });
+
+      test('knows where it came from and waits to be told whether it was done', () {
+        final task = store.task(evening)!;
+        expect(task.date, today);
+        expect(task.rolledFrom, monday);
+        expect(task.waitsForWord, isTrue);
+        // What was on today anyway has nothing to tell.
+        expect(store.tasksOn(today).last.waitsForWord, isFalse);
+      });
+
+      test('done after all: back exactly where it stood, ticked', () {
+        store.doneWhereItWas(evening);
+        final task = store.task(evening)!;
+        expect((task.date, task.done, task.waitsForWord), (monday, true, false));
+        expect(task.rolledFrom, isNull);
+        // Between the two it stood between, not just somewhere on that day.
+        expect(titles(store.tasksOn(monday)), ['first', 'evening run', 'last']);
+        expect(titles(store.tasksOn(today)), ['today']);
+      });
+
+      test('which can be taken back', () {
+        final before = store.task(evening)!;
+        store.doneWhereItWas(evening);
+        store.restoreMoved(before);
+        final task = store.task(evening)!;
+        expect((task.date, task.done, task.rolledFrom), (today, false, monday));
+        expect(titles(store.tasksOn(today)), ['evening run', 'today']);
+      });
+
+      test('still to do: it stays on today, a task like any other', () {
+        store.stillToDo(evening);
+        final task = store.task(evening)!;
+        expect((task.date, task.done, task.waitsForWord), (today, false, false));
+        expect(task.rolledFrom, isNull);
+        // And the next day it is moved along like any unfinished task.
+        today = today.addDays(1);
+        store.rollOver();
+        expect(store.task(evening)!.rolledFrom, today.addDays(-1));
+      });
+
+      test('left unanswered, it keeps the place it first stood in, day after day', () {
+        today = today.addDays(1);
+        expect(store.rollOver(), 2); // it, and yesterday's "today"
+        expect(store.task(evening)!.date, today);
+        expect(store.task(evening)!.rolledFrom, monday);
+        store.doneWhereItWas(evening);
+        expect(titles(store.tasksOn(monday)), ['first', 'evening run', 'last']);
+      });
+
+      test('ticked or moved by hand, the question is settled', () {
+        store.setDone(evening, true);
+        expect(store.task(evening)!.rolledFrom, isNull);
+        expect(store.task(evening)!.date, today);
+
+        store.setDone(evening, false);
+        today = today.addDays(1);
+        store.rollOver();
+        expect(store.task(evening)!.waitsForWord, isTrue);
+        store.moveTask(evening, DaySlot(today.addDays(2)));
+        expect(store.task(evening)!.rolledFrom, isNull);
+      });
+
+      test('travels to the other device, and so does the answer', () async {
+        final other = PlannerStore(PlannerDatabase.inMemory(), today: () => today);
+        final folder = MemoryStorage();
+        Future<void> sync(PlannerStore s) => SyncEngine(s, folder, folder: 'WeekToDo').sync();
+        await sync(store);
+        await sync(other);
+        expect(other.task(evening)!.waitsForWord, isTrue);
+        other.doneWhereItWas(evening);
+        await sync(other);
+        await sync(store);
+        expect((store.task(evening)!.date, store.task(evening)!.done), (monday, true));
+      });
+
+      test('a backup carries it', () {
+        final copy = PlannerStore(PlannerDatabase.inMemory(), today: () => today);
+        Export.restore(copy, Export.backup(store));
+        expect(copy.task(evening)!.rolledFrom, monday);
+        copy.doneWhereItWas(evening);
+        expect(titles(copy.tasksOn(monday)), ['first', 'evening run', 'last']);
+      });
     });
   });
 
