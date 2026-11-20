@@ -170,8 +170,8 @@ void seedForPerf(PlannerStore store, Directory data) {
   for (var i = 0; i < 3; i++) {
     final day = stamp(start.add(Duration(days: i * 2)));
     event('series-$i', 'Weekly meeting ${i + 1}', [
-      'DTSTART:${day}T0${8 + i}0000Z',
-      'DTEND:${day}T0${9 + i}0000Z',
+      'DTSTART:${day}T${(8 + i).toString().padLeft(2, '0')}0000Z',
+      'DTEND:${day}T${(9 + i).toString().padLeft(2, '0')}0000Z',
       'RRULE:FREQ=WEEKLY',
       'LOCATION:Room ${200 + i}',
     ]);
