@@ -173,6 +173,13 @@ def main():
     # the app build it, which must not happen inside a measurement.
     today = ui.find("Today", exact=True)[0]
     rows = [n for n in ui.nodes() if n.cls.endswith("EditText") and n.top > today.bottom]
+    for _ in range(4):
+        if rows:
+            break
+        # A full day late in the week: its line to type on is below the
+        # screen. Any line further down will do.
+        ui.swipe(width * 0.5, height * 0.7, width * 0.5, height * 0.4, 250, pause=0.8)
+        rows = [n for n in ui.nodes() if n.cls.endswith("EditText") and n.top < height * 0.85]
     add_row = min(rows, key=lambda n: n.top)
     tasks = [n for n in ui.nodes()
              if re.search(r" \d+$", n.label.split("\n")[0]) and n.height < 200
