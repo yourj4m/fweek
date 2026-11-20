@@ -11,6 +11,7 @@ import 'package:weektodo/data/planner_store.dart';
 import 'package:weektodo/services/places.dart';
 import 'package:weektodo/theme/app_theme.dart';
 import 'package:weektodo/ui/composer.dart';
+import 'package:weektodo/ui/day_progress.dart';
 import 'package:weektodo/ui/note_field.dart';
 import 'package:weektodo/ui/planner_page.dart';
 import 'package:weektodo/ui/task_list.dart';
@@ -356,6 +357,62 @@ void main() {
       expect(bar.height, 3);
       expect(find.textContaining('%'), findsNothing);
       expect(find.textContaining('9:36'), findsNothing);
+    });
+
+    test('a dot where an item starts, a pill from start to end, and stretches where they overlap',
+        () {
+      const red = Color(0xFFCC0000), blue = Color(0xFF0000CC), green = Color(0xFF00AA00);
+      // A bar 240 wide: ten per hour. Marks 6 high.
+      final rects = markRects(const [
+        DayMark(start: 9 * 60, color: red),
+        DayMark(start: 12 * 60, end: 14 * 60, color: blue),
+      ], 240, 6);
+      // The dot is centred on nine o'clock and as wide as it is high.
+      expect(rects[0], const Rect.fromLTRB(87, 0, 93, 6));
+      // The pill reaches from twelve to two.
+      expect(rects[1], const Rect.fromLTRB(120, 0, 140, 6));
+
+      // Two that overlap from one to two, and a dot inside the first.
+      final segments = markSegments(const [
+        DayMark(start: 12 * 60, end: 14 * 60, color: blue),
+        DayMark(start: 13 * 60, end: 15 * 60, color: green),
+        DayMark(start: 12 * 60 + 30, color: red),
+      ], 240, 6);
+      expect([for (final s in segments) (s.left, s.right)],
+          [(120.0, 122.0), (122.0, 128.0), (128.0, 130.0), (130.0, 140.0), (140.0, 150.0)]);
+      expect([for (final s in segments) s.colors], [
+        [blue],
+        [blue, red],
+        [blue],
+        [blue, green],
+        [green],
+      ]);
+
+      // Nothing is narrower than a dot, and nothing hangs off the bar.
+      final edge = markRects(const [
+        DayMark(start: 0, color: red),
+        DayMark(start: 23 * 60 + 58, color: red),
+        DayMark(start: 10 * 60, end: 10 * 60 + 5, color: blue),
+      ], 240, 6);
+      expect(edge[0], const Rect.fromLTRB(0, 0, 6, 6));
+      expect(edge[1], const Rect.fromLTRB(234, 0, 240, 6));
+      expect(edge[2].width, 6);
+    });
+
+    desktopTest('the day\'s timed items are marked on it, in their colours', (tester) async {
+      final store = seededStore();
+      final swim = store.addTask(DaySlot(today), 'Swim')!;
+      store.updateTask(swim, time: () => 7 * 60, color: () => 'green');
+      final lunch = store.addTask(DaySlot(today), 'Lunch', kind: ItemKind.event)!;
+      store.updateTask(lunch, time: () => 12 * 60, end: () => 13 * 60 + 30, color: () => 'orange');
+      final call = store.addTask(DaySlot(today), 'Call')!;
+      store.updateTask(call, time: () => 13 * 60, end: () => 14 * 60);
+      store.addTask(DaySlot(today), 'No time, no mark');
+      await pumpApp(tester, store, calendars: await calendarWith(tester, store));
+      // Three of the planner's own and the calendar's committee at 14:30.
+      expect(find.bySemanticsLabel('Progress of the day, with 4 timed items marked'),
+          findsOneWidget);
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/progress_marks.png'));
     });
 
     desktopTest('it moves on with the clock, and to the next day at midnight', (tester) async {

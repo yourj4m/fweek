@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +17,7 @@ import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import 'composer.dart';
 import 'context_menu.dart';
+import 'day_progress.dart';
 import 'drag.dart';
 import 'event_rows.dart';
 import 'month_view.dart';
@@ -717,84 +719,6 @@ class _DayHeader extends StatelessWidget {
   }
 }
 
-/// A thin bar that fills from left to right over the course of [day], from
-/// midnight to midnight. Nothing else: no clock, no number.
-class DayProgress extends StatefulWidget {
-  const DayProgress({super.key, required this.day, this.height = 3});
-
-  final Day day;
-  final double height;
-
-  @override
-  State<DayProgress> createState() => _DayProgressState();
-}
-
-class _DayProgressState extends State<DayProgress> {
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _arm();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  /// Wakes at the start of the next minute.
-  void _arm() {
-    final now = context.readStore.clock;
-    _timer?.cancel();
-    _timer = Timer(
-      Duration(seconds: 60 - now.second, milliseconds: 50),
-      () {
-        if (!mounted) return;
-        final store = context.readStore;
-        if (store.today != widget.day) {
-          // Midnight: another day is today now.
-          store.dayTurned();
-        } else {
-          setState(() {});
-        }
-        _arm();
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.theme;
-    final now = context.readStore.clock;
-    final fraction =
-        ((now.hour * 60 + now.minute) * 60 + now.second) / Duration.secondsPerDay;
-    return RepaintBoundary(
-      child: Semantics(
-        label: 'Progress of the day',
-        child: SizedBox(
-          height: widget.height,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(widget.height / 2),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ColoredBox(color: theme.accent.withValues(alpha: 0.22)),
-                FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: fraction.clamp(0.0, 1.0),
-                  child: ColoredBox(color: theme.accent),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// One day: its heading (unless drawn elsewhere), the imported events that
 /// cover it, and its tasks.
 class _DayColumn extends StatelessWidget {
@@ -935,7 +859,8 @@ class _WideLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.app;
-    return _ScrollArea(
+    return _TrackpadTurn(
+      child: _ScrollArea(
       padding: const EdgeInsets.all(Dim.pagePadding) +
           MediaQuery.paddingOf(context),
       child: Column(
@@ -953,8 +878,80 @@ class _WideLayout extends StatelessWidget {
           const SizedBox(height: 20),
         ],
       ),
+      ),
     );
   }
+}
+
+/// On a desktop: a sideways swipe with two fingers on the trackpad turns to
+/// the next or the previous week (or month), as the arrows in the header
+/// do. Swiping to the left brings what comes next, the way a page follows
+/// the fingers. One swipe turns once, however long it coasts.
+///
+/// The wide layout needs this; the single-column one is a row of pages,
+/// which a trackpad moves by itself.
+class _TrackpadTurn extends StatefulWidget {
+  const _TrackpadTurn({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_TrackpadTurn> createState() => _TrackpadTurnState();
+}
+
+class _TrackpadTurnState extends State<_TrackpadTurn> {
+  /// How far sideways the fingers travel before the page turns.
+  static const _far = 56.0;
+
+  bool _turned = false;
+
+  // Some systems report the swipe as a run of sideways scroll steps.
+  double _scrolled = 0;
+  bool _scrollTurned = false;
+  Timer? _rest;
+
+  @override
+  void dispose() {
+    _rest?.cancel();
+    super.dispose();
+  }
+
+  void _turn({required bool forward}) {
+    final app = context.readApp;
+    forward ? app.next() : app.previous();
+  }
+
+  /// Mostly sideways: a swipe up or down that drifts is scrolling.
+  static bool _sideways(Offset by) => by.dx.abs() > 2 * by.dy.abs();
+
+  @override
+  Widget build(BuildContext context) => Listener(
+        onPointerPanZoomStart: (_) => _turned = false,
+        onPointerPanZoomUpdate: (event) {
+          final pan = event.pan;
+          if (_turned || pan.dx.abs() < _far || !_sideways(pan)) return;
+          _turned = true;
+          _turn(forward: pan.dx < 0);
+        },
+        onPointerSignal: (event) {
+          if (event is! PointerScrollEvent) return;
+          final by = event.scrollDelta;
+          if (by.dx == 0 || !_sideways(by)) return;
+          // The steps of one swipe come close together; a pause ends it.
+          _rest?.cancel();
+          _rest = Timer(const Duration(milliseconds: 200), () {
+            _scrolled = 0;
+            _scrollTurned = false;
+          });
+          if (_scrollTurned) return;
+          _scrolled += by.dx;
+          if (_scrolled.abs() < _far) return;
+          _scrollTurned = true;
+          // Scrolling to the right shows what lies to the right: the next.
+          _turn(forward: _scrolled > 0);
+        },
+        child: widget.child,
+      );
 }
 
 class _WeekGrid extends StatelessWidget {

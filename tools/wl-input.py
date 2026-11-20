@@ -15,6 +15,7 @@ Reads one command per line from stdin:
     type TEXT...      type text (US layout: letters, digits, common punctuation)
     key NAME          Return, Escape, Tab, BackSpace, Left, Right, Up, Down
     ctrl KEY          Control + a letter, digit or punctuation key
+    swipe DX          two fingers moved DX pixels sideways on a trackpad
     sleep SECONDS
 
 Usage: wl-input.py --protocols DIR --extent WIDTH HEIGHT
@@ -29,6 +30,8 @@ import sys
 import time
 
 BTN_LEFT = 0x110
+AXIS_HORIZONTAL = 1  # wl_pointer.axis
+AXIS_SOURCE_FINGER = 1  # wl_pointer.axis_source
 SHIFT, CONTROL = 42, 29  # evdev key codes
 SHIFT_MASK, CONTROL_MASK = 1, 4
 
@@ -161,6 +164,21 @@ def main():
             tap(NAMED[rest])
         elif command == "ctrl":
             tap(PLAIN[rest], CONTROL_MASK, CONTROL)
+        elif command == "swipe":
+            # Two fingers moved sideways on a trackpad: a run of small
+            # scroll steps said to come from a finger, then their end. A
+            # negative distance is a swipe to the left.
+            total, steps = float(rest), 14
+            for _ in range(steps):
+                pointer.axis_source(AXIS_SOURCE_FINGER)
+                # The fingers move the content: to the left scrolls right.
+                pointer.axis(now(), AXIS_HORIZONTAL, -total / steps)
+                pointer.frame()
+                display.roundtrip()
+                time.sleep(0.016)
+            pointer.axis_source(AXIS_SOURCE_FINGER)
+            pointer.axis_stop(now(), AXIS_HORIZONTAL)
+            pointer.frame()
         elif command == "sleep":
             time.sleep(float(rest))
         elif command:

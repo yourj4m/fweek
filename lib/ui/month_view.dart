@@ -7,7 +7,7 @@ import '../data/planner_store.dart';
 import '../theme/app_theme.dart';
 import 'context_menu.dart';
 import 'event_rows.dart';
-import 'planner_page.dart' show DayProgress;
+import 'day_progress.dart';
 import 'strings.dart';
 import 'task_list.dart';
 import 'widgets/controls.dart';

@@ -1,14 +1,17 @@
 import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:weektodo/app_state.dart';
 import 'package:weektodo/data/models.dart';
 import 'package:weektodo/data/planner_store.dart';
 import 'package:weektodo/main.dart';
 import 'package:weektodo/sync/secrets.dart';
 import 'package:weektodo/sync/storage.dart';
 import 'package:weektodo/sync/sync_service.dart';
+import 'package:weektodo/ui/planner_page.dart';
 import 'package:weektodo/ui/task_list.dart';
 
 import 'harness.dart';
@@ -103,6 +106,65 @@ void main() {
     await tester.pumpAndSettle();
     expect(titles(store.tasksOn(saturday)), ['Mark me complete', 'Drag to the next day']);
     expect(titles(store.tasksOn(monday)).indexOf('Tap and edit'), 1);
+  });
+
+  desktopTest('two fingers swiped sideways on the trackpad turn the week, once per swipe',
+      (tester) async {
+    final store = seededStore();
+    await pumpApp(tester, store);
+    final app = tester.element(find.byType(PlannerPage)).readApp;
+    final start = app.weekStart;
+    Future<void> swipe(Offset by) async {
+      final fingers = await tester.createGesture(kind: PointerDeviceKind.trackpad);
+      await fingers.panZoomStart(const Offset(700, 450));
+      // In steps, as a trackpad reports it.
+      for (var i = 1; i <= 8; i++) {
+        await fingers.panZoomUpdate(const Offset(700, 450), pan: by * (i / 8));
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      await fingers.panZoomEnd();
+      await tester.pumpAndSettle();
+    }
+
+    await swipe(const Offset(-240, 6));
+    expect(app.weekStart, start.addDays(7), reason: 'to the left: the next week, and only one');
+    await swipe(const Offset(240, -4));
+    expect(app.weekStart, start);
+    await swipe(const Offset(30, 0));
+    expect(app.weekStart, start, reason: 'a short twitch turns nothing');
+    await swipe(const Offset(60, 240));
+    expect(app.weekStart, start, reason: 'up and down is scrolling');
+
+    // The month view turns by months.
+    app.setMonthView(true);
+    await tester.pumpAndSettle();
+    final month = app.anchor.startOfMonth;
+    await swipe(const Offset(-200, 0));
+    expect(app.anchor.startOfMonth, month.addMonths(1));
+  });
+
+  desktopTest('a swipe that arrives as sideways scroll steps turns once too', (tester) async {
+    final store = seededStore();
+    await pumpApp(tester, store);
+    final app = tester.element(find.byType(PlannerPage)).readApp;
+    final start = app.weekStart;
+    Future<void> scroll(double dx, {int steps = 12}) async {
+      for (var i = 0; i < steps; i++) {
+        tester.binding.handlePointerEvent(PointerScrollEvent(
+          position: const Offset(700, 450),
+          scrollDelta: Offset(dx / steps, 0),
+        ));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      // The fingers have left the trackpad.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+    }
+
+    await scroll(400);
+    expect(app.weekStart, start.addDays(7), reason: 'one swipe, one week, however long it coasts');
+    await scroll(-400);
+    expect(app.weekStart, start);
   });
 
   desktopTest('holding a task at the window edge carries it to the next week', (tester) async {
