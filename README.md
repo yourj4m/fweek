@@ -26,6 +26,23 @@ Test builds for Linux and Android, from the same code. What works:
   line makes it the other, and so does "Turn into an event / a task" in any
   item's menu. What a calendar brings is an event until you turn it into a
   task.
+- **New event**: the calendar-with-a-plus button in the header (or N, or
+  the menu) opens a form for an event with all it can have: title, start
+  and end day, all day or a start and an end time, repeat, reminder,
+  colour, place and notes. Nothing is added until "Add event" (or Enter in
+  the title); Escape and Cancel drop it; a click beside the form keeps what
+  has a title, as a card keeps what was typed into it. A message says it
+  was added, with Undo, or with the way to its day when that is not on
+  show.
+- **Events over several days**: an event of your own can end on a later
+  day than it starts (the form's "Ends", or in its card: the date, then
+  "Ends on another day…"). It lies as a bar across its days, in the band
+  under the day headings the calendars' events use; in the month it keeps
+  one line through each week; on a phone each of its days has the bar,
+  with which day of how many it is. With times it starts at its start time
+  on the first day and ends at its end time on the last. Moved or copied,
+  it stays as long. Its menu (right-click, long press) moves and deletes
+  it; it is not dragged.
 - **Tasks**: click an empty row and type, Enter for the next one. Click a task
   to open it. Check to complete. Drag between days and lists, or hold a task
   at the window edge to carry it to another week. Right-click (on a phone:
@@ -49,24 +66,32 @@ Test builds for Linux and Android, from the same code. What works:
   click opens it in your map program. See [Places](#places).
 - **Repeating tasks**: completing, moving or deleting one occurrence leaves
   the rest of the series alone; text and colour edits apply to the series.
+- **Three views, named in the header**: Week, Month and Tasks stand side
+  by side there, the one on show marked; a click leads to each (keys: M for
+  the month, L for the tasks and back). The buttons keep their places from
+  view to view. On a phone the bar at the bottom does this.
 - **Tasks page**: any number of named lists, on a page of their own beside
-  the planner (the button with the ticked lines in the header, or L; on a
-  phone the bar at the bottom). Every list is a column while the window has
+  the planner ("Tasks" in the header, or L; on a phone the bar at the
+  bottom). Every list is a column while the window has
   room for all of them; in a narrower window their names stand at the left
   and one list is open; on a phone the names are tabs, and a swipe turns to
   the next list. There is always a way to start a new list; a list's menu
   renames, moves and deletes it. Done tasks fold away under the list
   ("3 done"), where they can be looked at and cleared.
 - **From a list into the week**: "Plan for" in a task's menu gives it a
-  day, as does its card; or drag it onto the header's button (a tab of the
-  phone's bar) and hold it there: the page turns, and the task is dropped
+  day, as does its card; or drag it onto "Week" in the header (a tab of
+  the phone's bar) and hold it there: the page turns, and the task is dropped
   on a day. It then shows on that day and stays in its list too, marked
   with the day; ticked in one place it is ticked in the other. Settings →
   "A task from a list, given a day" has it leave its list instead. A task
   of the week is put into a list, or taken out, at the top of its card.
 - **Lists beside the week**: in a wide window (1240 px and up) the lists
-  also open as a panel at the right of the week (the header's panel button,
-  or P), to drag tasks straight onto days, and from a day back into a list.
+  also open as a panel at the right of the week, to drag tasks straight
+  onto days, and from a day back into a list. A plain panel icon before
+  the views opens it; the one button on the panel shuts it (P does both).
+  That icon only shows the lists beside the week; "Tasks" is the page.
+- **Hints**: on the desktop, a button that is only an icon says what it
+  does when the pointer rests on it.
 - **Deadlines**: a task can have a day by which it is to be done, apart
   from the day it is planned for (the flag in its card, or "Deadline" in
   its menu). Its row carries a flag, red once the day has passed, and in
@@ -101,13 +126,15 @@ Test builds for Linux and Android, from the same code. What works:
   to its day and opens it, and Undo takes them out again. The same file
   again brings them up to date instead of doubling them. An event that
   repeats becomes one repeating item where the planner can say its rule;
-  otherwise its dates of the coming year are taken in one by one.
+  otherwise its dates of the coming year are taken in one by one. An event
+  over several days comes in as one event that runs over them.
 - **Export** to CSV, iCalendar and plain text; **backup and restore** as JSON.
 - **Trackpad**: two fingers swiped sideways turn to the next or previous
   week (or month).
-- **Shortcuts**: ← → previous/next, T today, M month view, L tasks page
-  and back, P the lists beside the week, Ctrl+F search, Ctrl+, settings,
-  Esc close. Tab and the arrow keys reach every button and
+- **Shortcuts**: ← → previous/next (on the Tasks page: the next list,
+  where one shows at a time), T today, M month view, L tasks page and
+  back, P the lists beside the week, N new event, Ctrl+F search, Ctrl+,
+  settings, Esc close. Tab and the arrow keys reach every button and
   row; on a row, Enter opens, Space completes, Delete deletes and the menu
   key (or Shift+F10) opens its menu.
 - Text that is not a button can be selected and copied: details in cards,
@@ -416,7 +443,7 @@ file refuses to open it rather than damage it, so update all devices before
 relying on what is new.
 
 Before a file is brought up to date, a copy of it as it was is kept beside
-it (`planner.db.v4` for a file of the fourth version). To go back to the
+it (`planner.db.v5` for a file of the fifth version). To go back to the
 earlier build, close the app, put that copy in the place of `planner.db`
 (and delete `planner.db-wal` and `planner.db-shm`), and start the earlier
 build; what was changed since the update is then missing on that device

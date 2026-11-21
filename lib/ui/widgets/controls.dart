@@ -204,11 +204,13 @@ class AppButton extends StatelessWidget {
         } else {
           switch (kind) {
             case ButtonKind.primary:
+              // With nothing to do it is a faint ground with a faint mark,
+              // in dark themes as in light ones.
               background = !enabled
-                  ? theme.ink(15)
+                  ? theme.ink(8)
                   : (fill ?? theme.navButton)
                       .withValues(alpha: hovered || pressed ? 0.75 : 1);
-              content = foreground ?? theme.navButtonIcon;
+              content = !enabled ? theme.ink(30) : foreground ?? theme.navButtonIcon;
             case ButtonKind.secondary:
               background = fill != null
                   ? fill!.withValues(alpha: hovered || pressed ? 0.75 : 1)

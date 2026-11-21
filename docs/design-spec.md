@@ -403,5 +403,50 @@ half and half.
   week's number (14 px, 50 %), instead of the abbreviated one-line title.
 - **Panel beside the week** (windows from 1240 px): 280 px plus padding at
   the right, a 1 px rule at its left; "Lists" (24 px bold) level with the
-  week's title; each list a heading like a day's (18 px bold over a 2 px
-  rule) that folds it, and its open tasks on ruled rows.
+  week's title, and at its right the one button that shuts the panel; each
+  list a heading like a day's (18 px bold over a 2 px rule) that folds it,
+  and its open tasks on ruled rows.
+
+### The header's buttons
+
+From the left: the icon that opens the panel (a plain 40 px icon, no
+ground; only in the week, in a window with room, while the panel is shut),
+the views, the new-event button (40 px, 5 % ink), the menu, the arrows.
+What comes and goes stands first, so that nothing after it moves.
+
+- **Views**: a 40 px pill of 5 % ink holding "Week", "Month", "Tasks"
+  (15 px; 14 px padding at each side), the one on show bold on a pill in
+  the page's colour, the others medium at 60 %. Each name takes the width
+  of its bold form. In a single-column window from 600 px they stay; from
+  500 px they are icons (18 px, 9 px padding); below, one button that
+  turns between the planner and the tasks. While a task is dragged, the
+  names it can be carried to have a 35 % outline; held over one for
+  650 ms, that page comes up.
+- **Arrows** stand on every page. On the Tasks page they turn to the next
+  list where one list shows at a time; with nothing to turn they are 8 %
+  ink with a 30 % chevron.
+- **Hints**: after 600 ms under the pointer, an icon-only button shows its
+  purpose 6 px under it: 12 px semibold on a dark pill (light in dark
+  themes), radius 8, kept inside the window.
+
+### A new event, and events over several days
+
+- **The form**: a card like a task's (512 px, 24 px radius; on a phone a
+  sheet from the bottom). "New event" (15 px, 60 %), the title (28 px bold,
+  hint at 25 %), a rule, then one line per thing, 42 px high: an icon
+  (16 px, 60 %) for the first line of a group, a 76 px label (15 px, 60 %),
+  and the value as a 34 px pill of 5 % ink, radius 10 (15 px; what is not
+  set at 60 %). Starts and Ends: the day, and the time unless "All day" is
+  on (a switch; the whole line presses). Then Repeat, Reminder, Colour (a
+  12 px dot of it before its name), the place field and the notes, each
+  with its icon. Bottom right: "Cancel" (plain) and "Add event" (black;
+  faint until there is a title).
+- **Bars of your own events**: as the calendars' bars, in 8 % ink with a
+  40 % mark at the start; filled in the event's colour when it has one.
+  In the month a bar keeps its line through a week: a day it does not
+  cover leaves the line free.
+- **In the card**: the date reads "Fri, 13 – Sun, 15 Nov 2026"; an event
+  without a time reads "All day" after the clock; the end time of an
+  event over several days names its day ("– Sat 7:00"). The date's month
+  has, under it, "Ends on another day…" (then "Last day, 15 Nov" and "One
+  day only").

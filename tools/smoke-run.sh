@@ -207,6 +207,42 @@ PY
 at 700 450
 send "swipe 320"; sleep 1.2
 
+# A new event from the keyboard: N, a title, Enter. It is on today, all day,
+# and an event.
+shot 07j-before-form
+type_text n
+wait_for_change 07j-before-form 07k-form 500x400+470+100 "N opens the form for a new event"
+type_text "Smoke event"; key Return; sleep 0.8
+today="$(date +%F)"
+[ "$(field 'Smoke event' date)" = "$today" ] && [ "$(field 'Smoke event' kind)" = "event" ] \
+  && [ -z "$(field 'Smoke event' time)" ] \
+  && pass "a new event typed into the form is on today, all day" \
+  || fail "the new event is on '$(field 'Smoke event' date)', kind '$(field 'Smoke event' kind)'"
+
+# From the header's button, over several days: its end day is picked in the
+# month after (the form is 512 wide, centred; the month opens under the end
+# day, its arrow for the next month at +261,+26, the days from +27,+89 in
+# steps of 39 by 38).
+click 1258 48; sleep 0.8
+type_text "Smoke trip"
+click 666 264; sleep 0.7
+shot 07l-end-day
+click 857 313; sleep 0.5
+click 740 452; sleep 0.6
+shot 07m-several-days
+click 884 587; sleep 0.9
+shot 07n-added
+trip_first="$(field 'Smoke trip' date)"; trip_last="$(field 'Smoke trip' end_date)"
+[ "$trip_first" = "$today" ] && [[ "$trip_last" > "$trip_first" ]] \
+  && pass "an event over several days is added from the header's button ($trip_first to $trip_last)" \
+  || fail "the event over several days runs from '$trip_first' to '$trip_last'"
+
+# The header names its views: a click on Tasks, and on Week back again.
+shot 07o-week
+click 1192 48
+wait_for_change 07o-week 07p-tasks 1400x240+10+14 "the header's Tasks leads to the Tasks page"
+click 1044 48; sleep 0.8
+
 # The Tasks page (L): a list is started in the blank column and named
 # where it stands; a task typed into it is in that list and has no day.
 type_text l; sleep 0.8
@@ -228,11 +264,11 @@ PY
   && pass "a list is made on the Tasks page and takes a task without a day" \
   || fail "the task typed into a new list is in list '$(field Stalker list_id)' (Films is '$films'), on '$(field Stalker date)'"
 
-# Dragged onto the header's button and held there, the task is taken to the
+# Dragged onto the header's "Week" and held there, the task is taken to the
 # week; dropped on Wednesday it is planned for that day and still in its
 # list.
 at 440 174; press; sleep 0.1
-for p in "470 170" "700 140" "1000 100" "1250 60" "1350 48"; do at $p; done
+for p in "470 170" "700 140" "900 100" "1020 60" "1044 48"; do at $p; done
 sleep 1.3
 shot 07g-carried
 for p in "1200 200" "900 300" "640 320" "600 330"; do at $p; done
@@ -240,7 +276,7 @@ sleep 0.4
 release; sleep 0.8
 shot 07h-planned
 [ "$(field Stalker date)" = "$wednesday" ] && [ "$(field Stalker list_id)" = "$films" ] \
-  && pass "held on the header's button, a task is carried to the week and planned for a day" \
+  && pass "held on the header's Week, a task is carried to the week and planned for a day" \
   || fail "the carried task is on '$(field Stalker date)' (wanted $wednesday), in list '$(field Stalker list_id)'"
 
 # The lists beside the week (P), and away again.

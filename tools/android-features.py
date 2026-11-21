@@ -6,8 +6,9 @@
 
 On a fresh planner: the editing bar above the keyboard while a task is
 typed, a time set from it, the menu on a long press, a place found through
-the place search and handed to the map app, and the Tasks page: a new
-list, a task typed into it and planned for a day.
+the place search and handed to the map app, the Tasks page (a new list, a
+task typed into it and planned for a day), and the form for a new event
+(typed above the keyboard, all day or with times, over several days).
 
 With --events the app must be a build made with WEEKTODO_PERF (see
 tools/android-perf.py), which starts with a calendar of test events: then
@@ -194,6 +195,51 @@ def planner(out, shot, width, height):
     # Tomorrow may be on the next week's page; the task is in the planner
     # either way, which the Tasks page has shown.
     shot("f09-week")
+
+    # --- a new event: the header's button opens a sheet with all an event
+    # can have; over several days it is a bar on each of its days
+    plus = ui.find("New event", exact=True)
+    if not check(bool(plus), "the header has a button for a new event"):
+        return
+    ui.tap(*plus[0].centre, pause=2.0)
+    check(bool(ui.find("Add event", exact=True)), "which opens the form")
+    ui.type_text("Dinner out")
+    time.sleep(0.6)
+    top = keyboard_top(height)
+    typed = [n for n in fields() if "Dinner out" in n.text]
+    check(bool(typed) and typed[0].bottom <= top,
+          "the title is typed above the keyboard")
+    shot("f10-form-typing")
+    # The keyboard's key puts the keyboard away and leaves the form open.
+    ui.key("ENTER", 1.2)
+    if ui.keyboard_shown():
+        ui.back(pause=0.8)
+    check(bool(ui.find("Add event", exact=True)) and not ui.find("Event added"),
+          "the keyboard's key leaves the form open, with nothing added yet")
+    whole = ui.find("All day", exact=True)
+    if check(bool(whole), "the form says the event is all day"):
+        ui.tap(*whole[0].centre, pause=1.0)
+        check(bool(ui.find(r"^Start time, ")) and bool(ui.find(r"^End time, ")),
+              "switched off, it has a start and an end")
+        ui.tap(*ui.find("All day", exact=True)[0].centre, pause=1.0)
+    last = ui.find(r"^End day, ")
+    if check(bool(last), "it has an end day"):
+        ui.tap(*last[0].centre, pause=1.5)
+        ui.tap_on("Next month", exact=True)
+        time.sleep(0.8)
+        ui.tap_on("15", exact=True)
+        time.sleep(1.2)
+        check(bool(ui.find(r"^End day, \w+, 15 ")), "which is picked in a month")
+    shot("f11-form")
+    add = ui.find("Add event", exact=True)
+    if check(bool(add) and add[0].bottom <= height, "the button that adds it is on the screen"):
+        ui.tap(*add[0].centre, pause=1.5)
+        said = [n.label or n.text for n in ui.nodes()]
+        check(any("Event added" in t or t.startswith("Added on") for t in said),
+              "the event is added, and a message says so")
+        check(any(t.startswith("Event over several days: Dinner out") for t in said),
+              "over several days it is a bar on its days")
+        shot("f12-added")
 
 
 def events(out, shot, width, height):
