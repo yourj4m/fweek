@@ -1161,13 +1161,23 @@ void main() {
       final store = seededStore();
       await pumpApp(tester, store, size: const Size(411, 914));
       debugBuildCounts.clear();
+      // Everything that is built again while it slides, by name.
+      final rebuilt = <String>{};
+      debugOnRebuildDirtyWidget =
+          (element, _) => rebuilt.add(element.widget.runtimeType.toString());
+      addTearDown(() => debugOnRebuildDirtyWidget = null);
       for (final inset in [80.0, 160.0, 240.0, 300.0]) {
         tester.view.viewInsets = FakeViewPadding(bottom: inset);
         await tester.pump();
       }
       addTearDown(tester.view.resetViewInsets);
+      debugOnRebuildDirtyWidget = null;
       expect(built('TaskRow'), 0);
       expect(built('TaskListBody'), 0);
+      // The page's inset follows the keyboard, and the bar at the bottom
+      // goes; the header and the place for messages stay as they are.
+      expect(rebuilt, containsAll(['_KeyboardInset', '_BottomBar']));
+      expect(rebuilt.intersection({'_ToastHost', '_Header', '_WeekPage', '_Pager'}), isEmpty);
     });
 
     desktopTest('a dragged task redraws rows when its target changes, not as it moves',

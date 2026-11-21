@@ -312,11 +312,10 @@ class _ToastHost extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.readApp;
-    // Above the phone's bar of pages, which stays in reach under it. While
-    // the keyboard is up there is no bar.
-    final bar = isMobile && MediaQuery.viewInsetsOf(context).bottom == 0
-        ? _BottomBar.height
-        : 0.0;
+    // Above the phone's bar of pages, which stays in reach under it. The
+    // same height over the keyboard when that is up: this must not follow
+    // the keyboard as it slides (nothing but the page's inset does).
+    final bar = isMobile ? _BottomBar.height : 0.0;
     final bottom = MediaQuery.paddingOf(context).bottom + bar;
     return Positioned(
       left: 16,
