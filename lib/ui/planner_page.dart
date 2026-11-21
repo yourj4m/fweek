@@ -24,6 +24,7 @@ import 'composer.dart';
 import 'context_menu.dart';
 import 'day_progress.dart';
 import 'drag.dart';
+import 'event_form.dart';
 import 'event_rows.dart';
 import 'ics_import_dialog.dart';
 import 'month_view.dart';
@@ -170,7 +171,9 @@ class _PlannerPageState extends State<PlannerPage> {
       return KeyEventResult.ignored;
     }
     final app = context.readApp;
-    if (key == LogicalKeyboardKey.keyL) {
+    if (key == LogicalKeyboardKey.keyN) {
+      showNewEvent(context);
+    } else if (key == LogicalKeyboardKey.keyL) {
       app.togglePage();
     } else if (key == LogicalKeyboardKey.keyT) {
       app.goToday();
@@ -544,6 +547,18 @@ class _Header extends StatelessWidget {
     );
   }
 
+  /// What an arrow does: on the planner it turns the week or month; on the
+  /// Tasks page it turns to the neighbouring list where one list shows at a
+  /// time, and has nothing to do where they all show.
+  VoidCallback? _turn(BuildContext context, AppController app, int by) {
+    if (!app.onTasks) return by < 0 ? app.previous : app.next;
+    final lists = context.store.lists;
+    final width = MediaQuery.sizeOf(context).width;
+    if (TasksBody.layoutFor(width, lists.length) == ListsLayout.board) return null;
+    final at = lists.indexWhere((l) => l.id == app.openList) + by;
+    return at < 0 || at >= lists.length ? null : () => app.setOpenList(lists[at].id);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
@@ -551,57 +566,76 @@ class _Header extends StatelessWidget {
     final tasks = app.onTasks;
     return SizedBox(
       height: Dim.headerHeight,
-      child: Row(
-        children: [
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: tasks ? _tasksTitle(context) : _plannerTitle(context, app),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // The lists beside the week, where there is room for them.
-          if (!tasks && panelRoom && !app.monthView) ...[
-            AppButton(
-              icon: app.panel ? AppIcons.panelRightClose : AppIcons.panelRightOpen,
-              kind: ButtonKind.secondary,
-              tooltip: app.panel ? 'Hide the lists (P)' : 'Lists beside the week (P)',
-              onTap: () => app.setPanel(!app.panel),
-            ),
-            const SizedBox(width: 6),
-          ],
-          // A phone has a bar at the bottom for this.
-          if (!isMobile) ...[
-            const _PageSwitch(),
-            const SizedBox(width: 6),
-          ],
-          Builder(
-            builder: (context) => AppButton(
-              icon: AppIcons.menu,
-              kind: ButtonKind.secondary,
-              fill: theme.menuButton,
-              foreground: const Color(0xFF000000),
-              tooltip: 'Menu',
-              onTap: () => _menu(context),
-            ),
-          ),
-          if (!tasks) ...[
-            const SizedBox(width: 6),
-            AppButton(
-              icon: AppIcons.chevronLeft,
-              kind: ButtonKind.primary,
-              tooltip: 'Previous',
-              onTap: app.previous,
-            ),
-            const SizedBox(width: 6),
-            AppButton(
-              icon: AppIcons.chevronRight,
-              kind: ButtonKind.primary,
-              tooltip: 'Next',
-              onTap: app.next,
-            ),
-          ],
-        ],
+      child: LayoutBuilder(
+        builder: (context, box) {
+          // The three views by name where there is room for the words, by
+          // icon in a tight window, and as one button in the tightest. A
+          // phone has a bar at the bottom for this.
+          final Widget? views = isMobile
+              ? null
+              : !narrow || box.maxWidth >= 600
+                  ? const _ViewSwitch(labels: true)
+                  : box.maxWidth >= 500
+                      ? const _ViewSwitch(labels: false)
+                      : const _PageSwitch();
+          return Row(
+            children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: tasks ? _tasksTitle(context) : _plannerTitle(context, app),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // The lists beside the week, where there is room for them.
+              // This only opens the panel, which has the button that shuts
+              // it; it stands first so that nothing else moves when it goes.
+              if (!tasks && panelRoom && !app.monthView && !app.panel) ...[
+                AppButton(
+                  icon: AppIcons.panelRightOpen,
+                  kind: ButtonKind.ghost,
+                  tooltip: 'Show the lists beside the week (P)',
+                  onTap: () => app.setPanel(true),
+                ),
+                const SizedBox(width: 6),
+              ],
+              if (views != null) ...[views, const SizedBox(width: 6)],
+              AppButton(
+                icon: AppIcons.calendarPlus,
+                kind: ButtonKind.secondary,
+                tooltip: isMobile ? 'New event' : 'New event (N)',
+                onTap: () => showNewEvent(context),
+              ),
+              const SizedBox(width: 6),
+              Builder(
+                builder: (context) => AppButton(
+                  icon: AppIcons.menu,
+                  kind: ButtonKind.secondary,
+                  fill: theme.menuButton,
+                  foreground: const Color(0xFF000000),
+                  tooltip: 'Menu',
+                  onTap: () => _menu(context),
+                ),
+              ),
+              // The arrows keep their place on every page, so that the
+              // buttons before them do too.
+              const SizedBox(width: 6),
+              AppButton(
+                icon: AppIcons.chevronLeft,
+                kind: ButtonKind.primary,
+                tooltip: tasks ? 'Previous list' : 'Previous',
+                onTap: _turn(context, app, -1),
+              ),
+              const SizedBox(width: 6),
+              AppButton(
+                icon: AppIcons.chevronRight,
+                kind: ButtonKind.primary,
+                tooltip: tasks ? 'Next list' : 'Next',
+                onTap: _turn(context, app, 1),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -646,6 +680,8 @@ mixin _PageSpot<T extends StatefulWidget> on State<T> {
   void registerSpot(VoidCallback onDwell) =>
       _drag!.registerSpot(spotId, spotKey, onDwell: onDwell);
 
+  void unregisterSpot() => _drag?.unregisterSpot(spotId, spotKey);
+
   @override
   void dispose() {
     _drag?.removeListener(_onDrag);
@@ -654,8 +690,165 @@ mixin _PageSpot<T extends StatefulWidget> on State<T> {
   }
 }
 
-/// The header's button that turns from the planner to the Tasks page and
-/// back.
+/// One of the three views the header switches between.
+enum _View {
+  week('Week'),
+  month('Month'),
+  tasks('Tasks');
+
+  const _View(this.label);
+
+  final String label;
+
+  IconData get icon => switch (this) {
+        week => AppIcons.calendarDays,
+        month => AppIcons.layoutGrid,
+        tasks => AppIcons.listChecks,
+      };
+
+  static _View of(AppController app) =>
+      app.onTasks ? tasks : app.monthView ? month : week;
+
+  void show(AppController app) => switch (this) {
+        week => app.setMonthView(false),
+        month => app.setMonthView(true),
+        tasks => app.setPage(AppPage.tasks),
+      };
+}
+
+/// The header's way from one view to another: the week, the month and the
+/// Tasks page side by side, by name ([labels]) or by icon, the one on show
+/// marked. It reads as a place to go, which the button that only shows the
+/// lists beside the week is not.
+class _ViewSwitch extends StatelessWidget {
+  const _ViewSwitch({required this.labels});
+
+  final bool labels;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final shown = _View.of(context.app);
+    return Container(
+      height: Dim.controlMedium,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: theme.ink(5),
+        borderRadius: BorderRadius.circular(256),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final view in _View.values)
+            _ViewSegment(view: view, selected: view == shown, labels: labels),
+        ],
+      ),
+    );
+  }
+}
+
+class _ViewSegment extends StatefulWidget {
+  const _ViewSegment({
+    required this.view,
+    required this.selected,
+    required this.labels,
+  });
+
+  final _View view;
+  final bool selected;
+  final bool labels;
+
+  @override
+  State<_ViewSegment> createState() => _ViewSegmentState();
+}
+
+class _ViewSegmentState extends State<_ViewSegment> with _PageSpot {
+  @override
+  Object get spotId => ('view', widget.view);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final app = context.readApp;
+    final view = widget.view;
+    final selected = widget.selected;
+    // A task in hand can be carried to the week or to the lists: held over
+    // the name for a moment, that page comes up under it. The month has no
+    // place to put a task down.
+    final carries = !selected && view != _View.month;
+    if (carries) {
+      registerSpot(() => view.show(app));
+    } else {
+      unregisterSpot();
+    }
+    return Semantics(
+      selected: selected,
+      child: Pressable(
+        key: spotKey,
+        // The view on show already: back to today, as on a phone's bar.
+        onTap: () => selected && view != _View.tasks ? app.goToday() : view.show(app),
+        semanticLabel: view.label,
+        labelOnly: true,
+        focusRadius: 256,
+        builder: (context, hovered, pressed) {
+          final color = selected ? theme.text : theme.ink(hovered || over ? 85 : 60);
+          return AnimatedContainer(
+            duration: Dim.fast,
+            height: double.infinity,
+            padding: EdgeInsets.symmetric(horizontal: widget.labels ? 14 : 9),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected
+                  ? theme.background
+                  : over
+                      ? theme.ink(15)
+                      : hovered
+                          ? theme.ink(5)
+                          : const Color(0x00000000),
+              borderRadius: BorderRadius.circular(256),
+              // While a task is in hand: this is somewhere it can be taken.
+              border: Border.all(
+                color: carries && dragging && !over
+                    ? theme.ink(35)
+                    : const Color(0x00000000),
+              ),
+            ),
+            child: widget.labels
+                ? Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // The name takes the room of its bold form whether
+                      // or not it is the one on show, so that marking
+                      // another moves nothing.
+                      Opacity(
+                        opacity: 0,
+                        child: Text(
+                          view.label,
+                          maxLines: 1,
+                          style: context.text.small15
+                              .copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      Text(
+                        view.label,
+                        maxLines: 1,
+                        style: context.text.small15.copyWith(
+                          color: color,
+                          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  )
+                : Icon(view.icon, size: 18, color: color),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// The same in a window too tight for the three: one button that turns
+/// from the planner to the Tasks page and back.
 class _PageSwitch extends StatefulWidget {
   const _PageSwitch();
 
@@ -830,6 +1023,12 @@ class _MainMenuState extends State<_MainMenu> {
               ),
             ],
             const _Divider(),
+            MenuRow(
+              icon: AppIcons.calendarPlus,
+              label: 'New event',
+              hint: isMobile ? null : 'N',
+              onTap: () => _run(() => showNewEvent(page)),
+            ),
             MenuRow(
               icon: AppIcons.listPlus,
               label: 'New list',
@@ -1231,7 +1430,10 @@ class _WideLayout extends StatelessWidget {
       final band = app.monthView
           ? 0
           : SpanLanes.pack(
-              context.calendars.eventsBetween(first, first.addDays(6)).spans,
+              context.calendars
+                  .eventsBetween(first, first.addDays(6))
+                  .withSpans(context.store.spansBetween(first, first.addDays(6)))
+                  .spans,
               first,
               first.addDays(5),
             ).length;
@@ -1355,7 +1557,11 @@ class _WeekGrid extends StatelessWidget {
     final first = context.app.weekStart;
     final days = [for (var i = 0; i < 7; i++) first.addDays(i)];
     final byDay = store.tasksBetween(days.first, days.last);
-    final range = context.calendars.eventsBetween(days.first, days.last);
+    // The calendars' events, with what runs over several days of the
+    // planner's own among theirs.
+    final range = context.calendars
+        .eventsBetween(days.first, days.last)
+        .withSpans(store.spansBetween(days.first, days.last));
     // Each day's tasks and events as one list, in one order.
     final items = {
       for (final d in days) d: store.arrangeDay(byDay[d] ?? const [], range.on(d)),
@@ -1925,7 +2131,11 @@ class _WeekPageState extends State<_WeekPage> {
     final store = context.store;
     final days = [for (var i = 0; i < 7; i++) widget.first.addDays(i)];
     final byDay = store.tasksBetween(days.first, days.last);
-    final range = context.calendars.eventsBetween(days.first, days.last);
+    // The calendars' events, with what runs over several days of the
+    // planner's own among theirs.
+    final range = context.calendars
+        .eventsBetween(days.first, days.last)
+        .withSpans(store.spansBetween(days.first, days.last));
     // Each day's tasks and events as one list, in one order.
     final items = {
       for (final d in days) d: store.arrangeDay(byDay[d] ?? const [], range.on(d)),

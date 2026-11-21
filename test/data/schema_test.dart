@@ -194,7 +194,7 @@ void main() {
       copy.close();
       // Opened again, it is this version's file.
       final again = PlannerDatabase.open(path);
-      expect(again.foundVersion, 5);
+      expect(again.foundVersion, 6);
       again.close();
     });
   });
@@ -412,7 +412,7 @@ void main() {
         'hidden': true,
       })));
       final backup = Export.backup(store);
-      expect(jsonDecode(backup)['version'], 5);
+      expect(jsonDecode(backup)['version'], 6);
 
       final copy = PlannerStore(PlannerDatabase.inMemory(), today: () => friday);
       Export.restore(copy, backup);

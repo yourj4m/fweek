@@ -308,9 +308,19 @@ class _TimeWheelsState extends State<TimeWheels> {
 /// Chooses a time: on a phone with wheels for hours and minutes, on a
 /// desktop by typing it or picking from a list.
 class TimePicker extends StatelessWidget {
-  const TimePicker({super.key, required this.selected, required this.onPick, this.after});
+  const TimePicker({
+    super.key,
+    required this.selected,
+    required this.onPick,
+    this.after,
+    this.none,
+  });
 
   final int? selected;
+
+  /// What having no time is called here, when not "No time" (or, for an
+  /// end, "No end"): an event without a time is "All day".
+  final String? none;
 
   /// When set, an end is being picked for something that starts at this
   /// time: only later times are offered, each with how long that makes it.
@@ -322,8 +332,8 @@ class TimePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => isMobile
-      ? _WheelTimePicker(selected: selected, onPick: onPick, after: after)
-      : _ListTimePicker(selected: selected, onPick: onPick, after: after);
+      ? _WheelTimePicker(selected: selected, onPick: onPick, after: after, none: none)
+      : _ListTimePicker(selected: selected, onPick: onPick, after: after, none: none);
 }
 
 /// How long [minutes] is, in the shortest way to say it: `45 min`, `1 h`,
@@ -339,10 +349,16 @@ String formatDuration(int minutes) {
 }
 
 class _WheelTimePicker extends StatefulWidget {
-  const _WheelTimePicker({required this.selected, required this.onPick, this.after});
+  const _WheelTimePicker({
+    required this.selected,
+    required this.onPick,
+    this.after,
+    this.none,
+  });
 
   final int? selected;
   final int? after;
+  final String? none;
   final ValueChanged<int?> onPick;
 
   @override
@@ -375,7 +391,7 @@ class _WheelTimePickerState extends State<_WheelTimePicker> {
                 children: [
                   Expanded(
                     child: AppButton(
-                      label: widget.after == null ? 'No time' : 'No end',
+                      label: widget.none ?? (widget.after == null ? 'No time' : 'No end'),
                       expand: true,
                       onTap: () => widget.onPick(null),
                     ),
@@ -398,10 +414,16 @@ class _WheelTimePickerState extends State<_WheelTimePicker> {
 
 /// A field to type a time plus a scrolling list in half-hour steps.
 class _ListTimePicker extends StatefulWidget {
-  const _ListTimePicker({required this.selected, required this.onPick, this.after});
+  const _ListTimePicker({
+    required this.selected,
+    required this.onPick,
+    this.after,
+    this.none,
+  });
 
   final int? selected;
   final int? after;
+  final String? none;
 
   /// Called with minutes after midnight, or null for "no time".
   final ValueChanged<int?> onPick;
@@ -481,7 +503,7 @@ class _ListTimePickerState extends State<_ListTimePicker> {
               itemExtent: Dim.controlInline,
               children: [
                 MenuRow(
-                  label: after == null ? 'No time' : 'No end',
+                  label: widget.none ?? (after == null ? 'No time' : 'No end'),
                   checked: widget.selected == null,
                   onTap: () => widget.onPick(null),
                 ),

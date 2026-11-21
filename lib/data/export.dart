@@ -9,7 +9,7 @@ import 'recurrence.dart';
 /// Export and backup formats.
 abstract final class Export {
   static const backupFormat = 'weektodo-backup';
-  static const backupVersion = 5;
+  static const backupVersion = 6;
 
   static List<Task> _ordered(PlannerStore store) => store.allTasks.toList()
     ..sort((a, b) {
@@ -72,6 +72,7 @@ abstract final class Export {
             if (t.rolledPosition != null) 'rolled_pos': t.rolledPosition,
             if (t.listPos.isNotEmpty) 'list_pos': t.listPos,
             if (t.due != null) 'due': t.due!.iso,
+            if (t.endDay != null) 'end_date': t.endDay!.iso,
             'created_at': t.createdAt,
           },
       ],
@@ -179,6 +180,7 @@ abstract final class Export {
           'rolled_pos': t['rolled_pos'],
           'list_pos': t['list_pos'],
           'due': t['due'],
+          'end_date': t['end_date'],
           'created_at': t['created_at'] ?? 0,
           'deleted': false,
         }));
@@ -259,7 +261,7 @@ abstract final class Export {
     }
 
     final lines = [
-      'date,list,time,title,done,color,repeats,note,subtasks,location,type,end,due',
+      'date,list,time,title,done,color,repeats,note,subtasks,location,type,end,due,last_day',
       for (final t in _ordered(store))
         [
           t.date?.iso ?? '',
@@ -276,6 +278,7 @@ abstract final class Export {
           t.kind.name,
           t.end == null ? '' : _clock(t.end!),
           t.due?.iso ?? '',
+          t.endDay?.iso ?? '',
         ].map(cell).join(','),
     ];
     return '${lines.join('\r\n')}\r\n';
@@ -292,14 +295,19 @@ abstract final class Export {
         out.writeln(group);
         heading = group;
       }
+      // Over several days the end is said on a line of its own.
       final time = t.time == null
           ? ''
-          : t.end == null
+          : t.end == null || t.endDay != null
               ? '${_clock(t.time!)} '
               : '${_clock(t.time!)}–${_clock(t.end!)} ';
       // A task has a box to tick; an event is a plain line.
       final mark = !t.checkable ? ' - ' : t.done ? '[x]' : '[ ]';
       out.writeln('$mark $time${t.title}');
+      if (t.endDay != null) {
+        out.writeln(
+            '    → until ${t.endDay!.iso}${t.end == null ? '' : ' ${_clock(t.end!)}'}');
+      }
       // A list's task that has a day stands under its day.
       if (t.date != null && t.listId != null) {
         out.writeln('    # ${_listTitle(store, t.listId)}');
@@ -372,12 +380,18 @@ abstract final class Export {
           if (t.hasLocation) 'LOCATION:${escape(t.location.trim())}',
           if (t.geo case final geo? when geo.contains(','))
             'GEO:${geo.replaceFirst(',', ';')}',
+          // A whole-day event ends with the day after its last (the end
+          // is exclusive); one with a time ends on its last day, at its end
+          // time or, without one, when it began.
           if (t.time == null) ...[
             'DTSTART;VALUE=DATE:${date(day)}',
-            'DTEND;VALUE=DATE:${date(day.addDays(1))}',
+            'DTEND;VALUE=DATE:${date((t.endDay ?? day).addDays(1))}',
           ] else ...[
             'DTSTART:${at(day, t.time!)}',
-            if (t.end != null) 'DTEND:${at(day, t.end!)}',
+            if (t.endDay != null)
+              'DTEND:${at(t.endDay!, t.end ?? t.time!)}'
+            else if (t.end != null)
+              'DTEND:${at(day, t.end!)}',
           ],
           if (t.recurrence != null) ...[
             'RRULE:${rrule(t.recurrence!, day)}',

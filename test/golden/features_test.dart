@@ -854,9 +854,11 @@ void main() {
       expect(named(store, 'Water the plants').kind, ItemKind.event);
       expect(find.bySemanticsLabel('Mark as done'), findsNothing);
 
-      // No end without a start.
+      // An event without a time takes the whole day, and says so. No end
+      // without a start.
+      expect(find.text('All day'), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp('^Add an end time')), findsNothing);
-      await tester.tap(find.bySemanticsLabel('Time'));
+      await tester.tap(find.bySemanticsLabel('Time, All day'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('7:30'));
       await tester.pumpAndSettle();

@@ -112,7 +112,17 @@ class RangeEvents {
 
   /// The several-day events that cover [day].
   Iterable<Task> spansOn(Day day) =>
-      spans.where((t) => t.date! <= day && t.event!.lastDay >= day);
+      spans.where((t) => t.date! <= day && t.lastDay! >= day);
+
+  /// This with the planner's [own] items over several days among the
+  /// calendars' (see `PlannerStore.spansBetween`), in one order.
+  RangeEvents withSpans(List<Task> own) => own.isEmpty
+      ? this
+      : RangeEvents(
+          byDay,
+          [...spans, ...own]..sort(PlannerStore.compareSpans),
+          hidden,
+        );
 
   bool get isEmpty => byDay.isEmpty && spans.isEmpty;
 }
@@ -972,12 +982,7 @@ class CalendarService extends ChangeNotifier {
     for (final events in byDay.values) {
       events.sort(_compare);
     }
-    spans.sort((a, b) {
-      final byStart = a.date!.compareTo(b.date!);
-      if (byStart != 0) return byStart;
-      final byLength = b.event!.lastDay.compareTo(a.event!.lastDay);
-      return byLength != 0 ? byLength : _compare(a, b);
-    });
+    spans.sort(PlannerStore.compareSpans);
     // Rebuilds ask for the same few ranges again and again.
     if (_ranges.length > 16) _ranges.clear();
     return _ranges[(first, last, showHidden)] = RangeEvents(byDay, spans, hidden);

@@ -270,20 +270,107 @@ class _TaskDialogState extends State<_TaskDialog> {
       );
 
   Future<void> _pickDate(BuildContext anchor, Task task) async {
+    final date = task.date;
     // A list's task can be without a day; any other is on one.
     final canClear =
-        task.date != null && task.listId != null && !task.isOccurrence && !task.fromCalendar;
-    final picked = await _pickDayOrNone(
-      anchor,
-      selected: task.date,
-      none: canClear ? 'No day' : null,
-      noneIcon: AppIcons.calendarX,
-      cleared: () => _apply(() {
-        _store.unplan(_id);
-        return _id;
-      }),
+        date != null && task.listId != null && !task.isOccurrence && !task.fromCalendar;
+    // An event of the planner's own can run over several days. How long
+    // one of a calendar runs is the calendar's to say.
+    final canSpan =
+        date != null && !task.fromCalendar && (task.happens || task.spansDays);
+    final rect = globalRect(anchor);
+    var forLastDay = false;
+    final picked = await showPopover<Day>(
+      context: context,
+      anchor: rect,
+      align: -1,
+      builder: (popover) {
+        void close() => Navigator.of(popover).pop();
+        return PopoverSurface(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // The first day: picking one moves the whole of it.
+              MonthPicker(
+                selected: date,
+                onPick: (day) => Navigator.of(popover).pop(day),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: SizedBox(
+                  width: 272,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (canSpan)
+                        MenuRow(
+                          icon: AppIcons.calendarRange,
+                          label: task.spansDays
+                              ? 'Last day, ${Strings.dayMonth(task.lastDay!)}'
+                              : 'Ends on another day…',
+                          trailing: Icon(AppIcons.chevronRight,
+                              size: 16, color: context.theme.ink(60)),
+                          onTap: () {
+                            forLastDay = true;
+                            close();
+                          },
+                        ),
+                      if (canSpan && task.spansDays)
+                        MenuRow(
+                          icon: AppIcons.calendar1,
+                          label: 'One day only',
+                          onTap: () {
+                            close();
+                            _apply(() {
+                              _store.updateTask(_id, endDay: () => null);
+                              return _id;
+                            });
+                          },
+                        ),
+                      if (canClear)
+                        MenuRow(
+                          icon: AppIcons.calendarX,
+                          label: 'No day',
+                          onTap: () {
+                            close();
+                            _apply(() {
+                              _store.unplan(_id);
+                              return _id;
+                            });
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
-    if (picked != null && picked != task.date) {
+    if (forLastDay) {
+      if (!mounted) return;
+      final last = await showPopover<Day>(
+        context: context,
+        anchor: rect,
+        align: -1,
+        builder: (popover) => PopoverSurface(
+          child: MonthPicker(
+            selected: task.lastDay,
+            onPick: (day) => Navigator.of(popover).pop(day),
+          ),
+        ),
+      );
+      if (last != null && last != task.lastDay) {
+        _apply(() {
+          // A day before the first is no last day: it stays within one.
+          _store.updateTask(_id, endDay: () => last);
+          return _id;
+        });
+      }
+      return;
+    }
+    if (picked != null && picked != date) {
       _apply(() => _store.moveTask(_id, DaySlot(picked)));
     }
   }
@@ -357,6 +444,7 @@ class _TaskDialogState extends State<_TaskDialog> {
       builder: (popover) => PopoverSurface(
         child: TimePicker(
           selected: task.time,
+          none: task.happens ? 'All day' : null,
           onPick: (minutes) {
             chose = true;
             picked = minutes;
@@ -384,7 +472,10 @@ class _TaskDialogState extends State<_TaskDialog> {
       builder: (popover) => PopoverSurface(
         child: TimePicker(
           selected: task.end,
-          after: start,
+          // Over several days the end is a time of the last day, whatever
+          // the start.
+          after: task.spansDays ? null : start,
+          none: 'No end',
           onPick: (minutes) {
             chose = true;
             picked = minutes;
@@ -867,13 +958,11 @@ class _TaskDialogState extends State<_TaskDialog> {
     final date = task.date;
     final list = task.listId == null ? null : context.store.list(task.listId!);
     final source = task.event;
-    final where = date != null
-        ? (task.spansDays
-            ? '${Strings.fullDate(date)} – ${Strings.fullDate(source!.lastDay)}'
-            : Strings.fullDate(date))
-        : 'No day';
+    final where = date != null ? Strings.dateRange(date, task.lastDay ?? date) : 'No day';
     // A task of the planner's own that does not repeat can be in a list.
-    final listed = source == null && !task.repeats;
+    // Lists hold tasks: an event is offered none, unless it is in one from
+    // the time it was a task.
+    final listed = source == null && !task.repeats && (task.checkable || list != null);
     final side = narrow ? 24.0 : 32.0;
     final muted = context.text.caption14.copyWith(color: theme.ink(60));
 
@@ -955,8 +1044,10 @@ class _TaskDialogState extends State<_TaskDialog> {
                   Builder(
                     builder: (anchor) => _HeaderButton(
                       icon: AppIcons.clock,
+                      // An event without a time takes the whole day, and
+                      // says so.
                       label: task.time == null
-                          ? null
+                          ? (task.happens ? 'All day' : null)
                           : formatTime(task.time!, use24h: use24h),
                       muted: task.time == null,
                       tooltip: 'Time',
@@ -969,9 +1060,14 @@ class _TaskDialogState extends State<_TaskDialog> {
                   if (task.time != null)
                     Builder(
                       builder: (anchor) => _HeaderButton(
+                        // Over several days the end is on the last of
+                        // them, which is said with it.
                         label: task.end == null
                             ? '– end'
-                            : '– ${formatTime(task.end!, use24h: use24h)}',
+                            : task.spansDays
+                                ? '– ${Strings.weekdayShort(task.lastDay!)} '
+                                    '${formatTime(task.end!, use24h: use24h)}'
+                                : '– ${formatTime(task.end!, use24h: use24h)}',
                         muted: task.end == null,
                         tooltip: task.end == null ? 'Add an end time' : 'End time',
                         tight: true,

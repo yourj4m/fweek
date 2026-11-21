@@ -196,7 +196,8 @@ class _Recap extends StatelessWidget {
                                             const SizedBox(height: 2),
                                             Text(
                                               [
-                                                Strings.fullDate(item.day),
+                                                Strings.dateRange(
+                                                    item.day, item.lastDay ?? item.day),
                                                 when(item),
                                                 if (item.recurrence case final rule?)
                                                   Strings.describe(rule, item.day),

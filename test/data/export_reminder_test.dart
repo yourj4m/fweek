@@ -82,7 +82,7 @@ void main() {
   group('other formats', () {
     test('CSV quotes commas, quotes and newlines', () {
       final lines = const LineSplitter().convert(Export.csv(populated()).replaceAll('\r\n', '\n'));
-      expect(lines.first, 'date,list,time,title,done,color,repeats,note,subtasks,location,type,end,due');
+      expect(lines.first, 'date,list,time,title,done,color,repeats,note,subtasks,location,type,end,due,last_day');
       final row = Export.csv(populated()).split('\r\n')[1];
       expect(row, startsWith('2026-11-09,,09:05,"Plain, with ""quotes"" and a comma",no,yellow,,"line one'));
     });

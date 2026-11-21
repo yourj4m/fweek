@@ -7,6 +7,7 @@ import 'package:weektodo/data/models.dart';
 import 'package:weektodo/data/planner_store.dart';
 import 'package:weektodo/ui/task_list.dart';
 import 'package:weektodo/ui/tasks_page.dart';
+import 'package:weektodo/ui/widgets/controls.dart';
 
 import 'harness.dart';
 
@@ -43,6 +44,9 @@ PlannerStore listsStore({int more = 0}) {
 
 void main() {
   setUpAll(loadFonts);
+
+  /// The Tasks page is on show.
+  final onTasks = find.byType(TasksBody);
 
   Future<void> toTasks(WidgetTester tester) async {
     await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
@@ -163,7 +167,7 @@ void main() {
       await tester.tap(find.text('New list'));
       await tester.pumpAndSettle();
       // The Tasks page, the new list waiting for its name.
-      expect(find.text('Tasks'), findsOneWidget);
+      expect(onTasks, findsOneWidget);
       expect(store.lists, hasLength(2));
       tester.testTextInput.enterText('Groceries');
       await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -333,7 +337,7 @@ void main() {
           ['Slides for the committee', 'Chapter 2 draft', 'Reply to the reviewers']);
     });
 
-    desktopTest('held on the header\'s button, a task is taken to the week and dropped on a day',
+    desktopTest('held on the header\'s name of a view, a task is taken there and dropped',
         (tester) async {
       final store = listsStore();
       final first = store.lists.first.id;
@@ -345,7 +349,7 @@ void main() {
         tester,
         tester.getCenter(find.text('Renew the passport')),
         const Offset(390, 300),
-        via: tester.getCenter(find.bySemanticsLabel('Back to the week (L)')),
+        via: tester.getCenter(find.bySemanticsLabel('Week')),
       );
       expect(find.text('November 2026'), findsOneWidget);
       final passport = named(store, 'Renew the passport');
@@ -356,9 +360,9 @@ void main() {
         tester,
         tester.getCenter(find.text('Water the plants')),
         const Offset(1000, 400),
-        via: tester.getCenter(find.bySemanticsLabel('Tasks (L)')),
+        via: tester.getCenter(find.bySemanticsLabel('Tasks')),
       );
-      expect(find.text('Tasks'), findsOneWidget);
+      expect(onTasks, findsOneWidget);
       final plants = named(store, 'Water the plants');
       expect((plants.date, plants.listId), (null, listNamed(store, 'Home')));
     });
@@ -648,6 +652,202 @@ void main() {
     });
   });
 
+  group('the header', () {
+    /// Where the three names of the switch and the buttons after it stand.
+    List<Offset> places(WidgetTester tester) => [
+          for (final label in ['Week', 'Month', 'Tasks', 'New event (N)', 'Menu'])
+            tester.getCenter(find.bySemanticsLabel(label)),
+        ];
+
+    bool selected(WidgetTester tester, String label) => tester
+        .getSemantics(find.bySemanticsLabel(label))
+        .flagsCollection
+        .isSelected
+        .toBoolOrNull() ==
+        true;
+
+    desktopTest('names the three views, marks the one on show, and leads to each',
+        (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      expect(selected(tester, 'Week'), isTrue);
+      expect(selected(tester, 'Tasks'), isFalse);
+      final before = places(tester);
+
+      await tester.tap(find.bySemanticsLabel('Tasks'));
+      await tester.pumpAndSettle();
+      expect(onTasks, findsOneWidget);
+      expect(selected(tester, 'Tasks'), isTrue);
+      // Nothing has moved: the next click needs no aiming.
+      expect(places(tester), before);
+
+      await tester.tap(find.bySemanticsLabel('Month'));
+      await tester.pumpAndSettle();
+      expect(onTasks, findsNothing);
+      expect(store.setting<String>(Settings.view), 'month');
+      expect(selected(tester, 'Month'), isTrue);
+      expect(places(tester), before);
+
+      await tester.tap(find.bySemanticsLabel('Week'));
+      await tester.pumpAndSettle();
+      expect(store.setting<String>(Settings.view), 'week');
+      expect(places(tester), before);
+    });
+
+    desktopTest('the name of the view on show leads back to today', (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      await tester.tap(find.bySemanticsLabel('Next'));
+      await tester.pumpAndSettle();
+      expect(find.text('W47'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Week'));
+      await tester.pumpAndSettle();
+      expect(find.text('W46'), findsOneWidget);
+    });
+
+    desktopTest('one button shows the lists beside the week, one on the panel hides them',
+        (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      final show = find.bySemanticsLabel('Show the lists beside the week (P)');
+      final hide = find.bySemanticsLabel('Hide the lists (P)');
+      expect((show.evaluate().length, hide.evaluate().length), (1, 0));
+
+      await tester.tap(show);
+      await tester.pumpAndSettle();
+      expect(find.byType(ListPanel), findsOneWidget);
+      // The panel has the one button that shuts it; the header has none
+      // for it now, and the way to the Tasks page is said once, by name.
+      expect((show.evaluate().length, hide.evaluate().length), (0, 1));
+      expect(find.bySemanticsLabel('Tasks'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('Tasks page')), findsNothing);
+      expect(
+        find.descendant(of: find.byType(ListPanel), matching: find.byType(AppButton)),
+        findsOneWidget,
+      );
+
+      await tester.tap(hide);
+      await tester.pumpAndSettle();
+      expect(find.byType(ListPanel), findsNothing);
+      expect((show.evaluate().length, hide.evaluate().length), (1, 0));
+      // Neither on the month nor on the Tasks page.
+      await tester.tap(find.bySemanticsLabel('Month'));
+      await tester.pumpAndSettle();
+      expect(show, findsNothing);
+      await tester.tap(find.bySemanticsLabel('Tasks'));
+      await tester.pumpAndSettle();
+      expect(show, findsNothing);
+    });
+
+    desktopTest('a button that is only an icon says what it does when the pointer rests on it',
+        (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      const hint = 'Show the lists beside the week (P)';
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(700, 400));
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(tester.getCenter(find.bySemanticsLabel(hint)));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text(hint), findsNothing, reason: 'not at once');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(find.text(hint), findsOneWidget);
+      // Inside the window, under the button.
+      final label = tester.getRect(find.text(hint));
+      expect(label.top, greaterThan(tester.getRect(find.bySemanticsLabel(hint)).bottom));
+      expect(label.right, lessThan(1536));
+      await expectLater(
+          find.byType(MaterialApp), matchesGoldenFile('goldens/header_hint.png'));
+      // Gone when the pointer moves on; another button says its own.
+      await mouse.moveTo(tester.getCenter(find.bySemanticsLabel('New event (N)')));
+      await tester.pump();
+      expect(find.text(hint), findsNothing);
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pump();
+      expect(find.text('New event (N)'), findsOneWidget);
+      // Pressed, a button does its thing and says no more.
+      await tester.tap(find.bySemanticsLabel('New event (N)'));
+      await tester.pumpAndSettle();
+      expect(find.text('New event (N)'), findsNothing);
+    });
+
+    phoneTest('on a phone the header\'s arrows turn the lists too', (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(393, 851));
+      await tester.tap(find.bySemanticsLabel('Tasks'));
+      await tester.pumpAndSettle();
+      expect(find.text('Fix the bike light'), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Next list'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Next list'));
+      await tester.pumpAndSettle();
+      expect(store.setting<String?>(Settings.openList), store.lists[2].id);
+      expect(find.text('Fix the bike light'), findsOneWidget);
+    });
+
+    desktopTest('on the Tasks page the arrows turn to the next list where one shows at a time',
+        (tester) async {
+      // Seven lists in a window with room for six columns: one list open.
+      final store = listsStore(more: 4);
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      await toTasks(tester);
+      AppButton arrow(String label) => tester.widget<AppButton>(
+          find.ancestor(of: find.bySemanticsLabel(label), matching: find.byType(AppButton)));
+      expect(arrow('Previous list').onTap, isNull, reason: 'the first list is open');
+      await tester.tap(find.bySemanticsLabel('Next list'));
+      await tester.pumpAndSettle();
+      expect(store.setting<String?>(Settings.openList), store.lists[1].id);
+      await tester.tap(find.bySemanticsLabel('Previous list'));
+      await tester.pumpAndSettle();
+      expect(store.setting<String?>(Settings.openList), store.lists[0].id);
+    });
+
+    desktopTest('where every list shows, the arrows have nothing to turn', (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      await toTasks(tester);
+      for (final label in ['Previous list', 'Next list']) {
+        final arrow = tester.widget<AppButton>(
+            find.ancestor(of: find.bySemanticsLabel(label), matching: find.byType(AppButton)));
+        expect(arrow.onTap, isNull);
+      }
+    });
+
+    desktopTest('a tight window shows the views by icon, the tightest as one button',
+        (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(620, 760));
+      // By icon: still three, still by name for a screen reader.
+      expect(find.text('Month'), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Tasks'));
+      await tester.pumpAndSettle();
+      expect(onTasks, findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Week'));
+      await tester.pumpAndSettle();
+      expect(onTasks, findsNothing);
+
+      await pumpApp(tester, store, size: const Size(440, 760));
+      expect(find.bySemanticsLabel('Month'), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Tasks (L)'));
+      await tester.pumpAndSettle();
+      expect(onTasks, findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Back to the week (L)'));
+      await tester.pumpAndSettle();
+      expect(onTasks, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    phoneTest('a phone has the bar for the views; its header adds events and turns weeks',
+        (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(393, 851));
+      expect(find.bySemanticsLabel('Month'), findsNothing);
+      expect(find.bySemanticsLabel('New event'), findsOneWidget);
+      expect(find.bySemanticsLabel('Next'), findsOneWidget);
+    });
+  });
+
   group('finding the way', () {
     desktopTest('search leads to a task in its list', (tester) async {
       final store = listsStore();
@@ -663,7 +863,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(find.text('Tasks'), findsOneWidget);
+      expect(onTasks, findsOneWidget);
       expect(find.text('Fix the bike light'), findsOneWidget);
     });
 
@@ -683,16 +883,17 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       await toTasks(tester);
-      expect(find.text('Tasks'), findsOneWidget);
+      expect(onTasks, findsOneWidget);
     });
 
     desktopTest('L turns to the tasks and back; T and M lead to the planner', (tester) async {
       final store = listsStore();
       await pumpApp(tester, store, size: const Size(1536, 790));
       await toTasks(tester);
-      expect(find.text('Tasks'), findsOneWidget);
-      // No arrows for weeks on this page.
+      expect(onTasks, findsOneWidget);
+      // The arrows are for lists on this page, not for weeks.
       expect(find.bySemanticsLabel('Next'), findsNothing);
+      expect(find.bySemanticsLabel('Next list'), findsOneWidget);
       await toTasks(tester);
       expect(find.text('November 2026'), findsOneWidget);
       await toTasks(tester);

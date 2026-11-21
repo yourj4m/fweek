@@ -272,17 +272,23 @@ class PlannerStore extends ChangeNotifier {
     final kind = ItemKind.tryParse(row['kind']) ?? ItemKind.task;
     final time = row['time'] as int?;
     final end = row['end_time'] as int?;
+    final date = Day.tryParse(row['date'] as String?);
+    // A last day counts when it lies after the first.
+    final last = Day.tryParse(row['end_date'] as String?);
+    final endDay = date != null && last != null && last > date ? last : null;
     return Task(
       id: row['id'] as String,
       listId: row['list_id'] as String?,
-      date: Day.tryParse(row['date'] as String?),
+      date: date,
+      endDay: endDay,
       position: row['position'] as String? ?? '',
       title: row['title'] as String? ?? '',
       note: row['note'] as String? ?? '',
       color: row['color'] as String?,
       time: time,
       kind: kind,
-      end: time != null && end != null && end > time ? end : null,
+      // Within one day an end comes after the start.
+      end: time != null && end != null && (end > time || endDay != null) ? end : null,
       // An event is not ticked off; a tick it had as a task comes back
       // with it should it become one again.
       done: row['done'] == 1 && kind == ItemKind.task,
@@ -525,6 +531,7 @@ class PlannerStore extends ChangeNotifier {
     return series.copyWith(
       id: '${series.id}@${day.iso}',
       date: () => day,
+      endDay: () => series.endDay?.addDays(shift),
       reminder: () => series.reminder?.add(Duration(days: shift)),
       occurrenceOf: () => series.id,
       done: false,
@@ -569,7 +576,9 @@ class PlannerStore extends ChangeNotifier {
     final byDay = <Day, List<Task>>{};
     for (final task in _tasks.values) {
       final date = task.date;
-      if (date == null) continue;
+      // What runs over several days is not a row of one day: see
+      // [spansBetween].
+      if (date == null || task.endDay != null) continue;
       final rule = task.recurrence;
       if (rule == null) {
         if (date >= from && date <= to) (byDay[date] ??= []).add(task);
@@ -581,6 +590,55 @@ class PlannerStore extends ChangeNotifier {
       }
     }
     return {for (final e in byDay.entries) e.key: _arrange(e.value)};
+  }
+
+  final Map<(Day, Day), List<Task>> _spanRanges = {};
+  int _spansRevision = -1;
+
+  /// The planner's own items that run over several days and touch
+  /// [from]..[to], each once (a repeating one once per occurrence): by
+  /// first day, longer ones first. Shared between callers until the next
+  /// change; do not alter it.
+  List<Task> spansBetween(Day from, Day to) {
+    if (_spansRevision != _revision) {
+      _spanRanges.clear();
+      _spansRevision = _revision;
+    }
+    return _spanRanges[(from, to)] ??= _spansBetween(from, to);
+  }
+
+  List<Task> _spansBetween(Day from, Day to) {
+    final spans = <Task>[];
+    final hideDone = setting<bool>(Settings.hideDone);
+    for (final task in _tasks.values) {
+      final date = task.date, last = task.endDay;
+      if (date == null || last == null) continue;
+      final rule = task.recurrence;
+      if (rule == null) {
+        if (date <= to && last >= from && !(hideDone && task.done)) spans.add(task);
+      } else {
+        // An occurrence that began before the range may reach into it.
+        final length = last.difference(date);
+        for (final day in rule.occurrences(date, from.addDays(-length), to)) {
+          if (!task.exdates.contains(day)) spans.add(_occurrence(task, day));
+        }
+      }
+    }
+    return spans..sort(compareSpans);
+  }
+
+  /// The order of items over several days: by first day, longer ones
+  /// first, then by time and title.
+  static int compareSpans(Task a, Task b) {
+    final byStart = a.date!.compareTo(b.date!);
+    if (byStart != 0) return byStart;
+    final byLength = b.lastDay!.compareTo(a.lastDay!);
+    if (byLength != 0) return byLength;
+    final timedA = a.time == null ? 0 : 1, timedB = b.time == null ? 0 : 1;
+    if (timedA != timedB) return timedA - timedB;
+    if (a.time != null && a.time != b.time) return a.time! - b.time!;
+    final byTitle = a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    return byTitle != 0 ? byTitle : a.id.compareTo(b.id);
   }
 
   int _compareInList(Task a, Task b) {
@@ -794,6 +852,43 @@ class PlannerStore extends ChangeNotifier {
     return id;
   }
 
+  /// Adds an item on [day] with everything the form for a new event sets,
+  /// as one change, and returns its id. With [endDay] after [day] it runs
+  /// over those days; [end] is then a time of the last day.
+  String addItem({
+    required Day day,
+    required String title,
+    ItemKind kind = ItemKind.event,
+    Day? endDay,
+    int? time,
+    int? end,
+    String note = '',
+    String location = '',
+    String? geo,
+    String? color,
+    Recurrence? recurrence,
+    DateTime? reminder,
+  }) {
+    final id = _newId();
+    final spans = endDay != null && endDay > day;
+    _write('tasks', id, {
+      ..._placeColumns(DaySlot(day), null),
+      'title': title.trim(),
+      'created_at': _now(),
+      if (kind == ItemKind.event) 'kind': ItemKind.event.name,
+      if (spans) 'end_date': endDay.iso,
+      'time': ?time,
+      if (time != null && end != null && (spans || end > time)) 'end_time': end,
+      if (note.trim().isNotEmpty) 'note': note.trim(),
+      if (location.trim().isNotEmpty) 'location': location.trim(),
+      if (location.trim().isNotEmpty && geo != null) 'geo': geo,
+      'color': ?color,
+      if (recurrence != null) 'recurrence': recurrence.toJson(),
+      if (reminder != null) 'reminder': _stamp(reminder),
+    });
+    return id;
+  }
+
   /// Takes in an item from outside (an event of a calendar file) under an
   /// id of the caller's choosing: made when the planner has none under that
   /// id, brought up to date otherwise. What the user did with it since
@@ -807,14 +902,17 @@ class PlannerStore extends ChangeNotifier {
     String location = '',
     int? time,
     int? end,
+    Day? lastDay,
     ItemKind kind = ItemKind.event,
     Recurrence? recurrence,
     Set<Day> exdates = const {},
   }) {
     final known = _tasks[id];
     final isNew = known == null;
+    final spans = lastDay != null && lastDay > day;
     _write('tasks', id, {
       'date': day.iso,
+      'end_date': spans ? lastDay.iso : null,
       'list_id': null,
       if (isNew || known.date != day)
         'position': _keyAt(DaySlot(day), null, except: id),
@@ -822,7 +920,7 @@ class PlannerStore extends ChangeNotifier {
       'note': note,
       'location': location,
       'time': time,
-      'end_time': time != null && end != null && end > time ? end : null,
+      'end_time': time != null && end != null && (spans || end > time) ? end : null,
       'recurrence': recurrence?.toJson(),
       'exdates': [for (final d in exdates.toList()..sort()) d.iso],
       'deleted': false,
@@ -867,6 +965,9 @@ class PlannerStore extends ChangeNotifier {
         'note': task.note,
         'color': task.color,
         'time': task.time,
+        'end_time': task.end,
+        'end_date': task.endDay?.iso,
+        if (task.happens) 'kind': ItemKind.event.name,
         'location': task.location,
         'geo': task.geo,
         'subtasks': [for (final s in task.subtasks) s.toJson()],
@@ -905,10 +1006,23 @@ class PlannerStore extends ChangeNotifier {
     String? location,
     String? Function()? geo,
     Day? Function()? due,
+    Day? Function()? endDay,
   }) {
     final occurrence = task(id);
     if (occurrence == null) return;
     final source = occurrence.event;
+
+    // The last day as it is to be: one after the first, or none. How long
+    // an event of a calendar runs is its calendar's business.
+    final first = occurrence.date;
+    final Day? lastDay = switch (endDay) {
+      null => occurrence.endDay,
+      final set => switch (set()) {
+          final day? when first != null && day > first => day,
+          _ => null,
+        },
+    };
+    final spans = source == null && lastDay != null;
 
     // The end as it is to be stored. One given outright is taken as it is.
     // With only the start changing, an end the user had set moves along
@@ -918,11 +1032,23 @@ class PlannerStore extends ChangeNotifier {
       if (end != null) {
         final start = time != null ? time() : occurrence.time;
         final value = end();
-        return (value: start != null && value != null && value > start ? value : null);
+        // Over several days the end is a time of the last day.
+        return (
+          value: start != null && value != null && (spans || value > start) ? value : null
+        );
       }
-      if (time == null || explicit == null) return null;
+      if (explicit == null) return null;
+      if (time == null) {
+        // Only the last day can have changed. Back within one day, an end
+        // at or before the start goes.
+        if (endDay == null || spans) return null;
+        final start = occurrence.time;
+        return start == null || explicit <= start ? (value: null) : null;
+      }
       final from = occurrence.time, to = time();
       if (from == null || to == null) return (value: null);
+      // A time of the last day stays as it is.
+      if (spans) return null;
       final moved = explicit + (to - from);
       return (value: moved > to && moved < 24 * 60 ? moved : null);
     }
@@ -988,6 +1114,12 @@ class PlannerStore extends ChangeNotifier {
       'location': ?location?.trim(),
       if (geo != null) 'geo': geo(),
       if (due != null) 'due': due()?.iso,
+      if (endDay != null)
+        // For one occurrence of a repeating item the length is what is
+        // meant: the whole series runs that long.
+        'end_date': lastDay == null
+            ? null
+            : _tasks[target]!.date!.addDays(lastDay.difference(first!)).iso,
     });
   }
 
@@ -1248,6 +1380,9 @@ class PlannerStore extends ChangeNotifier {
         final fromList = current.listId != null && current.date == null;
         _write('tasks', target, {
           'date': day.iso,
+          // Over several days: as many from the new first day on.
+          if (current.endDay != null)
+            'end_date': day.addDays(current.endDay!.difference(current.date!)).iso,
           'position': _keyAt(slot, index, except: target),
           if (fromList && !setting<bool>(Settings.keepInList))
             'list_id': null
@@ -1260,7 +1395,12 @@ class PlannerStore extends ChangeNotifier {
         _write('tasks', target, {
           'list_id': listId,
           'list_pos': _keyAt(slot, index, except: target),
-          if (!keepDay) ...{'date': null, 'recurrence': null, ...dealtWith},
+          if (!keepDay) ...{
+            'date': null,
+            'end_date': null,
+            'recurrence': null,
+            ...dealtWith,
+          },
         });
     }
     return target;
@@ -1279,6 +1419,7 @@ class PlannerStore extends ChangeNotifier {
     }
     _write('tasks', id, {
       'date': null,
+      'end_date': null,
       'recurrence': null,
       if (item.rolledFrom != null) ...{'rolled_from': null, 'rolled_pos': null},
     });
@@ -1309,8 +1450,12 @@ class PlannerStore extends ChangeNotifier {
     final source = task(id);
     if (source == null) throw ArgumentError('No task $id');
     final newId = _newId();
+    final first = source.date, last = source.lastDay;
     _write('tasks', newId, {
       ..._placeColumns(slot, null),
+      // On a day, a copy of what runs over several days runs as long.
+      if (slot is DaySlot && source.spansDays)
+        'end_date': slot.day.addDays(last!.difference(first!)).iso,
       'title': source.title,
       // For what a calendar brought this is its description, or what the
       // user made of it.
@@ -1384,6 +1529,7 @@ class PlannerStore extends ChangeNotifier {
             t.date! < now &&
             t.checkable &&
             !t.done &&
+            t.endDay == null &&
             t.recurrence == null)
         .toList()
       ..sort((a, b) {

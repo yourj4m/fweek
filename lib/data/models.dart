@@ -286,6 +286,7 @@ class Task {
     this.rolledPosition,
     this.listPos = '',
     this.due,
+    this.endDay,
   });
 
   /// Ids of imported events start with this.
@@ -314,9 +315,18 @@ class Task {
   bool get checkable => kind == ItemKind.task;
   bool get happens => kind == ItemKind.event;
 
-  /// When it ends, in minutes after midnight of its day; only with a [time],
-  /// and later than it. Shown in the card, not in the week.
+  /// When it ends, in minutes after midnight; only with a [time]. Within
+  /// one day it is later than the start; for an item over several days it
+  /// is a time of the last day. Shown in the card, not in the week.
   final int? end;
+
+  /// For an item made here that runs over several days: the last of them,
+  /// later than [date]. What a calendar brings says this in [event].
+  final Day? endDay;
+
+  /// The last day this is shown on: its own day unless it runs over
+  /// several. Null without a day.
+  Day? get lastDay => event?.lastDay ?? endDay ?? date;
 
   /// For a task that the daily move of unfinished tasks brought to today:
   /// the day it comes from and where it stood there. Kept until the user
@@ -338,7 +348,7 @@ class Task {
   bool overAt(DateTime now) {
     final date = this.date;
     if (!happens || date == null) return false;
-    final last = event?.lastDay ?? date;
+    final last = lastDay ?? date;
     final today = Day(now.year, now.month, now.day);
     if (last < today) return true;
     if (last > today || time == null) return false;
@@ -346,8 +356,11 @@ class Task {
     return now.hour * 60 + now.minute >= until;
   }
 
-  /// An event shown over several days.
-  bool get spansDays => event != null && date != null && event!.lastDay > date!;
+  /// Shown over several days, as a bar across them.
+  bool get spansDays {
+    final first = date, last = lastDay;
+    return first != null && last != null && last > first;
+  }
 
   /// The list holding this task, or null for one that is only on a day.
   final String? listId;
@@ -452,6 +465,7 @@ class Task {
     String? Function()? rolledPosition,
     String? listPos,
     Day? Function()? due,
+    Day? Function()? endDay,
   }) =>
       Task(
         id: id ?? this.id,
@@ -483,6 +497,7 @@ class Task {
             rolledPosition != null ? rolledPosition() : this.rolledPosition,
         listPos: listPos ?? this.listPos,
         due: due != null ? due() : this.due,
+        endDay: endDay != null ? endDay() : this.endDay,
       );
 }
 

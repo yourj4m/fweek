@@ -1190,17 +1190,16 @@ class ListPanel extends StatelessWidget {
                   Expanded(
                     child: Text('Lists', style: context.text.heading24, maxLines: 1),
                   ),
-                  AppButton(
-                    icon: AppIcons.listChecks,
-                    kind: ButtonKind.ghost,
-                    tooltip: 'Open the Tasks page (L)',
-                    onTap: () => app.setPage(AppPage.tasks),
-                  ),
-                  AppButton(
-                    icon: AppIcons.panelRightClose,
-                    kind: ButtonKind.ghost,
-                    tooltip: 'Hide the lists (P)',
-                    onTap: () => app.setPanel(false),
+                  // The one button that shuts the panel. The Tasks page
+                  // itself is a view, chosen in the header.
+                  Semantics(
+                    container: true,
+                    child: AppButton(
+                      icon: AppIcons.panelRightClose,
+                      kind: ButtonKind.ghost,
+                      tooltip: 'Hide the lists (P)',
+                      onTap: () => app.setPanel(false),
+                    ),
                   ),
                 ],
               ),

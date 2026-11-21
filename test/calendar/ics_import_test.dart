@@ -80,19 +80,30 @@ void main() {
     expect(store.task(id)!.title, startsWith('Eva'));
   });
 
-  test('a whole day has no time; several whole days are on each of them', () {
+  test('a whole day has no time; several whole days are one event that runs over them', () {
     final result = take(file([
       ['UID:d1', 'SUMMARY:Open day', 'DTSTART;VALUE=DATE:20261120', 'DTEND;VALUE=DATE:20261121'],
       ['UID:d3', 'SUMMARY:Conference', 'DTSTART;VALUE=DATE:20261123', 'DTEND;VALUE=DATE:20261126'],
     ]));
     expect(result.added, 2);
     expect(store.tasksOn(Day(2026, 11, 20)).single.time, isNull);
-    for (var d = 23; d <= 25; d++) {
-      expect(on(Day(2026, 11, d)), ['Conference']);
-    }
-    expect(on(Day(2026, 11, 26)), isEmpty);
-    // One item for the three days, not three.
-    expect(store.allTasks.where((t) => t.title == 'Conference'), hasLength(1));
+    // One item from the 23rd to the 25th: a bar over the days, not a row
+    // on each, and not something that repeats.
+    final conference = store.allTasks.singleWhere((t) => t.title == 'Conference');
+    expect((conference.date, conference.endDay, conference.recurrence),
+        (Day(2026, 11, 23), Day(2026, 11, 25), null));
+    expect(on(Day(2026, 11, 24)), isEmpty);
+    expect([for (final t in store.spansBetween(Day(2026, 11, 25), Day(2026, 11, 29))) t.title],
+        ['Conference']);
+    expect(store.spansBetween(Day(2026, 11, 26), Day(2026, 11, 29)), isEmpty);
+    expect(result.items.last.lastDay, Day(2026, 11, 25));
+
+    // Taken in again after the calendar shortened it: brought up to date.
+    take(file([
+      ['UID:d3', 'SUMMARY:Conference', 'DTSTART;VALUE=DATE:20261123', 'DTEND;VALUE=DATE:20261124'],
+    ]));
+    expect(store.task(conference.id)!.endDay, isNull);
+    expect(on(Day(2026, 11, 23)), ['Conference']);
   });
 
   group('an event that repeats', () {

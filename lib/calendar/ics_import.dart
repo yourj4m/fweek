@@ -18,6 +18,7 @@ class ImportedItem {
     this.time,
     this.end,
     this.recurrence,
+    this.lastDay,
   });
 
   /// The id of the item in the planner (for a repeating one, its series).
@@ -25,6 +26,9 @@ class ImportedItem {
 
   /// The day it is on, or first on.
   final Day day;
+
+  /// The last day of one that runs over several.
+  final Day? lastDay;
   final String title;
   final int? time;
   final int? end;
@@ -66,7 +70,7 @@ class IcsImportResult {
 /// An event that repeats becomes one repeating item when the planner can
 /// say its rule (every n days, weeks on given weekdays, months, years, with
 /// days left out); what it cannot say is taken in date by date, for the
-/// coming year. An event over several whole days repeats daily over them.
+/// coming year. An event over several days is one item that runs over them.
 abstract final class IcsImport {
   /// How far back and ahead repeating events are looked at.
   static const _back = 366, _ahead = 732;
@@ -97,28 +101,36 @@ abstract final class IcsImport {
     }) {
       final start = event.start, end = event.end;
       final time = event.allDay || start == null ? null : _minutes(start);
-      // An end is kept when it lies later on the same day.
-      final until = time == null || end == null || Day.fromDateTime(end) != event.firstDay
+      // Over several days it runs to its last day; an end time is then a
+      // time of that day. Within one day an end is kept when it lies after
+      // the start.
+      final lastDay = event.lastDay > event.firstDay ? event.lastDay : null;
+      final ends = time == null || end == null ? null : _minutes(end);
+      final until = ends == null
           ? null
-          : _minutes(end);
+          : lastDay != null
+              ? (Day.fromDateTime(end!) == lastDay ? ends : null)
+              : (Day.fromDateTime(end!) == event.firstDay && ends > time! ? ends : null);
       final title = event.title.trim().isEmpty ? '(No title)' : event.title.trim();
       final isNew = store.putItem(
         id,
         day: event.firstDay,
+        lastDay: lastDay,
         title: title,
         note: plainFromHtml(event.description).trim(),
         location: event.location.trim(),
         time: time,
-        end: until != null && time != null && until > time ? until : null,
+        end: until,
         recurrence: recurrence,
         exdates: exdates,
       );
       items.add(ImportedItem(
         id: id,
         day: event.firstDay,
+        lastDay: lastDay,
         title: title,
         time: time,
-        end: until != null && time != null && until > time ? until : null,
+        end: until,
         recurrence: recurrence,
         isNew: isNew,
       ));
@@ -126,15 +138,7 @@ abstract final class IcsImport {
 
     // Events that happen once.
     for (final event in calendar.standalone) {
-      final whole = event.allDay && event.lastDay > event.firstDay;
-      take(
-        _id(event.uid),
-        event,
-        // Several whole days: on each of them.
-        recurrence: whole
-            ? Recurrence(frequency: Frequency.daily, until: event.lastDay)
-            : null,
-      );
+      take(_id(event.uid), event);
     }
 
     // Events that repeat, by their occurrences around today.

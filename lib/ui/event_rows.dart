@@ -12,10 +12,10 @@ import 'context_menu.dart';
 import 'task_list.dart';
 import 'widgets/controls.dart';
 
-/// An imported event that runs over several days, drawn as a bar: tinted in
-/// its calendar's colour (or filled in the colour the user gave it), with
-/// the calendar's bar at its start. Its ends are square where the event
-/// goes on beyond what is shown.
+/// An event that runs over several days, drawn as a bar: tinted in its
+/// calendar's colour (one made here in a plain grey), or filled in the
+/// colour the user gave it, with the calendar's bar at its start. Its ends
+/// are square where the event goes on beyond what is shown.
 class SpanBar extends StatelessWidget {
   const SpanBar({
     super.key,
@@ -65,16 +65,23 @@ class SpanBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    final source = task.event!;
+    final source = task.event;
     // Done (when it was made a task), hidden, or an event that is over.
-    final faint =
-        task.done || source.hidden || task.overAt(context.readStore.clock);
+    final faint = task.done ||
+        (source?.hidden ?? false) ||
+        task.overAt(context.readStore.clock);
     final own = TaskColor.resolve(task.color);
-    final calendar = calendarColor(theme, source.calendarColor);
+    // What was made here has no calendar: its mark is the grey one its
+    // rows have in a day.
+    final calendar = source == null
+        ? theme.ink(40)
+        : calendarColor(theme, source.calendarColor);
     // A colour the user gave the event fills the bar, as it would a task's
     // pill; otherwise the bar is a wash of its calendar's colour.
     final fill = own == null
-        ? calendar.withValues(alpha: theme.isDark ? 0.26 : 0.18)
+        ? source == null
+            ? theme.ink(8)
+            : calendar.withValues(alpha: theme.isDark ? 0.26 : 0.18)
         : own.key == 'black'
             ? theme.text
             : own.fill;
@@ -174,7 +181,7 @@ class SpanLanes {
   factory SpanLanes.pack(List<Task> spans, Day first, Day last) {
     final lanes = <List<(Task, Day, Day)>>[];
     for (final span in spans) {
-      final end = span.event!.lastDay;
+      final end = span.lastDay!;
       if (span.date! > last || end < first) continue;
       final from = span.date! < first ? first : span.date!;
       final to = end > last ? last : end;
@@ -243,7 +250,7 @@ class SpanBand extends StatelessWidget {
                       task: task,
                       onOpen: onOpen,
                       startsBefore: task.date! < first,
-                      endsAfter: task.event!.lastDay > last,
+                      endsAfter: task.lastDay! > last,
                     ),
                   ),
             ],
@@ -283,13 +290,13 @@ class DaySpans extends StatelessWidget {
       children: [
         for (final span in spans)
           Builder(builder: (context) {
-            final length = span.event!.lastDay.difference(span.date!) + 1;
+            final length = span.lastDay!.difference(span.date!) + 1;
             final bar = SpanBar(
               key: ValueKey(span.id),
               task: span,
               onOpen: onOpen,
               startsBefore: span.date! < day,
-              endsAfter: span.event!.lastDay > day,
+              endsAfter: span.lastDay! > day,
               suffix: '${day.difference(span.date!) + 1}/$length',
             );
             final height = rowHeight;

@@ -73,6 +73,7 @@ const _schema = <String, Map<String, _Kind>>{
     'rolled_pos': _Kind.text,
     'list_pos': _Kind.text,
     'due': _Kind.text,
+    'end_date': _Kind.text,
   },
   // What the user changed about an event of a subscribed calendar. The row
   // id is a fingerprint of the calendar and the event (see
@@ -161,7 +162,7 @@ class PlannerDatabase {
   late final String deviceId;
   late final Hlc clock;
 
-  static const _schemaVersion = 5;
+  static const _schemaVersion = 6;
 
   /// Tables and columns each schema version added, for [_replay]. A null
   /// column set means the whole table is new.
@@ -181,6 +182,9 @@ class PlannerDatabase {
     },
     5: {
       'tasks': {'list_pos', 'due'},
+    },
+    6: {
+      'tasks': {'end_date'},
     },
   };
 
@@ -310,6 +314,13 @@ class PlannerDatabase {
         alter table tasks add column list_pos text;
         alter table tasks add column due text;
         pragma user_version = 5;
+      ''');
+    }
+    if (version < 6) {
+      // The last day of an item that runs over several days.
+      _db.execute('''
+        alter table tasks add column end_date text;
+        pragma user_version = 6;
       ''');
     }
     return version;

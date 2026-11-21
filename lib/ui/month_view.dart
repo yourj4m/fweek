@@ -35,9 +35,13 @@ class MonthView extends StatelessWidget {
     final first = month.startOfWeek(weekStart);
     final lastOfMonth = month.addMonths(1).addDays(-1);
     final weeks = (lastOfMonth.difference(first) ~/ 7) + 1;
-    final byDay = store.tasksBetween(first, first.addDays(weeks * 7 - 1));
-    final range =
-        context.calendars.eventsBetween(first, first.addDays(weeks * 7 - 1));
+    final last = first.addDays(weeks * 7 - 1);
+    final byDay = store.tasksBetween(first, last);
+    // What runs over several days: the calendars' events and the planner's
+    // own, as one set of bars.
+    final range = context.calendars
+        .eventsBetween(first, last)
+        .withSpans(store.spansBetween(first, last));
     final narrow = MediaQuery.sizeOf(context).width < Dim.breakpoint;
 
     return Column(
@@ -80,9 +84,7 @@ class MonthView extends StatelessWidget {
                         inMonth: first.addDays(w * 7 + i).month == month.month,
                         tasks: byDay[first.addDays(w * 7 + i)] ?? const [],
                         events: range.on(first.addDays(w * 7 + i)),
-                        spans: range.spans.isEmpty
-                            ? const []
-                            : range.spansOn(first.addDays(w * 7 + i)).toList(),
+                        spans: _laned(range.spans, first.addDays(w * 7), i),
                         // A bar runs on into the next cell unless the week
                         // ends here.
                         lastOfRow: i == 6,
@@ -99,6 +101,23 @@ class MonthView extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The bars of one day of a week, from the top: each event over several
+/// days keeps one line all through the week, so a line is null where its
+/// event does not cover this day and something further down does.
+List<Task?> _laned(List<Task> spans, Day weekFirst, int index) {
+  if (spans.isEmpty) return const [];
+  final day = weekFirst.addDays(index);
+  final lanes = SpanLanes.pack(spans, weekFirst, weekFirst.addDays(6)).lanes;
+  final bars = <Task?>[
+    for (final lane in lanes)
+      lane.where((bar) => bar.$2 <= day && bar.$3 >= day).firstOrNull?.$1,
+  ];
+  while (bars.isNotEmpty && bars.last == null) {
+    bars.removeLast();
+  }
+  return bars;
 }
 
 class _MonthCell extends StatelessWidget {
@@ -120,8 +139,9 @@ class _MonthCell extends StatelessWidget {
   final List<Task> tasks;
   final List<Task> events;
 
-  /// Events over several days that cover this day.
-  final List<Task> spans;
+  /// Events over several days that cover this day, each on the line it
+  /// keeps through the week; null for a line left free here.
+  final List<Task?> spans;
   final bool firstOfRow;
   final bool lastOfRow;
   final int maxChips;
@@ -142,7 +162,9 @@ class _MonthCell extends StatelessWidget {
     final room = total > maxChips ? maxChips - 1 : maxChips;
     final shownSpans = spans.take(room).toList();
     final shown = items.take(room - shownSpans.length).toList();
-    final hidden = total - shownSpans.length - shown.length;
+    // What is left out, not counting lines that are free here anyway.
+    final hidden =
+        spans.skip(room).nonNulls.length + items.length - shown.length;
     void openWeek() {
       final app = context.readApp;
       app.show(day);
@@ -196,12 +218,15 @@ class _MonthCell extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             for (final span in shownSpans)
+              if (span == null)
+                const SizedBox(height: 20)
+              else
               Padding(
                 // Flush with the cell's edge where the event goes on, so
                 // that the bars of neighbouring days read as one.
                 padding: EdgeInsets.only(
                   bottom: 2,
-                  right: span.event!.lastDay > day && !lastOfRow ? 0 : 8,
+                  right: span.lastDay! > day && !lastOfRow ? 0 : 8,
                 ),
                 child: Opacity(
                   opacity: faint,
@@ -211,7 +236,7 @@ class _MonthCell extends StatelessWidget {
                     height: 18,
                     style: context.text.tiny12,
                     startsBefore: span.date! < day,
-                    endsAfter: span.event!.lastDay > day,
+                    endsAfter: span.lastDay! > day,
                     // The title is said once per row of the grid.
                     quiet: span.date! < day && !firstOfRow,
                   ),

@@ -279,7 +279,7 @@ void main() {
       expect(store.task(store.copyTask(draft, ListSlot(thesis)))!.due, Day(2026, 11, 27));
 
       final backup = Export.backup(store);
-      expect(jsonDecode(backup)['version'], 5);
+      expect(jsonDecode(backup)['version'], 6);
       final copy = planner();
       Export.restore(copy, backup);
       final restored = copy.task(draft)!;
@@ -288,8 +288,8 @@ void main() {
       expect(titles(copy.openIn(thesis)), titles(store.openIn(thesis)));
 
       final csv = const LineSplitter().convert(Export.csv(store).replaceAll('\r\n', '\n'));
-      expect(csv.first, endsWith(',due'));
-      expect(csv[1], '2026-11-16,Thesis,,Chapter 2 draft,no,,,,,,task,,2026-11-27');
+      expect(csv.first, endsWith(',due,last_day'));
+      expect(csv[1], '2026-11-16,Thesis,,Chapter 2 draft,no,,,,,,task,,2026-11-27,');
       expect(Export.text(store), contains('    # Thesis\n    ! due 2026-11-27'));
       final ics = Export.ics(store);
       expect(ics, contains('DUE;VALUE=DATE:20261127'));

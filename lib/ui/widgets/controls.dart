@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'dart:ui' show ImageFilter;
@@ -177,6 +178,16 @@ class AppButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final button = _button(context);
+    // A button that is only an icon says what it does when the pointer
+    // rests on it. A finger has no way to rest without pressing.
+    final hint = tooltip;
+    return hint == null || label != null || isMobile
+        ? button
+        : HoverHint(text: hint, child: button);
+  }
+
+  Widget _button(BuildContext context) {
     final theme = context.theme;
     final enabled = onTap != null;
     return Pressable(
@@ -247,6 +258,127 @@ class AppButton extends StatelessWidget {
       },
     );
   }
+}
+
+/// Says in a few words what [child] is for, in a small label under it,
+/// once the mouse pointer has rested on it for a moment. Moving off it, or
+/// pressing it, takes the label away.
+class HoverHint extends StatefulWidget {
+  const HoverHint({super.key, required this.text, required this.child});
+
+  final String text;
+  final Widget child;
+
+  /// How long the pointer rests before the label shows.
+  static const delay = Duration(milliseconds: 600);
+
+  @override
+  State<HoverHint> createState() => _HoverHintState();
+}
+
+class _HoverHintState extends State<HoverHint> {
+  final _portal = OverlayPortalController();
+  Timer? _timer;
+  Rect _target = Rect.zero;
+
+  void _rest() {
+    _timer?.cancel();
+    _timer = Timer(HoverHint.delay, () {
+      if (!mounted) return;
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.attached) return;
+      _target = box.localToGlobal(Offset.zero) & box.size;
+      _portal.show();
+    });
+  }
+
+  void _leave() {
+    _timer?.cancel();
+    _timer = null;
+    if (_portal.isShowing) _portal.hide();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    return MouseRegion(
+      onEnter: (_) => _rest(),
+      onExit: (_) => _leave(),
+      child: Listener(
+        onPointerDown: (_) => _leave(),
+        child: OverlayPortal(
+          controller: _portal,
+          overlayChildBuilder: (overlay) {
+            // Light on dark where the page is light, and the other way
+            // round, as the messages at the bottom of the window are.
+            final ink = theme.isDark ? const Color(0xFF111111) : const Color(0xFFFFFFFF);
+            final surface =
+                theme.isDark ? const Color(0xFFF2F2F2) : const Color(0xFF222226);
+            return IgnorePointer(
+              child: ExcludeSemantics(
+                child: CustomSingleChildLayout(
+                  delegate: _HintLayout(_target),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: surface,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      widget.text,
+                      maxLines: 1,
+                      style: context.text.tiny12.copyWith(
+                        color: ink,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Places a hint under its target, centred on it, and inside the window;
+/// above the target where there is no room below.
+class _HintLayout extends SingleChildLayoutDelegate {
+  _HintLayout(this.target);
+
+  final Rect target;
+
+  static const _gap = 6.0;
+  static const _margin = 8.0;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints.loose(constraints.biggest).deflate(const EdgeInsets.all(_margin));
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final left = (target.center.dx - childSize.width / 2)
+        .clamp(_margin, math.max(_margin, size.width - childSize.width - _margin))
+        .toDouble();
+    final below = target.bottom + _gap;
+    final top = below + childSize.height + _margin <= size.height
+        ? below
+        : target.top - _gap - childSize.height;
+    return Offset(left, top);
+  }
+
+  @override
+  bool shouldRelayout(_HintLayout old) => old.target != target;
 }
 
 /// An on/off switch.

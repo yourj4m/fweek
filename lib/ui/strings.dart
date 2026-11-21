@@ -32,6 +32,16 @@ abstract final class Strings {
   static String fullDate(Day d) =>
       '${weekdayShort(d)}, ${d.day} ${monthShort(d)} ${d.year}';
 
+  /// The days from [first] to [last], saying no more than once what they
+  /// share: `Sat, 14 – Mon, 16 Nov 2026`, `Mon, 30 Nov – Wed, 2 Dec 2026`.
+  /// One day reads as [fullDate].
+  static String dateRange(Day first, Day last) {
+    if (last <= first) return fullDate(first);
+    if (first.year != last.year) return '${fullDate(first)} – ${fullDate(last)}';
+    final from = first.month == last.month ? '${first.day}' : dayMonth(first);
+    return '${weekdayShort(first)}, $from – ${fullDate(last)}';
+  }
+
   /// A day as a short mark beside a task, seen from [today]: `Today`,
   /// `Tomorrow`, `Yesterday`, `Wed 25` within the coming week, `25 Nov`
   /// otherwise (with the year when it is another one).
