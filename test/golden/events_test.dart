@@ -429,6 +429,13 @@ void main() {
       await tap(tester, form);
       final dinner = named(store, 'Dinner with Ana');
       expect((dinner.date, dinner.time, dinner.end), (today, 600, 660));
+      // The message that says so stands above the bar of pages, which
+      // stays in reach.
+      final message = tester.getRect(find.text('Event added'));
+      final bar = tester.getRect(find.bySemanticsLabel('Tasks'));
+      expect(message.bottom, lessThan(bar.top));
+      await expectLater(
+          find.byType(MaterialApp), matchesGoldenFile('goldens/phone_event_added.png'));
     });
   });
 
