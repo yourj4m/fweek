@@ -181,10 +181,16 @@ def main():
         ui.swipe(width * 0.5, height * 0.7, width * 0.5, height * 0.4, 250, pause=0.8)
         rows = [n for n in ui.nodes() if n.cls.endswith("EditText") and n.top < height * 0.85]
     add_row = min(rows, key=lambda n: n.top)
-    tasks = [n for n in ui.nodes()
-             if re.search(r" \d+$", n.label.split("\n")[0]) and n.height < 200
-             and height * 0.2 < n.top < height * 0.65]
-    task = tasks[0] if tasks else None
+
+    def find_task():
+        """A task in the upper half of the screen, with room under it for a
+        drag that stays above the bar at the bottom."""
+        found = [n for n in ui.nodes()
+                 if re.search(r" \d+$", n.label.split("\n")[0]) and n.height < 200
+                 and height * 0.2 < n.top < height * 0.5]
+        return found[0] if found else None
+
+    task = find_task()
     menu = ui.find("Menu", exact=True)
     time.sleep(1.5)
 
@@ -226,6 +232,13 @@ def main():
 
     measure("swipe weeks", swipe_weeks, results)
     measure("scroll", scroll, results)
+    # The page does not always come to rest where it started (late in the
+    # week it opens scrolled down to today, and scrolls back to its top):
+    # what was a task's place may now be an empty line, and pressing that
+    # brings the keyboard up instead of picking anything up. So the task to
+    # open and to drag is looked for again, outside any measurement.
+    task = find_task()
+    time.sleep(1.5)
     if task:
         measure("task sheet", sheet, results)
         measure("drag", drag, results)
