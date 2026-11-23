@@ -133,7 +133,9 @@ void main() {
     final before = store.allTasks.length;
     final photo = File('${folder.path}/photo.jpg')..writeAsBytesSync([0xff, 0xd8, 0xff]);
     await drop(tester, [photo.path, '${folder.path}/gone.ics']);
-    expect(find.text('Drop a calendar file (.ics) to add its events'), findsOneWidget);
+    expect(
+        find.text('Drop a calendar file (.ics) to add its events, or a contacts file for birthdays'),
+        findsOneWidget);
     expect(store.allTasks.length, before);
     await tester.pump(const Duration(seconds: 7));
   });

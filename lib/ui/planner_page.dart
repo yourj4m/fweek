@@ -28,6 +28,7 @@ import 'day_progress.dart';
 import 'drag.dart';
 import 'event_form.dart';
 import 'event_rows.dart';
+import 'calendar_settings.dart' show birthdaysRead;
 import 'ics_import_dialog.dart';
 import 'month_view.dart';
 import 'search_dialog.dart';
@@ -105,6 +106,11 @@ class _PlannerPageState extends State<PlannerPage> {
     for (final path in paths) {
       final name = path.split('/').last;
       final lower = name.toLowerCase();
+      // A contacts file: its birthdays become the Birthdays calendar.
+      if (lower.endsWith('.vcf') || lower.endsWith('.vcard') || lower.endsWith('.csv')) {
+        _readContacts(path, name);
+        continue;
+      }
       if (!lower.endsWith('.ics') && !lower.endsWith('.ical')) {
         others++;
         continue;
@@ -123,11 +129,31 @@ class _PlannerPageState extends State<PlannerPage> {
     }
     if (files.isEmpty) {
       if (others > 0) {
-        context.readApp.say('Drop a calendar file (.ics) to add its events');
+        context.readApp.say(
+            'Drop a calendar file (.ics) to add its events, or a contacts file for birthdays');
       }
       return;
     }
     importCalendarFiles(context, files);
+  }
+
+  Future<void> _readContacts(String path, String name) async {
+    final app = context.readApp;
+    final calendars = context.readCalendars;
+    final String text;
+    try {
+      final file = File(path);
+      if (file.lengthSync() > 64 * 1024 * 1024) {
+        app.say('$name is too large to be a contacts file');
+        return;
+      }
+      text = utf8.decode(file.readAsBytesSync(), allowMalformed: true);
+    } on FileSystemException {
+      app.say('Could not read $name');
+      return;
+    }
+    final error = await calendars.setBirthdays(text: text, file: name, path: path);
+    app.say(error ?? birthdaysRead(calendars));
   }
 
   void _drop(Task task, Slot slot, int index, Slot? from) {

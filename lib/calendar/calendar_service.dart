@@ -13,12 +13,34 @@ import '../data/models.dart';
 import '../data/planner_store.dart';
 import '../sync/secrets.dart';
 import '../text/links.dart';
+import 'contacts.dart';
 import 'ics.dart';
 import 'identity.dart';
 
+/// The contacts file a calendar of birthdays was made from.
+class ContactsSource {
+  const ContactsSource({required this.file, this.path});
+
+  /// The file's name, to say where the dates come from.
+  final String file;
+
+  /// Where the file is, when it can be read again from there (a desktop);
+  /// null where a file is only handed over once (a phone).
+  final String? path;
+
+  Map<String, Object?> toJson() => {'file': file, if (path != null) 'path': path};
+
+  static ContactsSource? fromJson(Object? json) {
+    if (json is! Map || json['file'] is! String) return null;
+    final path = json['path'];
+    return ContactsSource(file: json['file'] as String, path: path is String ? path : null);
+  }
+}
+
 /// A calendar the planner shows events from: any calendar that hands out an
 /// iCalendar address, such as Google Calendar's "secret address in iCal
-/// format".
+/// format", or the dates of the user's contacts, read from a file
+/// ([contacts]).
 class CalendarSubscription {
   CalendarSubscription({
     required this.id,
@@ -28,7 +50,12 @@ class CalendarSubscription {
     this.fetched,
     this.etag,
     this.modified,
+    this.contacts,
   });
+
+  /// Set for the calendar made from a contacts file, which has no address:
+  /// where its dates were read from.
+  ContactsSource? contacts;
 
   /// Names the subscription on this device (its cached feed, its address in
   /// the keyring).
@@ -71,6 +98,7 @@ class CalendarSubscription {
         if (fetched != null) 'fetched': fetched!.toIso8601String(),
         if (etag != null) 'etag': etag,
         if (modified != null) 'modified': modified,
+        if (contacts != null) 'contacts': contacts!.toJson(),
       };
 
   static CalendarSubscription? fromJson(Object? json) {
@@ -87,6 +115,7 @@ class CalendarSubscription {
       fetched: fetched is String ? DateTime.tryParse(fetched) : null,
       etag: etag is String ? etag : null,
       modified: modified is String ? modified : null,
+      contacts: ContactsSource.fromJson(json['contacts']),
     );
   }
 }
@@ -562,6 +591,105 @@ class CalendarService extends ChangeNotifier {
     return null;
   }
 
+  // -------------------------------------------------------------- birthdays
+
+  /// Names the calendar of contacts' dates in synced data: the same on
+  /// every device, so that its name, colour and visibility, and what the
+  /// user changes about single dates, are shared. The dates themselves stay
+  /// on the device that read them.
+  static final birthdaysKey = calendarKey(Uri.parse('contacts:birthdays'));
+
+  /// The calendar made from a contacts file, if there is one.
+  CalendarSubscription? get birthdays {
+    for (final s in _subscriptions) {
+      if (s.contacts != null) return s;
+    }
+    return null;
+  }
+
+  /// Makes the Birthdays calendar from the contacts file with the contents
+  /// [text], or fills the one there is anew: the birthdays and other yearly
+  /// dates of the contacts in it, as events that come round each year.
+  /// Returns null on success, otherwise a message for the user; nothing
+  /// changes unless the file holds such dates.
+  ///
+  /// Nothing of the file leaves this device. With [path] (a desktop) the
+  /// file is read again from there whenever the calendars are, so that an
+  /// export saved over the old one is picked up.
+  Future<String?> setBirthdays({
+    required String text,
+    required String file,
+    String? path,
+  }) async {
+    final ContactsFile contacts;
+    try {
+      contacts = ContactsFile.parse(text);
+    } on FormatException catch (error) {
+      return error.message;
+    }
+    if (contacts.dates.isEmpty) {
+      return contacts.contacts == 0
+          ? '$file holds no contacts.'
+          : 'None of the ${contacts.contacts} contacts in $file has a birthday.';
+    }
+    final ics = birthdaysCalendar(contacts.dates);
+    final feed = await _parse(ics);
+    var subscription = birthdays;
+    if (subscription == null) {
+      // Another device may have this calendar already: then it has a name,
+      // a colour and a place in the list.
+      final row = store.calendarRow(birthdaysKey);
+      final known = row != null && !row.deleted ? row : null;
+      subscription = CalendarSubscription(
+        id: '${_clock().microsecondsSinceEpoch.toRadixString(36)}${_subscriptions.length}',
+        key: birthdaysKey,
+        name: known != null && known.name.isNotEmpty ? known.name : 'Birthdays',
+        color: known?.color ?? _colors[_subscriptions.length % _colors.length],
+      )..hidden = known?.hidden ?? false;
+      _subscriptions.add(subscription);
+    }
+    subscription
+      ..contacts = ContactsSource(file: file, path: path)
+      ..events = feed.eventCount
+      ..fetched = _clock()
+      ..error = null;
+    _feeds[subscription.id] = feed;
+    _feedChanged(subscription.id);
+    await cache.write(subscription.id, ics);
+    _save();
+    store.setCalendar(
+      birthdaysKey,
+      name: subscription.name,
+      color: subscription.color,
+      deleted: false,
+    );
+    _applyRows();
+    _schedule();
+    _changed();
+    _status.changed();
+    return null;
+  }
+
+  /// Reads the contacts file again if it is still where it was and has
+  /// changed since. A file that is gone is no failure: the dates read from
+  /// it stay.
+  Future<void> _rereadContacts(CalendarSubscription subscription) async {
+    final source = subscription.contacts!;
+    final path = source.path;
+    if (path == null) return;
+    try {
+      final file = File(path);
+      if (!file.existsSync()) return;
+      final read = subscription.fetched;
+      if (read != null && !file.lastModifiedSync().isAfter(read)) return;
+      final text = utf8.decode(await file.readAsBytes(), allowMalformed: true);
+      final error = await setBirthdays(text: text, file: source.file, path: path);
+      if (error != null) subscription.error = error;
+    } on FileSystemException catch (error) {
+      subscription.error = 'Could not read ${source.file}: ${error.message}';
+    }
+  }
+
   /// Forgets a calendar on this device: its address, its events and its
   /// place in the list. What was changed about its events is kept, in case
   /// the calendar is added again or is still shown on another device.
@@ -679,6 +807,7 @@ class CalendarService extends ChangeNotifier {
   }
 
   Future<void> _refreshOne(CalendarSubscription subscription) async {
+    if (subscription.contacts != null) return _rereadContacts(subscription);
     final String? address;
     try {
       address = await secrets.read(_secretKey(subscription.id));

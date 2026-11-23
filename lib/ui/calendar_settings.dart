@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/widgets.dart';
 import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
@@ -31,6 +33,10 @@ class _CalendarSettingsState extends State<CalendarSettings> {
   String? _renaming;
   bool _adding = false;
   String? _error;
+
+  /// What reading a contacts file came to.
+  String? _birthdays;
+  bool _birthdaysFailed = false;
 
   @override
   void initState() {
@@ -200,7 +206,10 @@ class _CalendarSettingsState extends State<CalendarSettings> {
                               [
                                 if (!shown) 'hidden',
                                 if (calendar.events != null)
-                                  '${calendar.events} events',
+                                  calendar.contacts == null
+                                      ? '${calendar.events} events'
+                                      : '${calendar.events} dates from '
+                                          '${calendar.contacts!.file}',
                                 if (calendar.fetched != null)
                                   'read ${_ago(calendar.fetched!, now)}',
                               ].join(' · '),
@@ -260,7 +269,8 @@ class _CalendarSettingsState extends State<CalendarSettings> {
           const SizedBox(height: 2),
           Text(
             'Known from another device. To show one here too, add its '
-            'address below.',
+            'address below'
+            '${elsewhere.any((row) => row.id == CalendarService.birthdaysKey) ? '; for the birthdays, read your contacts file on this device as well' : ''}.',
             style: muted,
           ),
           for (final row in elsewhere)
@@ -363,8 +373,76 @@ class _CalendarSettingsState extends State<CalendarSettings> {
             onTap: _importFile,
           ),
         ),
+        const SizedBox(height: 18),
+        Text('Birthdays', style: context.text.small15),
+        const SizedBox(height: 2),
+        Text(
+          'Google Calendar gives out no address for its Birthdays calendar. '
+          'The birthdays are in your contacts, though: export them '
+          '(contacts.google.com → Export, as vCard or as Google CSV) and '
+          'read that file here. The birthdays and other dates in it become '
+          'a calendar of their own, kept on this device only; nothing of '
+          'the file is synced or sent anywhere. Read it again when your '
+          'contacts have changed'
+          '${isMobile ? '.' : ', or save the new export over the old one: the sync button picks it up. You can also drop the file on the window.'}',
+          style: muted,
+        ),
+        if (_birthdays != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _birthdays!,
+            style: _birthdaysFailed ? muted.copyWith(color: AppTheme.danger) : muted,
+          ),
+        ],
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppButton(
+            icon: AppIcons.cake,
+            label: calendars.birthdays == null
+                ? 'Read a contacts file…'
+                : 'Read a contacts file again…',
+            size: Dim.controlInline,
+            iconSize: 16,
+            onTap: _importContacts,
+          ),
+        ),
       ],
     );
+  }
+
+  Future<void> _importContacts() async {
+    final calendars = context.readCalendars;
+    try {
+      final file = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: 'Contacts file',
+            extensions: ['vcf', 'vcard', 'csv'],
+            mimeTypes: ['text/vcard', 'text/x-vcard', 'text/csv', 'text/comma-separated-values'],
+          ),
+        ],
+      );
+      if (file == null || !mounted) return;
+      final text = utf8.decode(await file.readAsBytes(), allowMalformed: true);
+      // A phone hands the file over once; a desktop can find it again.
+      final error = await calendars.setBirthdays(
+        text: text,
+        file: file.name,
+        path: isMobile || file.path.isEmpty ? null : file.path,
+      );
+      if (!mounted) return;
+      setState(() {
+        _birthdaysFailed = error != null;
+        _birthdays = error ?? birthdaysRead(calendars);
+      });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _birthdaysFailed = true;
+        _birthdays = 'Could not read the file: $error';
+      });
+    }
   }
 
   Future<void> _importFile() async {
@@ -387,4 +465,13 @@ class _CalendarSettingsState extends State<CalendarSettings> {
       if (mounted) setState(() => _error = 'Could not read the file: $error');
     }
   }
+}
+
+/// Says what the Birthdays calendar holds after a contacts file was read.
+String birthdaysRead(CalendarService calendars) {
+  final calendar = calendars.birthdays;
+  if (calendar == null) return 'No birthdays read';
+  final count = calendar.events ?? 0;
+  return '${calendar.name}: $count ${count == 1 ? 'date' : 'dates'} from '
+      '${calendar.contacts?.file ?? 'the file'}';
 }
