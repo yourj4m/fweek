@@ -7,12 +7,22 @@ Local-first: everything is stored on your machine and the app works offline.
 Optionally it keeps your devices in step through a folder in your own
 Nextcloud, with no other server involved.
 
-This is a personal project and is shared as
-it is. It was called WeekToDo for a while (no relation to the planner at
-weektodo.me), and a few names that nobody reads still say so: the app id
-`io.github.yourj4m.weektodo` and the format tags inside backup and sync
-files. Changing those would cut an installed copy off from its planner and
-its connection, so they stay.
+## Quickstart 
+For Android
+```sh
+tools/setup-dev.sh                 # once, if not done for Linux already
+tools/setup-android.sh             # once: JDK + Android SDK, into the container and .tools/
+tools/android-build.sh             # signed APK for a 64-bit ARM phone
+tools/android-build.sh --install   # ... and install it over USB
+```
+
+For Linux
+```sh
+tools/setup-dev.sh                         # once: build container + Flutter SDK
+tools/desktop-build.sh                     # build
+build/linux/x64/release/bundle/fweek    # run
+tools/install-local.sh                     # optional: add to the application menu
+```
 
 ## Status
 
@@ -608,6 +618,14 @@ those over several days lie in a band, and there are semi-dark themes. This
 is an independent implementation: no code, styles, fonts, icons, images or
 text from Tweek are included, and fweek is not affiliated with or endorsed
 by Tweek.
+
+
+This is a personal project and is shared as
+it is. It was called WeekToDo for a while (no relation to the planner at
+weektodo.me), and a few names that nobody reads still say so: the app id
+`io.github.yourj4m.weektodo` and the format tags inside backup and sync
+files. Changing those would cut an installed copy off from its planner and
+its connection, so they stay.
 
 ## Licence
 
