@@ -25,6 +25,78 @@ void main() {
 
   List<String> titles(Iterable<Task> tasks) => [for (final t in tasks) t.title];
 
+  group('what a list shows', () {
+    test('a task ticked today stays in its place until the day ends', () {
+      var now = DateTime(2026, 11, 13, 10);
+      final store = PlannerStore(
+        PlannerDatabase.inMemory(),
+        today: () => Day.fromDateTime(now),
+        now: () => now.millisecondsSinceEpoch,
+      );
+      final list = store.addList('Thesis');
+      store.addTask(ListSlot(list), 'Outline');
+      final figure = store.addTask(ListSlot(list), 'Figure')!;
+      final slides = store.addTask(ListSlot(list), 'Slides')!;
+      final abstract = store.addTask(ListSlot(list), 'Abstract')!;
+
+      store.setDone(figure, true);
+      expect(titles(store.shownIn(list)), ['Outline', 'Figure', 'Slides', 'Abstract']);
+      expect(titles(store.openIn(list)), ['Outline', 'Slides', 'Abstract']);
+      expect(titles(store.doneIn(list)), ['Figure']);
+      expect(store.foldedIn(list), isEmpty);
+
+      // A place counted in the rows on show is the place meant.
+      store.moveTask(abstract, ListSlot(list), index: 2);
+      expect(titles(store.shownIn(list)), ['Outline', 'Figure', 'Abstract', 'Slides']);
+      store.addTask(ListSlot(list), 'Later');
+      expect(titles(store.shownIn(list)).last, 'Later');
+
+      // Unticked, it is to do again where it stood.
+      store.setDone(figure, false);
+      expect(titles(store.openIn(list)), ['Outline', 'Figure', 'Abstract', 'Slides', 'Later']);
+      store.setDone(figure, true);
+
+      // Late the same day it is still there; after midnight it is put away,
+      // whether or not anything else has changed since.
+      now = DateTime(2026, 11, 13, 23, 59);
+      expect(titles(store.shownIn(list)), contains('Figure'));
+      now = DateTime(2026, 11, 14, 0, 1);
+      expect(titles(store.shownIn(list)), ['Outline', 'Abstract', 'Slides', 'Later']);
+      expect(titles(store.foldedIn(list)), ['Figure']);
+
+      // The next day's ticks are that day's; clearing takes all that is done.
+      store.setDone(slides, true);
+      expect(titles(store.shownIn(list)), ['Outline', 'Abstract', 'Slides', 'Later']);
+      expect(titles(store.foldedIn(list)), ['Figure']);
+      expect(titles(store.doneIn(list)), ['Slides', 'Figure']);
+      store.clearDone(list);
+      expect(titles(store.shownIn(list)), ['Outline', 'Abstract', 'Later']);
+      expect(store.foldedIn(list), isEmpty);
+    });
+
+    test('a task ticked on another device today shows as done here too', () async {
+      var now = DateTime(2026, 11, 13, 10);
+      PlannerStore device() => PlannerStore(
+            PlannerDatabase.inMemory(),
+            today: () => Day.fromDateTime(now),
+            now: () => now.millisecondsSinceEpoch,
+          );
+      final desk = device(), phone = device();
+      final folder = MemoryStorage();
+      final list = desk.addList('Home');
+      final bulbs = desk.addTask(ListSlot(list), 'Buy bulbs')!;
+      await SyncEngine(desk, folder, folder: 'fweek').sync();
+      await SyncEngine(phone, folder, folder: 'fweek').sync();
+      now = DateTime(2026, 11, 13, 17);
+      phone.setDone(bulbs, true);
+      await SyncEngine(phone, folder, folder: 'fweek').sync();
+      await SyncEngine(desk, folder, folder: 'fweek').sync();
+      expect(titles(desk.shownIn(list)), ['Buy bulbs']);
+      expect(desk.shownIn(list).single.done, isTrue);
+      expect(desk.openIn(list), isEmpty);
+    });
+  });
+
   group('a task from a list, given a day', () {
     test('stays in its list too and shows in both places', () {
       final store = planner();

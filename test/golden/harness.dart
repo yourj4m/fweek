@@ -48,14 +48,23 @@ Future<void> loadFonts() async {
   await loader.load();
 }
 
+/// How far the clock of every [seededStore] is ahead of its morning. A test
+/// sets it to let time pass (a day end), and back when it is done.
+Duration seededClockAhead = Duration.zero;
+
 /// A store holding tasks comparable to the reference demo week.
 PlannerStore seededStore({Day? today}) {
-  final now = today ?? referenceToday;
+  final start = today ?? referenceToday;
   // Twenty to ten in the morning: two fifths of the day are over, which is
   // how far the bar under today's heading is filled in every render.
-  final clock = DateTime(now.year, now.month, now.day, 9, 36).millisecondsSinceEpoch;
-  final store = PlannerStore(PlannerDatabase.inMemory(), today: () => now, now: () => clock)
-    ..setSetting(Settings.rollover, false);
+  DateTime moment() =>
+      DateTime(start.year, start.month, start.day, 9, 36).add(seededClockAhead);
+  final now = Day.fromDateTime(moment());
+  final store = PlannerStore(
+    PlannerDatabase.inMemory(),
+    today: () => Day.fromDateTime(moment()),
+    now: () => moment().millisecondsSinceEpoch,
+  )..setSetting(Settings.rollover, false);
   final monday = now.startOfWeek();
   store.addTask(DaySlot(monday), 'Buy oat milk and a very long task title that should be cut off');
   final second = store.addTask(DaySlot(monday), 'Second task')!;
@@ -73,6 +82,14 @@ PlannerStore seededStore({Day? today}) {
   store.updateTask(timed, time: () => 12 * 60);
   store.addTask(ListSlot(store.lists.first.id), 'Keep tasks here without a date');
   return store;
+}
+
+/// Ticks the task [id] as it would have been ticked [daysAgo] days ago: a
+/// list keeps what was ticked today among its rows, and puts away what was
+/// ticked before.
+void tickEarlier(PlannerStore store, String id, {int daysAgo = 1}) {
+  final at = store.clock.subtract(Duration(days: daysAgo)).millisecondsSinceEpoch;
+  store.refresh(store.db.apply(store.db.stamp('tasks', id, {'done': true, 'done_at': at})));
 }
 
 /// A widget test of the Linux desktop app. The test framework otherwise

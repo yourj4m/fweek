@@ -144,7 +144,7 @@ class _Board extends StatelessWidget {
     var rows = TasksBody.rowsThatFit(size.height, above: Dim.listHeading);
     for (final list in lists) {
       rows = math.max(
-          rows, rowsNeeded(drag, ListSlot(list.id), store.openIn(list.id), rows));
+          rows, rowsNeeded(drag, ListSlot(list.id), store.shownIn(list.id), rows));
     }
     return _Scroll(
       padding: EdgeInsets.fromLTRB(pad, 0, pad, _bottomPadding(context)),
@@ -236,7 +236,7 @@ class _Names extends StatelessWidget {
     final pad = TasksBody.sidePadding(size.width);
     final openId = app.openList;
     final open = lists.firstWhere((l) => l.id == openId, orElse: () => lists.first);
-    final tasks = store.openIn(open.id);
+    final tasks = store.shownIn(open.id);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -476,7 +476,7 @@ class _TabsState extends State<_Tabs> {
                 padding: EdgeInsets.fromLTRB(pad, 0, pad, _bottomPadding(context)),
                 child: LocalRows(
                   slot: ListSlot(list.id),
-                  tasks: store.openIn(list.id),
+                  tasks: store.shownIn(list.id),
                   minimum: rows,
                   builder: (context, rows) => ListColumn(
                     list: list,
@@ -690,8 +690,10 @@ class _ListColumnState extends State<ListColumn> {
     final store = context.store;
     final list = widget.list;
     final slot = ListSlot(list.id);
-    final tasks = store.openIn(list.id);
-    final done = store.doneIn(list.id);
+    // What is still to do and what was ticked today, in place; what was
+    // ticked before today is folded away under the last line.
+    final tasks = store.shownIn(list.id);
+    final done = store.foldedIn(list.id);
     var rows = widget.rows;
     if (_doneOpen && done.isNotEmpty) {
       // The done tasks take the place of blank lines, as far as there are
@@ -1403,7 +1405,10 @@ class _PanelListState extends State<_PanelList> {
     final store = context.store;
     final list = widget.list;
     final name = store.listName(list.id);
-    final tasks = store.openIn(list.id);
+    // Today's ticked tasks stay among what is still to do; the number
+    // beside the name counts the latter only.
+    final tasks = store.shownIn(list.id);
+    final open = store.openIn(list.id).length;
     final folded = widget.folded;
     // A task dropped on the name goes to the end of the list; held over a
     // folded list, it opens it.
@@ -1425,8 +1430,7 @@ class _PanelListState extends State<_PanelList> {
             onTap: () => widget.onFold(!folded),
             onSecondaryTap: (at) => showListMenu(context, list, at & Size.zero,
                 vertical: true, onRename: _edit),
-            semanticLabel:
-                '$name, ${tasks.length} to do, ${folded ? 'folded' : 'open'}',
+            semanticLabel: '$name, $open to do, ${folded ? 'folded' : 'open'}',
             labelOnly: true,
             builder: (context, hovered, pressed) => Container(
               height: Dim.dayHeader,
@@ -1446,9 +1450,9 @@ class _PanelListState extends State<_PanelList> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (tasks.isNotEmpty)
+                  if (open > 0)
                     Text(
-                      '${tasks.length}',
+                      '$open',
                       style: context.text.caption14.copyWith(color: theme.ink(40)),
                     ),
                   const SizedBox(width: 6),

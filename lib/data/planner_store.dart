@@ -653,30 +653,46 @@ class PlannerStore extends ChangeNotifier {
     return byPosition != 0 ? byPosition : a.id.compareTo(b.id);
   }
 
-  final Map<String, ({List<Task> open, List<Task> done})> _listed = {};
+  final Map<String, _Listed> _listed = {};
   int _listedRevision = -1;
+  Day? _listedDay;
 
-  ({List<Task> open, List<Task> done}) _inList(String listId) {
-    // Every list of the page asks; the tasks are gone through once.
-    if (_listedRevision != _revision) {
+  _Listed _inList(String listId) {
+    // Every list of the page asks; the tasks are gone through once (and
+    // once more when the day has turned: what was ticked today is told
+    // from what was ticked before).
+    final day = today;
+    if (_listedRevision != _revision || _listedDay != day) {
       _listed.clear();
       _listedRevision = _revision;
+      _listedDay = day;
+      bool tickedToday(Task task) {
+        final at = task.doneAt;
+        return at != null &&
+            Day.fromDateTime(DateTime.fromMillisecondsSinceEpoch(at)) == day;
+      }
+
       for (final task in _tasks.values) {
         final id = task.listId;
         if (id == null) continue;
-        final list = _listed[id] ??= (open: [], done: []);
+        final list = _listed[id] ??= (open: [], done: [], shown: [], folded: []);
         (task.done ? list.done : list.open).add(task);
+        (!task.done || tickedToday(task) ? list.shown : list.folded).add(task);
       }
+      int lastTickedFirst(Task a, Task b) {
+        final byTime = (b.doneAt ?? 0).compareTo(a.doneAt ?? 0);
+        // Ticked in the same moment: as they stood in the list.
+        return byTime != 0 ? byTime : _compareInList(a, b);
+      }
+
       for (final list in _listed.values) {
         list.open.sort(_compareInList);
-        list.done.sort((a, b) {
-          final byTime = (b.doneAt ?? 0).compareTo(a.doneAt ?? 0);
-          // Ticked in the same moment: as they stood in the list.
-          return byTime != 0 ? byTime : _compareInList(a, b);
-        });
+        list.shown.sort(_compareInList);
+        list.done.sort(lastTickedFirst);
+        list.folded.sort(lastTickedFirst);
       }
     }
-    return _listed[listId] ?? const (open: [], done: []);
+    return _listed[listId] ?? const (open: [], done: [], shown: [], folded: []);
   }
 
   /// What is still to do in a list, in the list's order: tasks without a
@@ -686,6 +702,17 @@ class PlannerStore extends ChangeNotifier {
 
   /// The done tasks of a list, the one ticked last first.
   List<Task> doneIn(String listId) => _inList(listId).done;
+
+  /// The rows a list shows: what is still to do and, in their places among
+  /// it, the tasks ticked today. Those stay in sight until the day ends, a
+  /// running record of what was done; from the next day on they are with
+  /// the older done tasks ([foldedIn]). Shared until the next change; do
+  /// not alter it.
+  List<Task> shownIn(String listId) => _inList(listId).shown;
+
+  /// The done tasks a list has put away: those ticked before today, the
+  /// one ticked last first.
+  List<Task> foldedIn(String listId) => _inList(listId).folded;
 
   /// Every task of a list: [openIn], then [doneIn].
   List<Task> tasksIn(String listId) => [...openIn(listId), ...doneIn(listId)];
@@ -749,7 +776,9 @@ class PlannerStore extends ChangeNotifier {
 
   List<Task> _itemsAt(Slot slot) => switch (slot) {
         DaySlot(:final day) => itemsOn(day),
-        ListSlot(:final listId) => openIn(listId),
+        // As the list shows them, so that a place counted in its rows is
+        // the place meant.
+        ListSlot(:final listId) => shownIn(listId),
       };
 
   /// Tasks whose title, note or subtasks contain [query], newest date first.
@@ -1572,3 +1601,6 @@ class PlannerStore extends ChangeNotifier {
     return overdue.length;
   }
 }
+
+/// The tasks of one list, sorted for its different uses.
+typedef _Listed = ({List<Task> open, List<Task> done, List<Task> shown, List<Task> folded});

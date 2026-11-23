@@ -285,8 +285,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                       'Hide completed tasks',
                       Settings.hideDone,
                       detail: 'These two are about the days of the week. A list '
-                          'on the Tasks page keeps its done tasks folded away '
-                          'under its last line.',
+                          'keeps what was ticked today in its place until the '
+                          'day ends; older done tasks are folded away under '
+                          'its last line on the Tasks page.',
                     ),
                     section('A task from a list, given a day'),
                     Segmented<bool>(

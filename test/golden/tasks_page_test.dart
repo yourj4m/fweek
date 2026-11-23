@@ -31,11 +31,11 @@ PlannerStore listsStore({int more = 0}) {
   store.moveTask(reply, DaySlot(today.addDays(4)));
   store.addTask(ListSlot(thesis), 'Slides for the committee');
   final outline = store.addTask(ListSlot(thesis), 'Outline of chapter 1')!;
-  store.setDone(outline, true);
+  tickEarlier(store, outline);
   final home = store.addList('Home');
   store.addTask(ListSlot(home), 'Fix the bike light');
   final bulbs = store.addTask(ListSlot(home), 'Buy bulbs')!;
-  store.setDone(bulbs, true);
+  tickEarlier(store, bulbs, daysAgo: 3);
   for (var i = 0; i < more; i++) {
     final list = store.addList(['Films', 'Books', 'Trips', 'Garden', 'Gifts'][i % 5]);
     store.addTask(ListSlot(list), 'Something for later');
@@ -299,23 +299,43 @@ void main() {
       expect((made.kind, made.listId, made.date), (ItemKind.task, first, null));
     });
 
-    desktopTest('done tasks fold away under the list; they open, and are cleared with a way back',
+    desktopTest('a task ticked today stays in its row until the day ends; older ones fold away',
         (tester) async {
+      addTearDown(() => seededClockAhead = Duration.zero);
       final store = listsStore();
       final thesis = listNamed(store, 'Thesis');
       await pumpApp(tester, store, size: const Size(1536, 790));
       await toTasks(tester);
+      // Ticked on an earlier day: put away under the list.
       expect(find.text('Outline of chapter 1'), findsNothing);
+      expect(find.text('1 done'), findsNWidgets(2));
+
+      // Ticked now: it stays where it stands, as done, and no longer counts
+      // among what is to do.
+      final slides = find.text('Slides for the committee');
+      final place = tester.getTopLeft(slides);
       store.setDone(named(store, 'Slides for the committee').id, true);
       await tester.pumpAndSettle();
-      expect(find.text('Slides for the committee'), findsNothing);
+      expect(tester.getTopLeft(slides), place);
+      expect(tester.widget<Text>(slides).style!.decoration, TextDecoration.lineThrough);
+      expect(titles(store.openIn(thesis)), isNot(contains('Slides for the committee')));
+      expect(find.text('1 done'), findsNWidgets(2));
+      await expectLater(
+          find.byType(MaterialApp), matchesGoldenFile('goldens/tasks_done_today.png'));
+
+      // The day ends: it joins the older done tasks, which open ...
+      seededClockAhead = const Duration(days: 1);
+      store.dayTurned();
+      await tester.pumpAndSettle();
+      expect(slides, findsNothing);
       await tester.tap(find.text('2 done'));
       await tester.pumpAndSettle();
-      expect(find.text('Slides for the committee'), findsOneWidget);
+      expect(slides, findsOneWidget);
       expect(find.text('Outline of chapter 1'), findsOneWidget);
       await expectLater(
           find.byType(MaterialApp), matchesGoldenFile('goldens/tasks_done_open.png'));
 
+      // ... and are cleared, with a way back.
       await tester.tap(find.text('Clear'));
       await tester.pumpAndSettle();
       expect(find.text('2 done tasks cleared from Thesis'), findsOneWidget);
@@ -324,6 +344,31 @@ void main() {
       await tester.pumpAndSettle();
       expect(titles(store.doneIn(thesis)),
           unorderedEquals(['Slides for the committee', 'Outline of chapter 1']));
+    });
+
+    desktopTest('the panel beside the week keeps what was ticked today in sight too',
+        (tester) async {
+      addTearDown(() => seededClockAhead = Duration.zero);
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+      await tester.pumpAndSettle();
+      final panel = find.byType(ListPanel);
+      final light = find.descendant(of: panel, matching: find.text('Fix the bike light'));
+      expect(find.bySemanticsLabel('Home, 1 to do, open'), findsOneWidget);
+      // Nothing of what was done on earlier days.
+      expect(find.descendant(of: panel, matching: find.text('Buy bulbs')), findsNothing);
+
+      store.setDone(named(store, 'Fix the bike light').id, true);
+      await tester.pumpAndSettle();
+      expect(light, findsOneWidget);
+      expect(tester.widget<Text>(light).style!.decoration, TextDecoration.lineThrough);
+      expect(find.bySemanticsLabel('Home, 0 to do, open'), findsOneWidget);
+
+      seededClockAhead = const Duration(days: 1);
+      store.dayTurned();
+      await tester.pumpAndSettle();
+      expect(light, findsNothing);
     });
   });
 
