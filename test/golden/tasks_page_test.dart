@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart' show MaterialApp, TextField;
 import 'package:fweek/data/models.dart';
 import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/theme/app_theme.dart' show Dim;
 import 'package:fweek/ui/task_list.dart';
 import 'package:fweek/ui/tasks_page.dart';
 import 'package:fweek/ui/widgets/controls.dart';
@@ -173,6 +174,80 @@ void main() {
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
       expect(store.lists.last.title, 'Groceries');
+    });
+
+    desktopTest('with the names at the left, a new list opens with its name to type',
+        (tester) async {
+      final store = listsStore(more: 3);
+      await pumpApp(tester, store, size: const Size(1100, 760));
+      await toTasks(tester);
+      final before = store.lists.length;
+      await tester.tap(find.text('New list'));
+      await tester.pumpAndSettle();
+      expect(store.lists, hasLength(before + 1));
+      final field = find.widgetWithText(TextField, 'List name');
+      expect(field, findsOneWidget);
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+      tester.testTextInput.enterText('Films');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(store.lists.last.title, 'Films');
+      // It is the open list, named among the others and over its rows.
+      expect(find.text('Films'), findsAtLeastNWidgets(2));
+    });
+
+    desktopTest('the panel beside the week names a new list where it stands', (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+      await tester.pumpAndSettle();
+      final panel = find.byType(ListPanel);
+      Finder inPanel(Finder what) => find.descendant(of: panel, matching: what);
+      final before = store.lists.length;
+      await tester.tap(inPanel(find.text('New list')));
+      await tester.pumpAndSettle();
+      expect(store.lists, hasLength(before + 1));
+      // Its name is asked for at once, in the line where the name will
+      // stand: right over "New list", not in a card somewhere else.
+      final field = inPanel(find.widgetWithText(TextField, 'List name'));
+      expect(field, findsOneWidget);
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+      final below = tester.getRect(inPanel(find.text('New list')));
+      final line = tester.getRect(field);
+      expect(line.bottom, lessThan(below.top));
+      expect(below.top - line.top, lessThan(180));
+      await expectLater(
+          find.byType(MaterialApp), matchesGoldenFile('goldens/panel_new_list.png'));
+      // What is typed goes there without a click.
+      tester.testTextInput.enterText('Films');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(store.lists.last.title, 'Films');
+      expect(field, findsNothing);
+      expect(inPanel(find.text('Films')), findsOneWidget);
+
+      // Renaming from the list's menu happens in the same place, the old
+      // name selected so that typing replaces it.
+      await rightClick(tester, inPanel(find.text('Films')));
+      await tester.tap(find.text('Rename'));
+      await tester.pumpAndSettle();
+      final renaming = tester.widget<TextField>(inPanel(find.byWidgetPredicate(
+          (w) => w is TextField && w.controller?.text == 'Films')));
+      expect(renaming.focusNode!.hasFocus, isTrue);
+      expect(renaming.controller!.selection,
+          const TextSelection(baseOffset: 0, extentOffset: 5));
+      tester.testTextInput.enterText('Cinema');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(store.lists.last.title, 'Cinema');
+
+      // Left without a name, the list stays, untitled.
+      await tester.tap(inPanel(find.text('New list')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('W46'));
+      await tester.pumpAndSettle();
+      expect(store.lists, hasLength(before + 2));
+      expect(inPanel(find.text('Untitled list')), findsOneWidget);
     });
 
     desktopTest('a list is moved and deleted from its menu, and comes back on Undo',
@@ -703,6 +778,79 @@ void main() {
       await tester.tap(find.bySemanticsLabel('Week'));
       await tester.pumpAndSettle();
       expect(find.text('W46'), findsOneWidget);
+    });
+
+    desktopTest('the line between the week and the lists is dragged to size the panel',
+        (tester) async {
+      final store = listsStore();
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+      await tester.pumpAndSettle();
+      final panel = find.byType(ListPanel);
+      final line = find.bySemanticsLabel('Width of the lists panel');
+      double width() => tester.getSize(panel).width - Dim.pagePadding;
+      double weekEnds() => tester.getTopRight(find.text('Sat')).dx;
+      expect(width(), ListPanel.defaultWidth);
+      // The line to take hold of is the panel's edge.
+      expect(tester.getCenter(line).dx, tester.getTopLeft(panel).dx);
+      final weekBefore = weekEnds();
+
+      Future<void> drag(double by) async {
+        final mouse = await tester.startGesture(tester.getCenter(line),
+            kind: PointerDeviceKind.mouse);
+        await mouse.moveBy(Offset(by / 2, 0));
+        await tester.pump();
+        await mouse.moveBy(Offset(by / 2, 0));
+        await tester.pump();
+        await mouse.up();
+        await tester.pumpAndSettle();
+      }
+
+      // To the left the panel grows and the week gives way; the line stays
+      // under the pointer.
+      await drag(-100);
+      expect(width(), closeTo(380, 1));
+      expect(weekEnds(), closeTo(weekBefore - 100, 1));
+      expect(tester.getCenter(line).dx, tester.getTopLeft(panel).dx);
+      // Kept on this device only.
+      expect(store.setting<num?>(Settings.panelWidth), closeTo(380, 1));
+      expect(store.db.meta('local.panel_width'), isNotNull);
+      expect(Settings.local, contains(Settings.panelWidth));
+      await expectLater(
+          find.byType(MaterialApp), matchesGoldenFile('goldens/week_panel_wide.png'));
+
+      // The week keeps its room, and the panel a width that holds a task.
+      await drag(-900);
+      expect(width(), 1536 - ListPanel.weekRoom - Dim.pagePadding);
+      await drag(900);
+      expect(width(), ListPanel.minWidth);
+
+      // In a smaller window a wide panel yields to the week, and is as wide
+      // again as it was set once the window is.
+      await drag(-250);
+      expect(width(), closeTo(470, 1));
+      tester.view.physicalSize = const Size(1300, 790);
+      await tester.pumpAndSettle();
+      expect(width(), 1300 - ListPanel.weekRoom - Dim.pagePadding);
+      tester.view.physicalSize = const Size(1536, 790);
+      await tester.pumpAndSettle();
+      expect(width(), closeTo(470, 1));
+
+      // Shut and shown again, it has the width it was given.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+      await tester.pumpAndSettle();
+      expect(panel, findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+      await tester.pumpAndSettle();
+      expect(width(), closeTo(470, 1));
+
+      // A double click on the line gives the panel the width it came with.
+      await tester.tap(line);
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tap(line);
+      await tester.pumpAndSettle();
+      expect(width(), ListPanel.defaultWidth);
+      expect(store.setting<num?>(Settings.panelWidth), isNull);
     });
 
     desktopTest('one button shows the lists beside the week, one on the panel hides them',

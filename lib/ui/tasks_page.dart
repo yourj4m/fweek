@@ -1153,11 +1153,26 @@ class _RenameFieldState extends State<_RenameField> {
 /// The lists in a panel beside the week (wide windows): a task is dragged
 /// from here straight onto a day, or from a day back into a list.
 class ListPanel extends StatelessWidget {
-  const ListPanel({super.key, required this.onOpen});
+  const ListPanel({super.key, required this.onOpen, this.width = defaultWidth});
 
   final ValueChanged<Task> onOpen;
 
-  static const width = 280.0;
+  /// Room for the lists, without the page's padding at the window's edge.
+  final double width;
+
+  /// The width the panel comes with, and the limits its edge is dragged
+  /// between. The week keeps [weekRoom] at least, so in a window that only
+  /// just has room for the panel there is little to widen.
+  static const defaultWidth = 280.0;
+  static const minWidth = 220.0;
+  static const maxWidth = 640.0;
+  static const weekRoom = 920.0;
+
+  /// [wanted] brought within what a window [window] wide allows.
+  static double fit(double wanted, double window) {
+    final most = (window - weekRoom - Dim.pagePadding).clamp(defaultWidth, maxWidth);
+    return wanted.clamp(minWidth, most);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1255,13 +1270,10 @@ class ListPanel extends StatelessWidget {
   }
 }
 
-/// From the panel a new list is named in a small card: the panel has no
-/// heading to type it into.
+/// From the panel: a list after the others, its name typed where it stands.
 void newListFromPanel(BuildContext context) {
-  final store = context.readStore;
-  final id = store.addList();
-  final list = store.list(id);
-  if (list != null) renameListCard(context, list, globalRect(context));
+  final id = context.readStore.addList();
+  context.readApp.renameList.value = id;
 }
 
 /// One list of the panel: its name, which folds it shut or open, and under
@@ -1289,7 +1301,44 @@ class _PanelListState extends State<_PanelList> {
   DragController? _drag;
   bool _over = false;
 
+  // The name is typed where it stands, as on the Tasks page.
+  final _title = TextEditingController();
+  final _titleFocus = FocusNode();
+  bool _editing = false;
+  late final AppController _app = context.readApp;
+
   Object get _spot => ('panel', widget.list.id);
+
+  @override
+  void initState() {
+    super.initState();
+    _titleFocus.addListener(() {
+      if (!_titleFocus.hasFocus && _editing) _finish();
+    });
+    _app.renameList.addListener(_onRenameAsked);
+    // A list made a moment ago asks for its name right away.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onRenameAsked());
+  }
+
+  void _onRenameAsked() {
+    if (!mounted || _app.renameList.value != widget.list.id) return;
+    _app.renameList.value = null;
+    _edit();
+    Scrollable.ensureVisible(context,
+        alignment: 0.5, duration: Dim.medium, curve: Curves.ease);
+  }
+
+  void _edit() {
+    _title.text = widget.list.title;
+    _title.selection = TextSelection(baseOffset: 0, extentOffset: _title.text.length);
+    setState(() => _editing = true);
+    _titleFocus.requestFocus();
+  }
+
+  void _finish() {
+    context.readStore.renameList(widget.list.id, _title.text.trim());
+    if (mounted) setState(() => _editing = false);
+  }
 
   void _onDrag() {
     final over = _drag?.spot == _spot;
@@ -1308,9 +1357,41 @@ class _PanelListState extends State<_PanelList> {
 
   @override
   void dispose() {
+    _app.renameList.removeListener(_onRenameAsked);
     _drag?.removeListener(_onDrag);
     _drag?.unregisterSpot(_spot, _key);
+    _title.dispose();
+    _titleFocus.dispose();
     super.dispose();
+  }
+
+  /// The heading while its name is typed: the same line, with a field in
+  /// the place of the name.
+  Widget _nameField(BuildContext context) {
+    final theme = context.theme;
+    final style = context.text.heading18;
+    return Container(
+      key: _key,
+      height: Dim.dayHeader,
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: theme.text, width: 2)),
+      ),
+      child: TextField(
+        controller: _title,
+        focusNode: _titleFocus,
+        style: style,
+        cursorColor: theme.text,
+        maxLines: 1,
+        textCapitalization: TextCapitalization.sentences,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration.collapsed(
+          hintText: 'List name',
+          hintStyle: style.copyWith(color: theme.ink(25)),
+        ),
+        onSubmitted: (_) => _titleFocus.unfocus(),
+      ),
+    );
   }
 
   @override
@@ -1333,46 +1414,50 @@ class _PanelListState extends State<_PanelList> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Pressable(
-          key: _key,
-          onTap: () => widget.onFold(!folded),
-          onSecondaryTap: (at) => showListMenu(context, list, at & Size.zero, vertical: true),
-          semanticLabel:
-              '$name, ${tasks.length} to do, ${folded ? 'folded' : 'open'}',
-          labelOnly: true,
-          builder: (context, hovered, pressed) => Container(
-            height: Dim.dayHeader,
-            decoration: BoxDecoration(
-              color: _over ? theme.ink(8) : null,
-              border: Border(
-                bottom: BorderSide(color: folded ? theme.rule : theme.text, width: folded ? 1 : 2),
+        if (_editing)
+          _nameField(context)
+        else
+          Pressable(
+            key: _key,
+            onTap: () => widget.onFold(!folded),
+            onSecondaryTap: (at) => showListMenu(context, list, at & Size.zero,
+                vertical: true, onRename: _edit),
+            semanticLabel:
+                '$name, ${tasks.length} to do, ${folded ? 'folded' : 'open'}',
+            labelOnly: true,
+            builder: (context, hovered, pressed) => Container(
+              height: Dim.dayHeader,
+              decoration: BoxDecoration(
+                color: _over ? theme.ink(8) : null,
+                border: Border(
+                  bottom: BorderSide(color: folded ? theme.rule : theme.text, width: folded ? 1 : 2),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: context.text.heading18,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (tasks.isNotEmpty)
+                    Text(
+                      '${tasks.length}',
+                      style: context.text.caption14.copyWith(color: theme.ink(40)),
+                    ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    folded ? AppIcons.chevronRight : AppIcons.chevronDown,
+                    size: 16,
+                    color: theme.ink(hovered ? 70 : 40),
+                  ),
+                ],
               ),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    name,
-                    style: context.text.heading18,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (tasks.isNotEmpty)
-                  Text(
-                    '${tasks.length}',
-                    style: context.text.caption14.copyWith(color: theme.ink(40)),
-                  ),
-                const SizedBox(width: 6),
-                Icon(
-                  folded ? AppIcons.chevronRight : AppIcons.chevronDown,
-                  size: 16,
-                  color: theme.ink(hovered ? 70 : 40),
-                ),
-              ],
-            ),
           ),
-        ),
         if (!folded)
           LocalRows(
             slot: ListSlot(list.id),

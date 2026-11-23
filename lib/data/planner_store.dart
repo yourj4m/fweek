@@ -64,9 +64,15 @@ abstract final class Settings {
   /// The list that is open where the Tasks page shows one list at a time.
   static const openList = 'open_list';
 
+  /// How wide that panel is, in logical pixels, once its edge was dragged;
+  /// null for the width it comes with.
+  static const panelWidth = 'panel_width';
+
   /// Settings that belong to this device and are not synced: how a planner
   /// looks on a phone need not follow the desktop.
-  static const local = {theme, view, frameTiming, listPanel, foldedLists, openList};
+  static const local = {
+    theme, view, frameTiming, listPanel, foldedLists, openList, panelWidth,
+  };
 
   static const defaults = <String, Object?>{
     theme: 'system',
@@ -86,6 +92,7 @@ abstract final class Settings {
     listPanel: false,
     foldedLists: <String>[],
     openList: null,
+    panelWidth: null,
   };
 }
 

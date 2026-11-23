@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
-import 'package:flutter/gestures.dart' show PointerScrollEvent;
+import 'package:flutter/gestures.dart' show DragStartBehavior, PointerScrollEvent;
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -1463,14 +1463,101 @@ class _WideLayout extends StatelessWidget {
         ),
       );
       if (!panel) return planner;
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(child: planner),
-          ListPanel(onOpen: onOpen),
-        ],
+      return _PanelSplit(
+        window: constraints.maxWidth,
+        planner: planner,
+        onOpen: onOpen,
       );
     });
+  }
+}
+
+/// The week with the lists beside it. The line between the two is dragged
+/// to make the panel wider or narrower; a double click on it gives the
+/// panel the width it came with. The width is this device's own.
+class _PanelSplit extends StatefulWidget {
+  const _PanelSplit({required this.window, required this.planner, required this.onOpen});
+
+  final double window;
+  final Widget planner;
+  final ValueChanged<Task> onOpen;
+
+  /// How far to either side of the line the pointer takes hold of it.
+  static const reach = 5.0;
+
+  @override
+  State<_PanelSplit> createState() => _PanelSplitState();
+}
+
+class _PanelSplitState extends State<_PanelSplit> {
+  /// The width while the line is being dragged; stored when it is let go.
+  double? _dragged;
+  double _from = 0, _grabbedAt = 0;
+  bool _hovered = false;
+
+  double _stored(PlannerStore store) =>
+      store.setting<num?>(Settings.panelWidth)?.toDouble() ?? ListPanel.defaultWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final store = context.store;
+    final width = ListPanel.fit(_dragged ?? _stored(store), widget.window);
+    final active = _hovered || _dragged != null;
+    return Stack(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: widget.planner),
+            ListPanel(onOpen: widget.onOpen, width: width),
+          ],
+        ),
+        Positioned(
+          top: 0,
+          bottom: 0,
+          right: width + Dim.pagePadding - _PanelSplit.reach,
+          width: 2 * _PanelSplit.reach,
+          child: Semantics(
+            container: true,
+            label: 'Width of the lists panel',
+            child: MouseRegion(
+              cursor: SystemMouseCursors.resizeColumn,
+              onEnter: (_) => setState(() => _hovered = true),
+              onExit: (_) => setState(() => _hovered = false),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // From where the button went down, so that the line stays
+                // under the pointer.
+                dragStartBehavior: DragStartBehavior.down,
+                onHorizontalDragStart: (details) {
+                  _from = width;
+                  _grabbedAt = details.globalPosition.dx;
+                  setState(() => _dragged = width);
+                },
+                onHorizontalDragUpdate: (details) => setState(() => _dragged =
+                    ListPanel.fit(_from - (details.globalPosition.dx - _grabbedAt), widget.window)),
+                onHorizontalDragEnd: (_) {
+                  final to = _dragged;
+                  setState(() => _dragged = null);
+                  if (to != null) store.setSetting(Settings.panelWidth, to.roundToDouble());
+                },
+                onHorizontalDragCancel: () => setState(() => _dragged = null),
+                onDoubleTap: () => store.setSetting(Settings.panelWidth, null),
+                // The line itself, drawn stronger while the pointer is on it.
+                child: Center(
+                  child: AnimatedContainer(
+                    duration: Dim.fast,
+                    width: active ? 3 : 0,
+                    color: _dragged != null ? theme.ink(45) : theme.ink(25),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
