@@ -467,3 +467,32 @@ first, so that nothing after it moves.
   event over several days names its day ("– Sat 7:00"). The date's month
   has, under it, "Ends on another day…" (then "Last day, 15 Nov" and "One
   day only").
+
+### Settings in sections
+
+The reference's settings are short; here they grew into a long scrolling
+card (themes, week, lists, reminders, sync, calendars, places, data), which
+was hard to find one's way in. They are now one card in seven sections:
+General, Appearance, Tasks, Calendars, Sync, Data, Advanced.
+
+- **Desktop, window ≥ 780 px**: a card up to 880 px wide and 720 px tall
+  (shorter in a short window), 24 px radius. At its left a 224 px strip,
+  faintly tinted, with "Settings" (24 px bold) and the sections as 40 px
+  rows with an icon (the chosen one filled, bold); at the right the chosen
+  section's name (24 px bold), the close button, and the section, which
+  scrolls under its heading (a hairline appears there once it has
+  scrolled). The card keeps its size whichever section is shown.
+- **Phone, or a window < 780 px**: up to 560 px wide. It opens on the list
+  of sections, each with an icon, its name and one muted line saying where
+  it stands ("Theme: Paper", "Not connected", "The last sync failed" in
+  red) and a chevron; a tap slides the section in, with an arrow back to
+  the list. The system back button and Escape return to the list first.
+- **Rows**: a switch sits right of its name; a row of choices sits right
+  of its name (320 px) where the page is ≥ 540 px wide and under it
+  otherwise; explanations are 14 px muted text under the row. Headings
+  inside a section are 17 px bold.
+- The card opens on the section last looked at (for as long as the app
+  runs); a failed sync's message opens the section that can put it right
+  (Sync, Calendars or Data). The Sync row is marked with a red cloud while
+  the last sync stands failed. What is typed into a section's fields stays
+  when another section is looked at.

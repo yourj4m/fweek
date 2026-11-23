@@ -34,8 +34,8 @@ Test builds for Linux and Android, from the same code. What works:
   single-column layout below 1024 px.
 - **Tasks and events**: an item is a task, with a circle to tick it off, or
   an event, with none: an event is marked by a bar at its left and turns
-  faint once it is over. New items are tasks unless Settings → "New items
-  are" says events; while typing one, Ctrl+E or the mark at the end of the
+  faint once it is over. New items are tasks unless Settings → General → "New
+  items are" says events; while typing one, Ctrl+E or the mark at the end of the
   line makes it the other, and so does "Turn into an event / a task" in any
   item's menu. What a calendar brings is an event until you turn it into a
   task.
@@ -98,7 +98,7 @@ Test builds for Linux and Android, from the same code. What works:
   day, as does its card; or drag it onto "Week" in the header (a tab of
   the phone's bar) and hold it there: the page turns, and the task is dropped
   on a day. It then shows on that day and stays in its list too, marked
-  with the day; ticked in one place it is ticked in the other. Settings →
+  with the day; ticked in one place it is ticked in the other. Settings → Tasks →
   "A task from a list, given a day" has it leave its list instead. A task
   of the week is put into a list, or taken out, at the top of its card.
 - **Lists beside the week**: in a wide window (1240 px and up) the lists
@@ -127,8 +127,16 @@ Test builds for Linux and Android, from the same code. What works:
   day before shows a green check and a red cross. Green: it was done that
   day; it goes back exactly where it stood, ticked. Red: it is still to do
   and stays on today.
-- **Settings**: week start, 12/24-hour time, move unfinished tasks to today,
-  sort or hide completed tasks.
+- **Settings** (Ctrl+, or the menu), in sections: General (week start,
+  12/24-hour time, what new items are, place suggestions), Appearance
+  (themes), Tasks (move unfinished tasks to today, sort or hide completed
+  tasks, lists, reminders), Calendars, Sync, Data (backup, export, restore,
+  copies on the device) and Advanced. On a desktop the sections are listed
+  at the left of the card and the chosen one is shown beside them; on a
+  phone, or in a narrow window, the card opens on the list of sections and
+  a tap opens one (back, or the arrow, returns to the list). The settings
+  open again on the section last looked at, and a failed sync's message
+  leads straight to the section that can put it right.
 - **Sync** through Nextcloud (Settings → Sync): on start, every five minutes,
   a few seconds after you stop editing, and on request.
 - **Sync everything**: the button with the two arrows in the header (or S;
@@ -139,8 +147,8 @@ Test builds for Linux and Android, from the same code. What works:
   turns red while the last sync with Nextcloud stands failed.
 - **Copies on the device**: that copy is one file a day in `backups/`
   beside the planner (the fourteen latest are kept), the same file
-  Settings → Backup saves. Settings → Your data lists them and brings one
-  back. They guard against a slip of one's own, not against losing the
+  Settings → Data → Backup saves. Settings → Data says how many there are,
+  and "Restore a copy" brings one back. They guard against a slip of one's own, not against losing the
   device.
 - **Calendars**: subscribe to a calendar's iCal address (for example Google
   Calendar's "secret address") and its events appear in your week: move
@@ -246,7 +254,7 @@ What to expect on the phone:
   first reminder), exact alarms, start at boot (to set the alarms again).
 - **Backups**: the app opts out of system backups and phone-to-phone
   transfer, because the planner file carries the device's identity for sync.
-  Use sync, or Settings → Backup, to move your data.
+  Use sync, or Settings → Data → Backup, to move your data.
 - **Touch**: tap an empty line to type (the first button of the bar above
   the keyboard switches between task and event); tap a task to open it, its
   circle to complete it; tap beside an open card to close it; press and hold
@@ -494,7 +502,7 @@ OpenStreetMap in the browser). The planner draws no map itself.
   was picked before, in which case nearby results come first). OpenStreetMap's
   own search (Nominatim) is not used: its usage policy forbids searching on
   every keystroke.
-- Settings → Places switches suggestions off (a place is then kept exactly
+- Settings → General → Places switches suggestions off (a place is then kept exactly
   as typed) or points them at another Photon server, over https only. The
   public server is free to use within reason; it asks for fair use.
 - Links in notes and in calendar descriptions open in your browser or mail

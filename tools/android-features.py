@@ -267,6 +267,49 @@ def pull_to_sync(shot, width, height):
     check(bool(said), "pulled down from its top, the page syncs: a copy of the planner is kept")
 
 
+def settings(shot, width, height):
+    """The settings are a list of sections; a tap opens one, and the back
+    button leads to the list again before it leaves the settings."""
+    ui.launch()
+    time.sleep(1.5)
+    if ui.keyboard_shown():
+        ui.back(pause=0.8)
+    ui.tap_on("Menu", exact=True)
+    time.sleep(0.8)
+    ui.tap_on("Settings", exact=True)
+    time.sleep(1.5)
+    names = ("General", "Appearance", "Tasks", "Calendars", "Sync", "Data", "Advanced")
+    listed = [name for name in names if ui.find(f"{name} settings", exact=True)]
+    shot("f14-settings")
+    check(len(listed) == len(names),
+          "the settings open on the list of their sections" + ("" if len(listed) == len(names) else f": {listed}"))
+    check(not ui.find("Sort completed tasks down"), "which shows none of them yet")
+
+    ui.tap_on("Tasks settings", exact=True)
+    time.sleep(1.2)
+    shot("f15-settings-tasks")
+    check(bool(ui.find("Sort completed tasks down")) and bool(ui.find("All settings", exact=True)),
+          "a tap opens a section, with an arrow back to the list")
+    check(bool(ui.find("whether or not the app is open")),
+          "the Tasks section says how reminders reach a phone")
+    ui.back(pause=1.2)
+    check(bool(ui.find("Sync settings", exact=True)) and not ui.find("Sort completed tasks down"),
+          "the back button leads from a section to the list")
+
+    ui.tap_on("Calendars settings", exact=True)
+    time.sleep(1.2)
+    shot("f16-settings-calendars")
+    check(bool(ui.find("Add calendar", exact=True)), "another section opens from the list")
+    arrow = ui.find("All settings", exact=True)
+    if arrow:
+        ui.tap(*arrow[0].centre, pause=1.2)
+    check(bool(ui.find("Data settings", exact=True)) and not ui.find("Add calendar", exact=True),
+          "the arrow leads back to the list as well")
+    ui.back(pause=1.2)
+    check(not ui.find("Data settings", exact=True) and bool(ui.find("Menu", exact=True)),
+          "and the back button leaves the settings from the list")
+
+
 def events(out, shot, width, height):
     # From an empty planner, which the profile build fills with its test
     # tasks and calendar: what an earlier run hid stays hidden otherwise.
@@ -392,6 +435,7 @@ def main():
     else:
         planner(args.out, shot, width, height)
         pull_to_sync(shot, width, height)
+        settings(shot, width, height)
 
     errors = ui.logcat_errors()
     check(not errors, "no errors in the device log" + ("" if not errors else ": " + errors[0][:160]))

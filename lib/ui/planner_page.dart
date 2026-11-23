@@ -695,7 +695,17 @@ Future<void> syncEverything(BuildContext context) async {
       result.message,
       action: 'Settings',
       onAction: () {
-        if (context.mounted) showSettingsDialog(context);
+        if (!context.mounted) return;
+        // To the part that can put it right: the connection if that
+        // failed, else a calendar that could not be read, else the copy.
+        showSettingsDialog(
+          context,
+          section: context.readSync.state == SyncState.error
+              ? SettingsSection.sync
+              : context.readCalendars.subscriptions.any((c) => c.error != null)
+                  ? SettingsSection.calendars
+                  : SettingsSection.data,
+        );
       },
     );
   }

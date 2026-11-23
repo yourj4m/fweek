@@ -137,6 +137,22 @@ Future<void> pumpApp(
   await tester.pumpAndSettle();
 }
 
+/// Opens the settings from the menu, and there the section called
+/// [section] if one is given ("Sync", "Calendars", …).
+Future<void> openSettings(WidgetTester tester, [String? section]) async {
+  await tester.tap(find.bySemanticsLabel('Menu'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Settings'));
+  await tester.pumpAndSettle();
+  if (section != null) await showSettings(tester, section);
+}
+
+/// Goes to a section of the settings, which are open.
+Future<void> showSettings(WidgetTester tester, String section) async {
+  await tester.tap(find.bySemanticsLabel('$section settings'));
+  await tester.pumpAndSettle();
+}
+
 /// A click with the secondary mouse button on the centre of [target].
 Future<void> rightClick(WidgetTester tester, Finder target) async {
   final mouse = await tester.startGesture(tester.getCenter(target),

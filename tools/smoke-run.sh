@@ -252,6 +252,22 @@ copy="$data/backups/planner-$(date +%F).json"
   && pass "the sync button keeps a copy of the planner on this device" \
   || fail "no copy of the planner at $copy after the sync button"
 
+# The settings (Ctrl+,): their sections are listed at the card's left. A
+# click on "Tasks" shows that section; a switch there reaches the planner's
+# file. (Turned on and off again, so that the rest of the run is as before.)
+shot 07r-week
+send "ctrl ,"
+wait_for_change 07r-week 07s-settings 840x680+300+100 "Ctrl+, opens the settings"
+click 392 262
+wait_for_change 07s-settings 07t-settings-tasks 600x480+520+150 "a section of the settings opens from their list"
+sorted_before="$(stored 'sort_done_down')"
+click 1106 289; sleep 0.6
+[ "$(stored 'sort_done_down')" -gt "$sorted_before" ] \
+  && pass "a switch in the settings is stored" \
+  || fail "the switch in the settings did not reach the planner's file"
+click 1106 289; sleep 0.6
+key Escape; sleep 0.8
+
 # The Tasks page (L): a list is started in the blank column and named
 # where it stands; a task typed into it is in that list and has no day.
 type_text l; sleep 0.8

@@ -117,9 +117,18 @@ void main() {
       );
       await expectLater(
           find.byType(MaterialApp), matchesGoldenFile('goldens/sync_failed.png'));
+      // Straight to the part of the settings that can put it right, which
+      // is marked in their list as well.
       await tester.tap(find.text('Settings'));
       await tester.pumpAndSettle();
       expect(find.text('Sync now'), findsOneWidget);
+      expect(find.text('Week starts on'), findsNothing);
+      expect(
+        find.descendant(
+            of: find.bySemanticsLabel('Sync settings'),
+            matching: find.byIcon(AppIcons.cloudAlert)),
+        findsOneWidget,
+      );
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
 
@@ -223,16 +232,12 @@ void main() {
     File('${folder.path}/planner-2026-11-12.json')
       ..writeAsStringSync(Export.backup(store))
       ..setLastModifiedSync(DateTime(2026, 11, 12, 18, 30));
-    await pumpApp(tester, store,
-        size: const Size(1440, 1500), backups: LocalBackups(folder));
+    await pumpApp(tester, store, backups: LocalBackups(folder));
     expect(find.text('Deleted by mistake'), findsNothing);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
     await tester.pumpAndSettle();
-    await tester.tap(find.bySemanticsLabel('Menu'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Settings'));
-    await tester.pumpAndSettle();
+    await openSettings(tester, 'Data');
     expect(find.textContaining('Copies kept on this device: 2, the latest from yesterday'),
         findsOneWidget);
     await tester.ensureVisible(find.text('Restore a copy'));

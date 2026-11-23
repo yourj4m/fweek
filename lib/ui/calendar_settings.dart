@@ -11,7 +11,7 @@ import '../theme/app_theme.dart';
 import 'ics_import_dialog.dart';
 import 'icons.dart';
 import 'pickers.dart';
-import 'sync_settings.dart' show SettingsField;
+import 'settings_parts.dart';
 import 'task_list.dart' show calendarColor;
 import 'widgets/controls.dart';
 
@@ -262,11 +262,9 @@ class _CalendarSettingsState extends State<CalendarSettings> {
               onTap: calendars.refreshing ? null : calendars.refresh,
             ),
           ),
-          const SizedBox(height: 14),
         ],
         if (elsewhere.isNotEmpty) ...[
-          Text('On your other devices', style: context.text.small15),
-          const SizedBox(height: 2),
+          const SettingsHeading('On your other devices'),
           Text(
             'Known from another device. To show one here too, add its '
             'address below'
@@ -310,8 +308,8 @@ class _CalendarSettingsState extends State<CalendarSettings> {
                 ),
               ],
             ),
-          const SizedBox(height: 14),
         ],
+        const SettingsHeading('Add a calendar'),
         SettingsField(
           label: 'Address',
           hint: 'https://…/basic.ics',
@@ -352,9 +350,7 @@ class _CalendarSettingsState extends State<CalendarSettings> {
             onTap: _adding ? null : _add,
           ),
         ),
-        const SizedBox(height: 18),
-        Text('A calendar file', style: context.text.small15),
-        const SizedBox(height: 2),
+        const SettingsHeading('A calendar file'),
         Text(
           'The events of an .ics file (an invitation, an export) are added '
           'to your planner as events of your own, and sync with it. '
@@ -373,9 +369,7 @@ class _CalendarSettingsState extends State<CalendarSettings> {
             onTap: _importFile,
           ),
         ),
-        const SizedBox(height: 18),
-        Text('Birthdays', style: context.text.small15),
-        const SizedBox(height: 2),
+        const SettingsHeading('Birthdays'),
         Text(
           'Google Calendar gives out no address for its Birthdays calendar. '
           'The birthdays are in your contacts, though: export them '

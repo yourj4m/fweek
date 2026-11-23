@@ -26,6 +26,9 @@ class Toast {
 /// of tasks.
 enum AppPage { planner, tasks }
 
+/// The parts the settings are divided into, in the order they are listed.
+enum SettingsSection { general, appearance, tasks, calendars, sync, data, advanced }
+
 /// What the window is showing: the planner or the Tasks page, which week or
 /// month, and in which view.
 ///
@@ -157,6 +160,10 @@ class AppController extends ChangeNotifier {
   /// Asks the list with the given id to start naming itself (a list just
   /// created from the menu).
   final renameList = ValueNotifier<String?>(null);
+
+  /// The part of the settings last looked at: they open on it again, for
+  /// as long as the app runs.
+  SettingsSection settingsSection = SettingsSection.general;
 
   @override
   void dispose() {

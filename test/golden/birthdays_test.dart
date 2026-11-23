@@ -92,11 +92,8 @@ void main() {
   desktopTest('the settings explain where birthdays come from and list the calendar',
       (tester) async {
     final store = seededStore();
-    await pumpApp(tester, store, size: const Size(1440, 1700));
-    await tester.tap(find.bySemanticsLabel('Menu'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Settings'));
-    await tester.pumpAndSettle();
+    await pumpApp(tester, store);
+    await openSettings(tester, 'Calendars');
     expect(find.text('Read a contacts file…'), findsOneWidget);
     expect(find.textContaining('Google Calendar gives out no address for its Birthdays'),
         findsOneWidget);

@@ -111,35 +111,47 @@ stop_app() { kill "$app"; wait "$app" 2>/dev/null; app=""; sleep 0.5; }
 
 # Where the sync form sits in the settings card of a 1440x1900 window: the
 # four fields (server, login name, app password, folder) and the Connect
-# button, top to bottom. It moves when the settings above it grow.
+# button, top to bottom.
+#
+# Up to form 5 the settings were one long card, and the form moved whenever
+# the settings above it grew:
 #   1: builds up to the calendars release (one row of themes)
 #   2: three rows of themes
 #   3: with "New items are" above it
 #   4: with "A task from a list, given a day" above it as well
 #   5: with a line more said about done tasks in lists
+# From form 6 on the settings are in sections, listed at the card's left,
+# and the form is the page of the fifth, "Sync": it stays where it is
+# whatever the other sections hold.
 form() {
   case "$1" in
     1) echo "921 973 1025 1077 1203" ;;
     2) echo "1074 1126 1178 1230 1356" ;;
     3) echo "1220 1272 1324 1376 1502" ;;
     4) echo "1422 1474 1526 1578 1704" ;;
-    *) echo "1442 1494 1546 1598 1724" ;;
+    5) echo "1442 1494 1546 1598 1724" ;;
+    *) echo "217 269 321 373 479" ;;
   esac
 }
-current_form=5
+current_form=6
 
 # Fills in the sync settings and connects.
 connect() {  # <data folder> [form]
-  read -r y_server y_user y_password y_folder y_connect <<<"$(form "${2:-$current_form}")"
+  local form="${2:-$current_form}" x_connect=549
+  read -r y_server y_user y_password y_folder y_connect <<<"$(form "$form")"
   # The settings card takes a moment to appear with software rendering.
   send "ctrl ,"; sleep 3
+  if [ "$form" -ge 6 ]; then
+    click 392 346; sleep 0.5   # the "Sync" section
+    x_connect=589
+  fi
   click 780 "$y_server";   type_text "$server"
   click 780 "$y_user";     type_text "$user"
   click 780 "$y_password"; type_text "$password"
   click 780 "$y_folder"
   for _ in $(seq 1 12); do key BackSpace; done
   type_text "$folder"
-  click 549 "$y_connect"
+  click "$x_connect" "$y_connect"
   # Wait for the first sync to finish.
   for _ in $(seq 1 40); do
     [ "$(stored "$1" 'sync.last_ok')" -ge 1 ] && break

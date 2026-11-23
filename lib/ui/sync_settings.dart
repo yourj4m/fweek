@@ -1,11 +1,11 @@
 import 'package:flutter/widgets.dart';
-import 'package:material_ui/material_ui.dart' show TextField, InputDecoration;
 
 import '../app_state.dart';
 import '../platform.dart';
 import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import 'icons.dart';
+import 'settings_parts.dart';
 import 'widgets/controls.dart';
 
 /// The "Sync" part of the settings: connect to a Nextcloud account, or see
@@ -188,79 +188,6 @@ class _SyncSettingsState extends State<SyncSettings> {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// One labelled line of a settings form.
-class SettingsField extends StatelessWidget {
-  const SettingsField({
-    super.key,
-    required this.label,
-    required this.controller,
-    this.hint,
-    this.obscure = false,
-    this.enabled = true,
-    this.onSubmitted,
-    this.onBlur,
-  });
-
-  final String label;
-  final String? hint;
-  final TextEditingController controller;
-  final bool obscure;
-  final bool enabled;
-  final VoidCallback? onSubmitted;
-
-  /// Called when the field is left.
-  final VoidCallback? onBlur;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.theme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
-        height: Dim.controlLarge,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: theme.ink(5),
-          borderRadius: BorderRadius.circular(Dim.radiusM),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 118,
-              child: Text(
-                label,
-                style: context.text.small15.copyWith(color: theme.ink(60)),
-              ),
-            ),
-            Expanded(
-              child: Focus(
-                skipTraversal: true,
-                onFocusChange: (focused) {
-                  if (!focused) onBlur?.call();
-                },
-                child: TextField(
-                  controller: controller,
-                  enabled: enabled,
-                  obscureText: obscure,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  style: context.text.body17,
-                  cursorColor: theme.text,
-                  decoration: InputDecoration.collapsed(
-                    hintText: hint ?? '',
-                    hintStyle: context.text.body17.copyWith(color: theme.ink(25)),
-                  ),
-                  onSubmitted: (_) => onSubmitted?.call(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

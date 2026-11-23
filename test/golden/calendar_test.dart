@@ -362,12 +362,8 @@ void main() {
   desktopTest('the settings list the calendar: hide, recolour, rename, remove', (tester) async {
     final store = seededStore();
     final calendars = await calendarWith(tester, store);
-    // Tall enough for the whole settings card.
-    await pumpApp(tester, store, calendars: calendars, size: const Size(1440, 2600));
-    await tester.tap(find.bySemanticsLabel('Menu'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Settings'));
-    await tester.pumpAndSettle();
+    await pumpApp(tester, store, calendars: calendars);
+    await openSettings(tester, 'Calendars');
     expect(find.textContaining('4 events'), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('Hide Work'));

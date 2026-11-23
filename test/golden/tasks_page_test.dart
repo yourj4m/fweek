@@ -413,7 +413,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.comma);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Leaves its list'));
+      await showSettings(tester, 'Tasks');
       await tester.tap(find.text('Leaves its list'));
       await tester.pumpAndSettle();
       expect(store.setting<bool>(Settings.keepInList), isFalse);

@@ -537,11 +537,8 @@ void main() {
 
     desktopTest('the search server is set in the settings, over https only', (tester) async {
       final store = seededStore();
-      await pumpApp(tester, store, size: const Size(1440, 2800));
-      await tester.tap(find.bySemanticsLabel('Menu'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Settings'));
-      await tester.pumpAndSettle();
+      await pumpApp(tester, store);
+      await openSettings(tester, 'General');
       final field = find.widgetWithText(TextField, PlaceSearch.defaultServer);
       await tester.enterText(field, 'http://photon.example.org');
       await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -579,10 +576,7 @@ void main() {
     desktopTest('the settings offer them in three rows', (tester) async {
       final store = seededStore();
       await pumpApp(tester, store);
-      await tester.tap(find.bySemanticsLabel('Menu'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Settings'));
-      await tester.pumpAndSettle();
+      await openSettings(tester, 'Appearance');
       double row(String name) =>
           tester.getCenter(find.bySemanticsLabel(RegExp('^$name theme'))).dy;
       expect(row('Light'), row('Sage'));
@@ -706,7 +700,9 @@ void main() {
       expect(selectable(tester, find.text('Settings')), isFalse);
       await tester.tap(find.text('Settings'));
       await tester.pumpAndSettle();
+      await showSettings(tester, 'Tasks');
       expect(selectable(tester, find.textContaining('Once a day, tasks left open')), isTrue);
+      await showSettings(tester, 'Data');
       expect(selectable(tester, find.text('Backup')), isFalse);
     });
 
@@ -715,10 +711,7 @@ void main() {
       await pumpApp(tester, store, size: const Size(411, 914));
       expect(selectable(tester, find.text('13 Nov')), isFalse);
       // In a card, text can be selected on a phone too.
-      await tester.tap(find.bySemanticsLabel('Menu'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Settings'));
-      await tester.pumpAndSettle();
+      await openSettings(tester, 'Tasks');
       expect(selectable(tester, find.textContaining('Once a day, tasks left open')), isTrue);
     });
   });

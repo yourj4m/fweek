@@ -296,7 +296,7 @@ void main() {
         return remote;
       },
     );
-    tester.view.physicalSize = const Size(1440, 1400);
+    tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(FweekApp(store: store, notifications: false, sync: service));
@@ -307,13 +307,14 @@ void main() {
     expect(find.text('Sync now'), findsNothing);
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
+    await showSettings(tester, 'Sync');
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/settings_sync_off.png'));
 
     Finder field(String label) => find.descendant(
         of: find.ancestor(of: find.text(label), matching: find.byType(Row)).first,
         matching: find.byType(TextField));
-    // The settings are longer than the window; bring the button into view
-    // before each press.
+    // Bring the button into view before each press, should the section be
+    // longer than the card.
     Future<void> press(String label) async {
       await tester.ensureVisible(find.text(label));
       await tester.pumpAndSettle();
@@ -358,6 +359,7 @@ void main() {
     await tester.tap(find.text('Sunday'));
     await tester.pumpAndSettle();
     expect(store.weekStart, 7);
+    await showSettings(tester, 'Appearance');
     await tester.tap(find.bySemanticsLabel(RegExp('^Dark theme')));
     await tester.pumpAndSettle();
     expect(store.setting<String>(Settings.theme), 'dark');
