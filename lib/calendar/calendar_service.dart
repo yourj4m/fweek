@@ -245,7 +245,7 @@ class CalendarService extends ChangeNotifier {
         _ownsClient = client == null,
         _clock = clock ?? DateTime.now,
         _parse = parse ?? _parseOffThread {
-    _client.userAgent = 'WeekToDo';
+    _client.userAgent = 'fweek';
     store.eventResolver = eventTask;
     store.dayEventsResolver = _eventsOn;
     _seenOverlay = store.overlayRevision;

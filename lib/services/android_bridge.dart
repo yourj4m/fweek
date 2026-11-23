@@ -33,7 +33,7 @@ class AndroidBridge {
     _channel.setMethodCallHandler(_onCall);
   }
 
-  static const _channel = MethodChannel('weektodo/platform');
+  static const _channel = MethodChannel('fweek/platform');
 
   /// Called when a reminder notification is tapped while the app is running.
   void Function(String taskId)? onOpenTask;

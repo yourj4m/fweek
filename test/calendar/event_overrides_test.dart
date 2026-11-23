@@ -1,17 +1,17 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/calendar/calendar_service.dart';
-import 'package:weektodo/calendar/ics.dart';
-import 'package:weektodo/calendar/identity.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/services/reminders.dart';
-import 'package:weektodo/sync/secrets.dart';
-import 'package:weektodo/sync/storage.dart';
-import 'package:weektodo/sync/sync_engine.dart';
+import 'package:fweek/calendar/calendar_service.dart';
+import 'package:fweek/calendar/ics.dart';
+import 'package:fweek/calendar/identity.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/services/reminders.dart';
+import 'package:fweek/sync/secrets.dart';
+import 'package:fweek/sync/storage.dart';
+import 'package:fweek/sync/sync_engine.dart';
 
 /// What the user changes about imported events: applied on top of the
 /// calendar's version, kept through downloads, and synced between devices.
@@ -480,7 +480,7 @@ void main() {
     test('the other device shows the same order', () async {
       final folder = MemoryStorage();
       Future<void> sync(Device device) =>
-          SyncEngine(device.store, folder, folder: 'WeekToDo').sync();
+          SyncEngine(device.store, folder, folder: 'fweek').sync();
       final desk = Device(text: feed([meeting(), review()]));
       final phone = Device(text: feed([meeting(), review()]));
       final onDesk = await desk.start();
@@ -683,7 +683,7 @@ void main() {
 
   group('two devices', () {
     Future<void> sync(Device device, MemoryStorage folder) =>
-        SyncEngine(device.store, folder, folder: 'WeekToDo').sync();
+        SyncEngine(device.store, folder, folder: 'fweek').sync();
 
     test('a change made on one shows on the other', () async {
       final folder = MemoryStorage();

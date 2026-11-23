@@ -15,16 +15,16 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/data/recurrence.dart';
-import 'package:weektodo/sync/secrets.dart';
-import 'package:weektodo/sync/storage.dart';
-import 'package:weektodo/sync/sync_engine.dart';
-import 'package:weektodo/sync/sync_service.dart';
-import 'package:weektodo/sync/webdav.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/data/recurrence.dart';
+import 'package:fweek/sync/secrets.dart';
+import 'package:fweek/sync/storage.dart';
+import 'package:fweek/sync/sync_engine.dart';
+import 'package:fweek/sync/sync_service.dart';
+import 'package:fweek/sync/webdav.dart';
 
 void main() {
   final url = Platform.environment['NEXTCLOUD_TEST_URL'];
@@ -35,7 +35,7 @@ void main() {
   final skip = configured ? null : 'no NEXTCLOUD_TEST_* environment';
 
   final today = Day(2026, 11, 13), monday = Day(2026, 11, 9);
-  final folder = 'WeekToDo test ${Random().nextInt(1 << 32).toRadixString(16)}/nested';
+  final folder = 'fweek test ${Random().nextInt(1 << 32).toRadixString(16)}/nested';
   late WebDavStorage storage;
   late String id;
 

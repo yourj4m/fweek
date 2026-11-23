@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/services/places.dart';
+import 'package:fweek/services/places.dart';
 
 /// A Photon answer, cut down to what the app reads.
 Map<String, Object?> feature(Map<String, Object?> properties, [List<Object?> at = const [5.7245, 45.1885]]) => {
@@ -108,7 +108,7 @@ void main() {
       server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       server.listen((request) async {
         requests.add(request.uri);
-        expect(request.headers.value(HttpHeaders.userAgentHeader), 'WeekToDo');
+        expect(request.headers.value(HttpHeaders.userAgentHeader), 'fweek');
         request.response.statusCode = status;
         if (status == 200) {
           request.response.headers.contentType = ContentType.json;

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/text/links.dart';
+import 'package:fweek/text/links.dart';
 
 void main() {
   List<String?> urls(String text) => [for (final p in linkify(text)) p.url];

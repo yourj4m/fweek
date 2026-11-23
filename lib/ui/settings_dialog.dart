@@ -80,15 +80,15 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         // Android has no path to write to; its file picker hands out a
         // location in whichever storage app the user chooses.
         final saved = await android.saveDocument(
-          name: 'weektodo.$extension',
+          name: 'fweek.$extension',
           mime: _mimeTypes[extension] ?? 'application/octet-stream',
           bytes: Uint8List.fromList(utf8.encode(build())),
         );
-        if (saved) _report('Saved weektodo.$extension');
+        if (saved) _report('Saved fweek.$extension');
         return;
       }
       final location = await getSaveLocation(
-        suggestedName: 'weektodo.$extension',
+        suggestedName: 'fweek.$extension',
         acceptedTypeGroups: [XTypeGroup(label: label, extensions: [extension])],
       );
       if (location == null) return;
@@ -107,7 +107,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
       final file = await openFile(
         acceptedTypeGroups: const [
           XTypeGroup(
-            label: 'WeekToDo backup',
+            label: 'fweek backup',
             extensions: ['json'],
             mimeTypes: ['application/json'],
           ),
@@ -348,7 +348,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                           size: Dim.controlInline,
                           iconSize: 16,
                           onTap: () => _export(
-                              'WeekToDo backup', 'json', () => Export.backup(store)),
+                              'fweek backup', 'json', () => Export.backup(store)),
                         ),
                         AppButton(
                           label: 'CSV',
@@ -475,7 +475,7 @@ class _NotificationPermissionState extends State<_NotificationPermission> {
         if (_allowed == false) ...[
           const SizedBox(height: 8),
           Text(
-            'Notifications are turned off for WeekToDo, so reminders cannot '
+            'Notifications are turned off for fweek, so reminders cannot '
             'appear.',
             style: muted.copyWith(color: AppTheme.danger),
           ),

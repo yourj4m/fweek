@@ -2,15 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/calendar/calendar_service.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/export.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/sync/secrets.dart';
-import 'package:weektodo/sync/storage.dart';
-import 'package:weektodo/sync/sync_engine.dart';
+import 'package:fweek/calendar/calendar_service.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/export.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/sync/secrets.dart';
+import 'package:fweek/sync/storage.dart';
+import 'package:fweek/sync/sync_engine.dart';
 
 /// A calendar server on this machine. All-day events only, so the tests do
 /// not depend on the machine's time zone.
@@ -159,7 +159,7 @@ void main() {
     store.setEventHidden(event.id, true);
 
     final folder = MemoryStorage();
-    await SyncEngine(store, folder, folder: 'WeekToDo').sync();
+    await SyncEngine(store, folder, folder: 'fweek').sync();
     expect(folder.files, isNotEmpty);
     final uploaded = [for (final bytes in folder.files.values) utf8.decode(bytes)].join('\n');
     expect(uploaded, contains('Buy oat milk')); // the task does sync

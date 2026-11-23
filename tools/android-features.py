@@ -10,7 +10,7 @@ the place search and handed to the map app, the Tasks page (a new list, a
 task typed into it and planned for a day), and the form for a new event
 (typed above the keyboard, all day or with times, over several days).
 
-With --events the app must be a build made with WEEKTODO_PERF (see
+With --events the app must be a build made with FWEEK_PERF (see
 tools/android-perf.py), which starts with a calendar of test events: then
 events as rows, an event over several days as a bar, hiding an event and
 undoing it, and hiding the whole calendar from the menu are checked too,

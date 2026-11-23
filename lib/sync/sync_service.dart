@@ -73,6 +73,13 @@ enum SyncState {
   error,
 }
 
+/// The folder the connection form offers.
+const defaultSyncFolder = 'fweek';
+
+/// The folder the form offered while the app was called WeekToDo. Accounts
+/// set up then keep their planner there (see [SyncService.connect]).
+const earlierSyncFolder = 'WeekToDo';
+
 /// Keeps the planner in sync with a Nextcloud folder: on start, every few
 /// minutes, shortly after local edits, and on request.
 class SyncService extends ChangeNotifier {
@@ -276,7 +283,7 @@ class SyncService extends ChangeNotifier {
     // A server that does not say: an id in a pasted WebDAV address is the
     // next best guess, then the login name, as before.
     userId ??= nextcloudUserIdInAddress(typed.server);
-    final config = SyncConfig(
+    var config = SyncConfig(
       server: typed.server,
       user: typed.user,
       folder: typed.folder,
@@ -284,6 +291,25 @@ class SyncService extends ChangeNotifier {
     );
 
     final storage = _storageFor(config, password);
+    // The folder left as offered, in an account whose planner was put in
+    // the folder offered under the app's earlier name: join that one rather
+    // than start an empty folder beside it.
+    if (config.folder == defaultSyncFolder) {
+      try {
+        if ((await storage.list('$defaultSyncFolder/changes')).isEmpty &&
+            (await storage.list('$earlierSyncFolder/changes')).isNotEmpty) {
+          config = SyncConfig(
+            server: typed.server,
+            user: typed.user,
+            folder: earlierSyncFolder,
+            userId: userId,
+          );
+        }
+      } on SyncException catch (error) {
+        if (storage is WebDavStorage) storage.close();
+        return error.message;
+      }
+    }
     final engine = SyncEngine(store, storage, folder: config.folder);
     // Bookkeeping describes one folder; forgetting it is always safe (the
     // next sync re-reads and re-uploads), so do that when the folder changes.

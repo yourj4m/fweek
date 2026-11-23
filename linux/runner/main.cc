@@ -7,7 +7,7 @@ int main(int argc, char** argv) {
   // that one setting and start with the default renderer instead.
   if (g_strcmp0(g_getenv("FLUTTER_LINUX_RENDERER"), "software") == 0) {
     g_printerr(
-        "WeekToDo: ignoring FLUTTER_LINUX_RENDERER=software; this Flutter "
+        "fweek: ignoring FLUTTER_LINUX_RENDERER=software; this Flutter "
         "release cannot draw text with it.\n");
     g_unsetenv("FLUTTER_LINUX_RENDERER");
   }

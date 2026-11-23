@@ -163,7 +163,7 @@ class WebDavStorage implements SyncStorage {
             'Basic ${base64Encode(utf8.encode('$user:$password'))}',
         _client = client ?? HttpClient() {
     _client.connectionTimeout = const Duration(seconds: 15);
-    _client.userAgent = 'WeekToDo';
+    _client.userAgent = 'fweek';
   }
 
   /// The collection all paths are relative to; ends with `/`.

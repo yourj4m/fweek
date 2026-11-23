@@ -3,15 +3,15 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/sync/secrets.dart';
-import 'package:weektodo/sync/storage.dart';
-import 'package:weektodo/sync/sync_engine.dart';
-import 'package:weektodo/sync/sync_service.dart';
-import 'package:weektodo/sync/webdav.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/sync/secrets.dart';
+import 'package:fweek/sync/storage.dart';
+import 'package:fweek/sync/sync_engine.dart';
+import 'package:fweek/sync/sync_service.dart';
+import 'package:fweek/sync/webdav.dart';
 
 /// A small WebDAV server that answers the way Nextcloud does: Basic auth,
 /// `d:`-prefixed multistatus listings with percent-encoded hrefs, 405 for an
@@ -183,7 +183,7 @@ void main() {
       expect(() => nextcloudFilesRoot('ftp://x', 'jonas'), throwsFormatException);
       expect(() => nextcloudFilesRoot('cloud.example.com', ' '),
           throwsA(isA<FormatException>().having((e) => e.message, 'message', contains('user name'))));
-      expect(normalizeFolder(' /Apps//WeekToDo/ '), 'Apps/WeekToDo');
+      expect(normalizeFolder(' /Apps//fweek/ '), 'Apps/fweek');
       expect(() => normalizeFolder(' / '), throwsFormatException);
       expect(() => normalizeFolder('../..'), throwsFormatException);
     });
@@ -221,25 +221,25 @@ void main() {
   test('parses a Nextcloud listing: files only, names decoded', () {
     const body = '''<?xml version="1.0"?>
 <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns">
- <d:response><d:href>/remote.php/dav/files/jonas/WeekToDo/changes/</d:href>
+ <d:response><d:href>/remote.php/dav/files/jonas/fweek/changes/</d:href>
   <d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
- <d:response><d:href>/remote.php/dav/files/jonas/WeekToDo/changes/0a1b2c3d-00000001.json</d:href>
+ <d:response><d:href>/remote.php/dav/files/jonas/fweek/changes/0a1b2c3d-00000001.json</d:href>
   <d:propstat><d:prop><d:resourcetype/></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
- <d:response><d:href>/remote.php/dav/files/jonas/WeekToDo/changes/My%20notes%20%c3%a4.txt</d:href>
+ <d:response><d:href>/remote.php/dav/files/jonas/fweek/changes/My%20notes%20%c3%a4.txt</d:href>
   <d:propstat><d:prop><d:resourcetype/></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
- <d:response><d:href>/remote.php/dav/files/jonas/WeekToDo/changes/old/</d:href>
+ <d:response><d:href>/remote.php/dav/files/jonas/fweek/changes/old/</d:href>
   <d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
 </d:multistatus>''';
     final names = WebDavStorage.parseListing(
       body,
-      Uri.parse('https://cloud.example.com/remote.php/dav/files/jonas/WeekToDo/changes/'),
+      Uri.parse('https://cloud.example.com/remote.php/dav/files/jonas/fweek/changes/'),
     );
     expect(names, ['0a1b2c3d-00000001.json', 'My notes ä.txt']);
     // Other servers use other prefixes or a default namespace.
     final plain = body.replaceAll('d:', 'D:').replaceAll('xmlns:d=', 'xmlns:D=');
     expect(
       WebDavStorage.parseListing(plain,
-          Uri.parse('https://x/remote.php/dav/files/jonas/WeekToDo/changes/')),
+          Uri.parse('https://x/remote.php/dav/files/jonas/fweek/changes/')),
       hasLength(2),
     );
     expect(
@@ -266,21 +266,21 @@ void main() {
     });
 
     test('creates nested folders, writes, lists, reads and deletes', () async {
-      expect(await storage.list('Apps/WeekToDo/changes'), isEmpty);
-      await storage.createDir('Apps/WeekToDo/changes');
-      expect(server.dirs, containsAll(['Apps', 'Apps/WeekToDo', 'Apps/WeekToDo/changes']));
-      await storage.createDir('Apps/WeekToDo/changes'); // again: no error
+      expect(await storage.list('Apps/fweek/changes'), isEmpty);
+      await storage.createDir('Apps/fweek/changes');
+      expect(server.dirs, containsAll(['Apps', 'Apps/fweek', 'Apps/fweek/changes']));
+      await storage.createDir('Apps/fweek/changes'); // again: no error
       final bytes = Uint8List.fromList(utf8.encode('{"hello":"wörld"}'));
-      await storage.write('Apps/WeekToDo/changes/a b.json', bytes);
-      await storage.write('Apps/WeekToDo/changes/second.json', Uint8List(0));
-      expect(await storage.list('Apps/WeekToDo/changes'),
+      await storage.write('Apps/fweek/changes/a b.json', bytes);
+      await storage.write('Apps/fweek/changes/second.json', Uint8List(0));
+      expect(await storage.list('Apps/fweek/changes'),
           unorderedEquals(['a b.json', 'second.json']));
-      expect(await storage.list('Apps/WeekToDo'), isEmpty); // only a sub-folder
-      expect(await storage.read('Apps/WeekToDo/changes/a b.json'), bytes);
-      expect(await storage.read('Apps/WeekToDo/changes/missing.json'), isNull);
-      await storage.delete('Apps/WeekToDo/changes/a b.json');
-      await storage.delete('Apps/WeekToDo/changes/a b.json'); // again: no error
-      expect(await storage.list('Apps/WeekToDo/changes'), ['second.json']);
+      expect(await storage.list('Apps/fweek'), isEmpty); // only a sub-folder
+      expect(await storage.read('Apps/fweek/changes/a b.json'), bytes);
+      expect(await storage.read('Apps/fweek/changes/missing.json'), isNull);
+      await storage.delete('Apps/fweek/changes/a b.json');
+      await storage.delete('Apps/fweek/changes/a b.json'); // again: no error
+      expect(await storage.list('Apps/fweek/changes'), ['second.json']);
     });
 
     test('refuses to replace a file unless asked to', () async {
@@ -335,8 +335,8 @@ void main() {
       }
 
       final a = newStore(), b = newStore();
-      final syncA = SyncEngine(a, storage, folder: 'WeekToDo');
-      final syncB = SyncEngine(b, storage, folder: 'WeekToDo');
+      final syncA = SyncEngine(a, storage, folder: 'fweek');
+      final syncB = SyncEngine(b, storage, folder: 'fweek');
       final id = a.addTask(DaySlot(monday), 'Über WebDAV ✓')!;
       await syncA.sync();
       await syncB.sync();
@@ -349,7 +349,7 @@ void main() {
       expect(a.task(id)!.done, isTrue);
       // The folder is only created once per device.
       expect(server.requests.where((r) => r.startsWith('MKCOL')).length, lessThanOrEqualTo(6));
-      expect(server.files.keys, everyElement(startsWith('WeekToDo/changes/')));
+      expect(server.files.keys, everyElement(startsWith('fweek/changes/')));
     });
   });
 
@@ -400,13 +400,13 @@ void main() {
       );
       addTearDown(asBefore.close);
       await expectLater(
-        asBefore.createDir('WeekToDo/changes'),
+        asBefore.createDir('fweek/changes'),
         throwsA(failure(SyncFailure.forbidden).having(
             (e) => e.message, 'message', allOf(contains('accepted the login'), isNot(contains('did not accept'))))),
       );
       server.throttled = true;
       await expectLater(
-        asBefore.list('WeekToDo/changes'),
+        asBefore.list('fweek/changes'),
         throwsA(failure(SyncFailure.throttled)
             .having((e) => e.message, 'message', contains('too many failed attempts'))),
       );
@@ -421,17 +421,17 @@ void main() {
         server: '${server.address}',
         user: FakeNextcloud.user,
         password: '${FakeNextcloud.password}\n',
-        folder: 'WeekToDo',
+        folder: 'fweek',
       );
       service.dispose();
       expect(error, isNull);
       expect(service.config!.root.path, '/remote.php/dav/files/$id/');
       expect(server.logins.toSet(), {FakeNextcloud.user}, reason: 'the id never logs in');
-      expect(server.files.keys.single, startsWith('WeekToDo/changes/'));
+      expect(server.files.keys.single, startsWith('fweek/changes/'));
       expect(jsonDecode(store.db.meta('sync.config')!), {
         'server': '${server.address}',
         'user': FakeNextcloud.user,
-        'folder': 'WeekToDo',
+        'folder': 'fweek',
         'userId': id,
       });
       expect(secrets.values.values.single, FakeNextcloud.password);
@@ -455,7 +455,7 @@ void main() {
         server: '${server.address}/remote.php/dav/files/$id',
         user: id,
         password: FakeNextcloud.password,
-        folder: 'WeekToDo',
+        folder: 'fweek',
       );
       expect(asId, allOf(contains('did not accept the login name'),
           contains('login name Nextcloud shows'), isNot(contains(FakeNextcloud.password))));
@@ -466,7 +466,7 @@ void main() {
           server: '${server.address}/remote.php/dav/files/$id/',
           user: FakeNextcloud.user,
           password: FakeNextcloud.password,
-          folder: 'WeekToDo',
+          folder: 'fweek',
         ),
         isNull,
       );
@@ -477,7 +477,7 @@ void main() {
       expect(
         await service.connect(
             server: '${server.address}', user: FakeNextcloud.user,
-            password: FakeNextcloud.password, folder: 'WeekToDo'),
+            password: FakeNextcloud.password, folder: 'fweek'),
         contains('too many failed attempts'),
       );
     });
@@ -490,9 +490,9 @@ void main() {
     addTearDown(db.close);
     final store = PlannerStore(db, today: () => Day(2026, 11, 9));
     final address = '${server.address}';
-    final target = '$address/remote.php/dav/files/jonas/WeekToDo';
+    final target = '$address/remote.php/dav/files/jonas/fweek';
     db.setMeta('sync.config',
-        jsonEncode({'server': address, 'user': 'jonas', 'folder': 'WeekToDo'}));
+        jsonEncode({'server': address, 'user': 'jonas', 'folder': 'fweek'}));
     db.setMeta('sync.target', target);
     db.setMeta('sync.seen', '{"0a1b2c3d":4}');
     final secrets = MemorySecretStore()..values['nextcloud-app-password'] = FakeNextcloud.password;

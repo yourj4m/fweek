@@ -4,16 +4,16 @@ import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/calendar/calendar_service.dart';
-import 'package:weektodo/calendar/ics.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/main.dart';
-import 'package:weektodo/services/opener.dart';
-import 'package:weektodo/services/places.dart';
-import 'package:weektodo/sync/secrets.dart';
+import 'package:fweek/calendar/calendar_service.dart';
+import 'package:fweek/calendar/ics.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/main.dart';
+import 'package:fweek/services/opener.dart';
+import 'package:fweek/services/places.dart';
+import 'package:fweek/sync/secrets.dart';
 
 /// The day the reference captures were taken, so renders line up with them.
 final referenceToday = Day(2026, 11, 13);
@@ -103,7 +103,7 @@ Future<void> pumpApp(
   tester.platformDispatcher.platformBrightnessTestValue = brightness;
   addTearDown(tester.view.reset);
   addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
-  await tester.pumpWidget(WeekToDoApp(
+  await tester.pumpWidget(FweekApp(
     store: store,
     notifications: false,
     calendars: calendars,

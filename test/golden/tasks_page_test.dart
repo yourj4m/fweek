@@ -3,11 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart' show MaterialApp, TextField;
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/ui/task_list.dart';
-import 'package:weektodo/ui/tasks_page.dart';
-import 'package:weektodo/ui/widgets/controls.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/ui/task_list.dart';
+import 'package:fweek/ui/tasks_page.dart';
+import 'package:fweek/ui/widgets/controls.dart';
 
 import 'harness.dart';
 

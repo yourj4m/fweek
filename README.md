@@ -1,4 +1,4 @@
-# WeekToDo
+# fweek
 
 A minimal weekly planner for Linux (Wayland) and Android. Your week as ruled
 columns, a page of lists for what has no day yet, and nothing else in the way.
@@ -7,9 +7,12 @@ Local-first: everything is stored on your machine and the app works offline.
 Optionally it keeps your devices in step through a folder in your own
 Nextcloud, with no other server involved.
 
-This is a personal project. It shares its name with, but is unrelated to, the
-open-source WeekToDo planner at weektodo.me; it would need a different name
-before being published.
+This is a personal project, made for one person's own devices and shared as
+it is. It was called WeekToDo for a while (no relation to the planner at
+weektodo.me), and a few names that nobody reads still say so: the app id
+`io.github.yourj4m.weektodo` and the format tags inside backup and sync
+files. Changing those would cut an installed copy off from its planner and
+its connection, so they stay.
 
 ## Status
 
@@ -166,7 +169,7 @@ Not there yet:
 ```sh
 tools/setup-dev.sh                         # once: build container + Flutter SDK
 tools/desktop-build.sh                     # build
-build/linux/x64/release/bundle/weektodo    # run
+build/linux/x64/release/bundle/fweek    # run
 tools/install-local.sh                     # optional: add to the application menu
 ```
 
@@ -176,7 +179,7 @@ downloaded into `.tools/`. The built app runs directly on the host and needs
 only GTK 3.
 
 Your planner is stored in `~/.local/share/io.github.yourj4m.weektodo/planner.db`.
-Set `WEEKTODO_DATA_DIR=/some/folder` to try the app against a different,
+Set `FWEEK_DATA_DIR=/some/folder` to try the app against a different,
 throwaway folder.
 
 ## Android
@@ -191,8 +194,9 @@ tools/android-build.sh --install   # ... and install it over USB
 The APK lands in `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`;
 copying that file to the phone and opening it installs it as well. It is
 signed with a key of your own that `tools/android-build.sh` creates on first
-use in `~/.config/weektodo/`. Android only updates an app with a build signed
-by the same key, so keep that folder.
+use in `~/.config/fweek/` (a key made under the app's earlier name stays in
+`~/.config/weektodo/` and is found there). Android only updates an app with a
+build signed by the same key, so keep that folder.
 
 What to expect on the phone:
 
@@ -244,7 +248,7 @@ surviving a restart.
 
 The emulator's renderer is fragile inside the container: the software modes
 crash within seconds, so the helper uses the host GPU with Vulkan switched
-off (`WEEKTODO_EMULATOR_GPU`, `WEEKTODO_EMULATOR_ARGS` override that). If it
+off (`FWEEK_EMULATOR_GPU`, `FWEEK_EMULATOR_ARGS` override that). If it
 dies, start it again; what was installed on it is gone after a crash.
 
 ## Develop
@@ -306,7 +310,7 @@ The app logs in with the login name and asks the server for that id (WebDAV
 
 In the chosen folder each device only ever adds files named after itself:
 
-    WeekToDo/changes/<device id>-<sequence number>.json
+    fweek/changes/<device id>-<sequence number>.json
 
 A file is a batch of that device's changes and is never modified, so two
 devices cannot overwrite each other, and a sync that is interrupted is simply
@@ -428,10 +432,10 @@ Installing a newer build keeps the planner, the sync connection and the
 subscribed calendars; nothing has to be entered again.
 
 - **Linux**: `tools/install-local.sh` replaces only the program in
-  `~/.local/opt/weektodo`. The planner (`~/.local/share/io.github.yourj4m.weektodo`)
+  `~/.local/opt/fweek`. The planner (`~/.local/share/io.github.yourj4m.weektodo`)
   and the passwords in the keyring are not touched.
 - **Android**: install the new APK over the old one. This works as long as
-  it is signed with the same key (`~/.config/weektodo/`, see
+  it is signed with the same key (`~/.config/fweek/` or `~/.config/weektodo/`, see
   [Android](#android)); `tools/android-build.sh` numbers builds by commit
   count, so a later build is always an update.
 
@@ -450,7 +454,7 @@ build; what was changed since the update is then missing on that device
 until it syncs.
 
 Both are tested by setting a device up with an earlier build and continuing
-with the current one: `WEEKTODO_OLD_BIN=/path/to/old/weektodo tools/dev
+with the current one: `tools/dev env FWEEK_OLD_BIN=/path/to/old/fweek
 tools/sync-smoke.sh ...` on Linux, and `adb install -r` over the older APK on
 the emulator. What must stay the same for this to hold: the app id
 `io.github.yourj4m.weektodo`, the signing key, and the meaning of the saved
@@ -486,7 +490,7 @@ redrawn"):
   dimmed by their colours, and menus are not blurred on phones (that phone's
   graphics chip runs the OpenGL path, where both are costly).
 
-To measure: build with `--profile --dart-define=WEEKTODO_PERF=true` and run
+To measure: build with `--profile --dart-define=FWEEK_PERF=true` and run
 `tools/android-perf.py` on the emulator; it plays the same interactions on
 the same test planner (some 500 tasks, a calendar of 50 events) every time
 and prints frame timings per interaction. Runs differ, so measure each build
@@ -538,7 +542,7 @@ planner, measured from its public web app and recorded in
 better: the highlight colours are calmer, calendar events are editable and
 those over several days lie in a band, and there are semi-dark themes. This
 is an independent implementation: no code, styles, fonts, icons, images or
-text from Tweek are included, and WeekToDo is not affiliated with or endorsed
+text from Tweek are included, and fweek is not affiliated with or endorsed
 by Tweek.
 
 ## Licence

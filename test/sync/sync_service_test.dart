@@ -1,14 +1,14 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/sync/secrets.dart';
-import 'package:weektodo/sync/storage.dart';
-import 'package:weektodo/sync/sync_engine.dart';
-import 'package:weektodo/sync/sync_service.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/sync/secrets.dart';
+import 'package:fweek/sync/storage.dart';
+import 'package:fweek/sync/sync_engine.dart';
+import 'package:fweek/sync/sync_service.dart';
 
 /// Memory storage that can be made to reject every request.
 class SwitchableStorage implements SyncStorage {
@@ -89,7 +89,7 @@ void main() {
   }
 
   Future<String?> connect(SyncService service,
-          {String password = 'right', String folder = 'WeekToDo'}) =>
+          {String password = 'right', String folder = 'fweek'}) =>
       service.connect(
           server: 'cloud.example.com', user: 'jonas', password: password, folder: folder);
 
@@ -117,12 +117,60 @@ void main() {
 
     expect(await connect(service), isNull);
     expect(service.state, SyncState.idle);
-    expect(service.config!.folder, 'WeekToDo');
+    expect(service.config!.folder, 'fweek');
     expect(service.lastSync, DateTime(2026, 11, 13, 12));
     expect(secrets.values.values.single, 'right');
     // The existing planner went up.
     final files = servers.values.single.files;
-    expect(files.keys.single, startsWith('WeekToDo/changes/${store.db.deviceId}-'));
+    expect(files.keys.single, startsWith('fweek/changes/${store.db.deviceId}-'));
+  });
+
+  serviceTest('the folder left as offered joins a planner kept under the earlier name',
+      (tester) async {
+    SyncService serviceOn(PlannerStore store, MemoryStorage account) {
+      final service = SyncService(
+        store,
+        MemorySecretStore(),
+        storageFor: (config, password) => account,
+        clock: () => DateTime(2026, 11, 13, 12),
+      );
+      services.add(service);
+      return service;
+    }
+
+    Future<String?> join(SyncService service, String folder) => service.connect(
+        server: 'cloud.example.com', user: 'jonas', password: 'right', folder: folder);
+
+    // A device set up while the app was called WeekToDo.
+    final account = MemoryStorage();
+    final before = newStore()..addTask(DaySlot(monday), 'From before');
+    expect(await join(serviceOn(before, account), earlierSyncFolder), isNull);
+
+    // Another one connected today, the folder left as the form offers it:
+    // it joins the planner instead of starting an empty folder beside it.
+    final fresh = newStore();
+    final service = serviceOn(fresh, account);
+    expect(await join(service, defaultSyncFolder), isNull);
+    expect(service.config!.folder, earlierSyncFolder);
+    expect(titles(fresh.tasksOn(monday)), ['From before']);
+    expect(account.files.keys.where((name) => name.startsWith('$defaultSyncFolder/')), isEmpty);
+
+    // A folder typed by hand is taken as typed.
+    final apart = serviceOn(newStore(), account);
+    expect(await join(apart, 'Elsewhere'), isNull);
+    expect(apart.config!.folder, 'Elsewhere');
+
+    // An account with nothing in it gets the folder offered, and once that
+    // holds a planner it is the one joined, whatever else is there.
+    final empty = MemoryStorage();
+    final first = serviceOn(newStore()..addTask(DaySlot(monday), 'New'), empty);
+    expect(await join(first, defaultSyncFolder), isNull);
+    expect(first.config!.folder, defaultSyncFolder);
+    expect(await join(serviceOn(newStore()..addTask(DaySlot(monday), 'Old'), empty),
+        earlierSyncFolder), isNull);
+    final second = serviceOn(newStore(), empty);
+    expect(await join(second, defaultSyncFolder), isNull);
+    expect(second.config!.folder, defaultSyncFolder);
   });
 
   serviceTest('edits are uploaded shortly after, and remote changes arrive on a timer',
@@ -142,7 +190,7 @@ void main() {
 
     // Another device puts something in the folder.
     b.addTask(DaySlot(monday), 'from the phone');
-    await SyncEngine(b, shared, folder: 'WeekToDo').sync();
+    await SyncEngine(b, shared, folder: 'fweek').sync();
     expect(titles(a.tasksOn(monday)), isNot(contains('from the phone')));
     await tester.pump(const Duration(minutes: 5, seconds: 1));
     expect(titles(a.tasksOn(monday)), contains('from the phone'));
@@ -255,7 +303,7 @@ void main() {
     final store = newStore();
     await connect(newService(store));
     final other = newStore()..addTask(DaySlot(monday), 'waiting on the server');
-    await SyncEngine(other, servers.values.single, folder: 'WeekToDo').sync();
+    await SyncEngine(other, servers.values.single, folder: 'fweek').sync();
 
     final restarted = newService(store);
     await restarted.load();
@@ -311,7 +359,7 @@ void main() {
     store.addTask(DaySlot(monday), 'three');
     await connect(service);
     final back = newStore();
-    await SyncEngine(back, servers.values.first, folder: 'WeekToDo').sync();
+    await SyncEngine(back, servers.values.first, folder: 'fweek').sync();
     expect(titles(back.tasksOn(monday)), ['one', 'two', 'three']);
   });
 

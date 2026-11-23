@@ -78,7 +78,7 @@ class PlaceSearch {
     this.timeout = const Duration(seconds: 6),
   })  : _client = client ?? HttpClient(),
         _ownsClient = client == null {
-    _client.userAgent = 'WeekToDo';
+    _client.userAgent = 'fweek';
     _client.connectionTimeout = timeout;
   }
 

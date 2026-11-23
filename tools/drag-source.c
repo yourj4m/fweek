@@ -20,7 +20,7 @@ static void on_data_get(GtkWidget* widget, GdkDragContext* context,
 
 int main(int argc, char** argv) {
   // The compositor knows the window by this name.
-  g_set_prgname("weektodo-drag-source");
+  g_set_prgname("fweek-drag-source");
   gtk_init(&argc, &argv);
   if (argc < 2) {
     g_printerr("usage: drag-source FILE\n");

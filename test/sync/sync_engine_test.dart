@@ -3,13 +3,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/data/recurrence.dart';
-import 'package:weektodo/sync/storage.dart';
-import 'package:weektodo/sync/sync_engine.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/data/recurrence.dart';
+import 'package:fweek/sync/storage.dart';
+import 'package:fweek/sync/sync_engine.dart';
 
 void main() {
   final today = Day(2026, 11, 13);
@@ -51,8 +51,8 @@ void main() {
       storage = MemoryStorage();
       a = newStore();
       b = newStore();
-      syncA = SyncEngine(a, storage, folder: 'WeekToDo');
-      syncB = SyncEngine(b, storage, folder: 'WeekToDo');
+      syncA = SyncEngine(a, storage, folder: 'fweek');
+      syncB = SyncEngine(b, storage, folder: 'fweek');
     });
 
     test('a new device receives everything', () async {
@@ -163,15 +163,15 @@ void main() {
     test('a damaged or foreign file stops the sync with an explanation', () async {
       a.addTask(DaySlot(monday), 'ok');
       await syncA.sync();
-      storage.files['WeekToDo/changes/ffffffff-00000001.json'] =
+      storage.files['fweek/changes/ffffffff-00000001.json'] =
           Uint8List.fromList(utf8.encode('{"format":"something-else"}'));
       await expectLater(
         syncB.sync(),
         throwsA(isA<SyncException>()
             .having((e) => e.failure, 'failure', SyncFailure.incompatible)
-            .having((e) => e.message, 'message', contains('not a WeekToDo file'))),
+            .having((e) => e.message, 'message', contains('not a fweek file'))),
       );
-      storage.files['WeekToDo/changes/ffffffff-00000001.json'] = Uint8List.fromList(
+      storage.files['fweek/changes/ffffffff-00000001.json'] = Uint8List.fromList(
         utf8.encode(jsonEncode({'format': SyncEngine.format, 'version': 99, 'changes': []})),
       );
       await expectLater(
@@ -182,8 +182,8 @@ void main() {
     });
 
     test('unrelated files in the folder are ignored', () async {
-      storage.files['WeekToDo/changes/notes.txt'] = Uint8List(3);
-      storage.files['WeekToDo/changes/.DS_Store'] = Uint8List(3);
+      storage.files['fweek/changes/notes.txt'] = Uint8List(3);
+      storage.files['fweek/changes/.DS_Store'] = Uint8List(3);
       a.addTask(DaySlot(monday), 'fine');
       await syncA.sync();
       await syncB.sync();
@@ -279,7 +279,7 @@ void main() {
 
   test('a database restored from an older copy recovers its place', () async {
     final storage = MemoryStorage();
-    final dir = Directory.systemTemp.createTempSync('weektodo-test');
+    final dir = Directory.systemTemp.createTempSync('fweek-test');
     addTearDown(() => dir.deleteSync(recursive: true));
     final path = '${dir.path}/planner.db';
 
@@ -313,17 +313,17 @@ void main() {
   });
 
   test('a local folder works as storage', () async {
-    final dir = Directory.systemTemp.createTempSync('weektodo-sync');
+    final dir = Directory.systemTemp.createTempSync('fweek-sync');
     addTearDown(() => dir.deleteSync(recursive: true));
     final storage = LocalFolderStorage(dir);
     final a = newStore(), b = newStore();
     a.addTask(DaySlot(monday), 'Through a folder');
-    await SyncEngine(a, storage, folder: 'WeekToDo').sync();
-    await SyncEngine(b, storage, folder: 'WeekToDo').sync();
+    await SyncEngine(a, storage, folder: 'fweek').sync();
+    await SyncEngine(b, storage, folder: 'fweek').sync();
     expect(titles(b.tasksOn(monday)), ['Through a folder']);
     // One file per device: each has written only under its own name.
     final names = [
-      for (final f in Directory('${dir.path}/WeekToDo/changes').listSync())
+      for (final f in Directory('${dir.path}/fweek/changes').listSync())
         f.uri.pathSegments.last,
     ]..sort();
     expect(names, hasLength(2));
@@ -331,8 +331,8 @@ void main() {
     expect(names.map((n) => n.substring(0, 8)).toSet(),
         {a.db.deviceId, b.db.deviceId});
     await expectLater(
-      storage.write('WeekToDo/changes/x.json', Uint8List(1)).then(
-            (_) => storage.write('WeekToDo/changes/x.json', Uint8List(1)),
+      storage.write('fweek/changes/x.json', Uint8List(1)).then(
+            (_) => storage.write('fweek/changes/x.json', Uint8List(1)),
           ),
       throwsA(isA<SyncException>().having((e) => e.failure, 'failure', SyncFailure.exists)),
     );

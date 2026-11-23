@@ -1,14 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/export.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/data/recurrence.dart';
-import 'package:weektodo/sync/storage.dart';
-import 'package:weektodo/sync/sync_engine.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/export.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/data/recurrence.dart';
+import 'package:fweek/sync/storage.dart';
+import 'package:fweek/sync/sync_engine.dart';
 
 /// Items made in the planner: tasks, which are ticked off, and events, which
 /// are not; and the end time either can have.
@@ -146,7 +146,7 @@ void main() {
   test('both travel between devices', () async {
     final desk = planner(), phone = planner();
     final folder = MemoryStorage();
-    Future<void> sync(PlannerStore store) => SyncEngine(store, folder, folder: 'WeekToDo').sync();
+    Future<void> sync(PlannerStore store) => SyncEngine(store, folder, folder: 'fweek').sync();
     final id = desk.addTask(DaySlot(friday), 'Seminar', kind: ItemKind.event)!;
     desk.updateTask(id, time: () => 600, end: () => 690);
     desk.setSetting(Settings.newItems, 'event');

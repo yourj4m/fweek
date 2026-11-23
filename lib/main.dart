@@ -25,9 +25,9 @@ import 'ui/task_dialog.dart' show showTaskDialog;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // WEEKTODO_DATA_DIR points the app at another data folder, for testing
+  // FWEEK_DATA_DIR points the app at another data folder, for testing
   // without touching the real planner.
-  final override = Platform.environment['WEEKTODO_DATA_DIR'];
+  final override = Platform.environment['FWEEK_DATA_DIR'];
   final directory = override != null && override.isNotEmpty
       ? Directory(override)
       : await getApplicationSupportDirectory();
@@ -37,7 +37,7 @@ Future<void> main() async {
   );
   seedForPerf(store, directory);
   startPerfLog();
-  runApp(WeekToDoApp(
+  runApp(FweekApp(
     store: store,
     calendars: CalendarService(
       store,
@@ -47,8 +47,8 @@ Future<void> main() async {
   ));
 }
 
-class WeekToDoApp extends StatefulWidget {
-  const WeekToDoApp({
+class FweekApp extends StatefulWidget {
+  const FweekApp({
     super.key,
     required this.store,
     this.notifications = true,
@@ -77,10 +77,10 @@ class WeekToDoApp extends StatefulWidget {
   final bool notifications;
 
   @override
-  State<WeekToDoApp> createState() => _WeekToDoAppState();
+  State<FweekApp> createState() => _FweekAppState();
 }
 
-class _WeekToDoAppState extends State<WeekToDoApp> {
+class _FweekAppState extends State<FweekApp> {
   late final AppController _controller = AppController(widget.store);
   late final SyncService _sync =
       widget.sync ?? SyncService(widget.store, const KeyringSecretStore());
@@ -226,7 +226,7 @@ class _WeekToDoAppState extends State<WeekToDoApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'WeekToDo',
+      title: 'fweek',
       navigatorKey: _navigator,
       debugShowCheckedModeBanner: false,
       showPerformanceOverlay: _frameTiming,

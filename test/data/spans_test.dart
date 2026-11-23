@@ -3,14 +3,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/export.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/data/recurrence.dart';
-import 'package:weektodo/sync/storage.dart';
-import 'package:weektodo/sync/sync_engine.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/export.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/data/recurrence.dart';
+import 'package:fweek/sync/storage.dart';
+import 'package:fweek/sync/sync_engine.dart';
 
 /// Events of the planner's own that run over several days, and the form's
 /// one step that adds an event with all it has.
@@ -278,7 +278,7 @@ void main() {
       final desk = planner(), phone = planner();
       final folder = MemoryStorage();
       Future<void> sync(PlannerStore store) =>
-          SyncEngine(store, folder, folder: 'WeekToDo').sync();
+          SyncEngine(store, folder, folder: 'fweek').sync();
       final id = desk.addItem(day: today, endDay: today.addDays(2), title: 'Trip to Lyon');
       await sync(desk);
       await sync(phone);
@@ -292,7 +292,7 @@ void main() {
 
   group('a planner written by the fifth version', () {
     late Directory folder;
-    setUp(() => folder = Directory.systemTemp.createTempSync('weektodo-spans'));
+    setUp(() => folder = Directory.systemTemp.createTempSync('fweek-spans'));
     tearDown(() => folder.deleteSync(recursive: true));
 
     test('opens as it was, takes what a newer device had sent, and keeps a copy', () {

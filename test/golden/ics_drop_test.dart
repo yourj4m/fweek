@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart' show MaterialApp;
-import 'package:weektodo/app_state.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/ui/planner_page.dart';
+import 'package:fweek/app_state.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/ui/planner_page.dart';
 
 import 'harness.dart';
 
@@ -16,7 +16,7 @@ import 'harness.dart';
 void main() {
   late Directory folder;
   setUpAll(loadFonts);
-  setUp(() => folder = Directory.systemTemp.createTempSync('weektodo-drop'));
+  setUp(() => folder = Directory.systemTemp.createTempSync('fweek-drop'));
   tearDown(() => folder.deleteSync(recursive: true));
 
   String write(String name, List<List<String>> events) {
@@ -59,7 +59,7 @@ void main() {
   /// What the window's own code sends when files are dropped on it.
   Future<void> drop(WidgetTester tester, List<String> paths) async {
     await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-      'weektodo/drop',
+      'fweek/drop',
       const StandardMethodCodec().encodeMethodCall(MethodCall('files', paths)),
       (_) {},
     );

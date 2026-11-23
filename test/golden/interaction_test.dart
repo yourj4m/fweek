@@ -4,15 +4,15 @@ import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:weektodo/app_state.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/main.dart';
-import 'package:weektodo/sync/secrets.dart';
-import 'package:weektodo/sync/storage.dart';
-import 'package:weektodo/sync/sync_service.dart';
-import 'package:weektodo/ui/planner_page.dart';
-import 'package:weektodo/ui/task_list.dart';
+import 'package:fweek/app_state.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/main.dart';
+import 'package:fweek/sync/secrets.dart';
+import 'package:fweek/sync/storage.dart';
+import 'package:fweek/sync/sync_service.dart';
+import 'package:fweek/ui/planner_page.dart';
+import 'package:fweek/ui/task_list.dart';
 
 import 'harness.dart';
 
@@ -299,7 +299,7 @@ void main() {
     tester.view.physicalSize = const Size(1440, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(WeekToDoApp(store: store, notifications: false, sync: service));
+    await tester.pumpWidget(FweekApp(store: store, notifications: false, sync: service));
     await tester.pumpAndSettle();
 
     await tester.tap(find.bySemanticsLabel('Menu'));
@@ -334,7 +334,7 @@ void main() {
     await tester.enterText(field('App password'), 'right');
     await press('Connect');
     expect(service.configured, isTrue);
-    expect(find.text('jonas on cloud.example.com, folder WeekToDo'), findsOneWidget);
+    expect(find.text('jonas on cloud.example.com, folder fweek'), findsOneWidget);
     expect(find.text('Synced just now.'), findsOneWidget);
     expect(remote.files, isNotEmpty);
     expect(secrets.values.values.single, 'right');

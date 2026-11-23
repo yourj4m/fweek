@@ -3,12 +3,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/export.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/data/recurrence.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/export.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/data/recurrence.dart';
 
 /// The tables as the first released version created them.
 const _version1 = '''
@@ -52,7 +52,7 @@ void main() {
   final friday = Day(2026, 11, 13);
   late Directory folder;
 
-  setUp(() => folder = Directory.systemTemp.createTempSync('weektodo-schema'));
+  setUp(() => folder = Directory.systemTemp.createTempSync('fweek-schema'));
   tearDown(() => folder.deleteSync(recursive: true));
 
   group('a planner written by the first version', () {
@@ -60,7 +60,7 @@ void main() {
       final path = '${folder.path}/planner.db';
       final db = sqlite3.open(path)..execute(_version1);
       db.execute("insert into meta(key, value) values('device_id', 'aaaaaaaa')");
-      db.execute("insert into meta(key, value) values('sync.config', '{\"server\":\"cloud.example.org\",\"user\":\"me\",\"folder\":\"/WeekToDo\"}')");
+      db.execute("insert into meta(key, value) values('sync.config', '{\"server\":\"cloud.example.org\",\"user\":\"me\",\"folder\":\"/fweek\"}')");
       db.execute("insert into meta(key, value) values('local.calendars', '[{\"id\":\"c1\",\"name\":\"Work\",\"color\":\"blue\"}]')");
       db.execute(
           "insert into tasks(id, date, position, title) values('t1', '2026-11-13', 'V', 'Buy oat milk')");

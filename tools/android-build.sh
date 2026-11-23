@@ -6,7 +6,8 @@
 #   tools/android-build.sh --emulator   build for the emulator (x86-64) instead
 #
 # The APK is signed with a key of your own, created on first use and kept
-# outside the repository in ~/.config/weektodo/. Android only installs an
+# outside the repository in ~/.config/fweek/ (or ~/.config/weektodo/, where
+# it stays if it was made under the app's earlier name). Android only installs an
 # update over an app signed with the same key, so keep that folder: without
 # it the app has to be removed (losing unsynced data) before a new build
 # installs. Back the folder up if the phone's planner is not synced.
@@ -16,7 +17,11 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dev="$root/tools/dev"
-keys="${XDG_CONFIG_HOME:-$HOME/.config}/weektodo"
+config="${XDG_CONFIG_HOME:-$HOME/.config}"
+keys="$config/fweek"
+# A key made while the app was called WeekToDo stays where it is; the phone
+# only takes updates signed with it.
+[ -f "$keys/android-release.jks" ] || [ ! -f "$config/weektodo/android-release.jks" ] || keys="$config/weektodo"
 store="$keys/android-release.jks"
 secret="$keys/android-release.password"
 
@@ -24,16 +29,20 @@ if [ ! -f "$store" ]; then
   mkdir -p "$keys"; chmod 700 "$keys"
   (umask 077; head -c 24 /dev/urandom | base64 | tr -d '/+=' > "$secret")
   "$dev" keytool -genkeypair -keystore "$store" -storetype PKCS12 \
-    -storepass:file "$secret" -alias weektodo -keyalg RSA -keysize 4096 \
-    -validity 36500 -dname "CN=WeekToDo personal build"
+    -storepass:file "$secret" -alias fweek -keyalg RSA -keysize 4096 \
+    -validity 36500 -dname "CN=fweek personal build"
   chmod 600 "$store"
   echo "Created the signing key in $keys - keep this folder."
 fi
+# The key's name inside the file: whatever it was made with.
+alias="$("$dev" keytool -list -keystore "$store" -storepass:file "$secret" 2>/dev/null |
+  awk -F, '/PrivateKeyEntry/ { print $1; exit }')"
+[ -n "$alias" ] || { echo "Could not read the signing key in $store" >&2; exit 1; }
 # Gradle reads the signing details from here (git-ignored).
 (umask 077; cat > "$root/android/key.properties" <<PROPS
 storeFile=$store
 storePassword=$(cat "$secret")
-keyAlias=weektodo
+keyAlias=$alias
 keyPassword=$(cat "$secret")
 PROPS
 )
@@ -54,5 +63,5 @@ echo "Built $apk ($(du -h "$apk" | cut -f1))"
 
 if [ "${1:-}" = "--install" ]; then
   "$dev" adb install -r "$apk"
-  echo "Installed. Find WeekToDo in the phone's app list."
+  echo "Installed. Find fweek in the phone's app list."
 fi

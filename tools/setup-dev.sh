@@ -2,7 +2,7 @@
 # One-time setup of the build environment on Fedora, without root and without
 # installing development packages on the host:
 #
-#   - a toolbox container "weektodo-dev" with the compiler toolchain, GTK
+#   - a toolbox container "fweek-dev" with the compiler toolchain, GTK
 #     headers and a headless Wayland compositor for the smoke test
 #   - the pinned Flutter SDK under .tools/sdk-<version> (git-ignored)
 #
@@ -11,7 +11,7 @@
 #   tools/desktop-build.sh
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-container="${WEEKTODO_CONTAINER:-weektodo-dev}"
+container="${FWEEK_CONTAINER:-fweek-dev}"
 
 command -v toolbox >/dev/null || { echo "toolbox is required (dnf install toolbox)"; exit 1; }
 

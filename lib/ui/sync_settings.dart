@@ -21,7 +21,7 @@ class _SyncSettingsState extends State<SyncSettings> {
   final _server = TextEditingController();
   final _user = TextEditingController();
   final _password = TextEditingController();
-  final _folder = TextEditingController(text: 'WeekToDo');
+  final _folder = TextEditingController(text: defaultSyncFolder);
   bool _connecting = false;
   String? _error;
 

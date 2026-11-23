@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/calendar/identity.dart';
-import 'package:weektodo/data/day.dart';
+import 'package:fweek/calendar/identity.dart';
+import 'package:fweek/data/day.dart';
 
 import 'ics_test.dart' show event, fixed, paris, parisZone, read;
 

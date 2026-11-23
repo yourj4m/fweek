@@ -2,8 +2,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart' show MaterialApp;
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
 
 import 'harness.dart';
 

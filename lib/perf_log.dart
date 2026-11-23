@@ -13,9 +13,9 @@ import 'data/models.dart';
 import 'data/planner_store.dart';
 
 /// Frame timing for performance work. Compiled in only with
-/// `--dart-define=WEEKTODO_PERF=true`; see tools/android-perf.py, which
+/// `--dart-define=FWEEK_PERF=true`; see tools/android-perf.py, which
 /// drives the app and reads these lines from the device log.
-const perfLog = bool.fromEnvironment('WEEKTODO_PERF');
+const perfLog = bool.fromEnvironment('FWEEK_PERF');
 
 /// The stretches of time in which something moves under the user's hand: a
 /// finger is down, or a page or list is still scrolling after it. A frame
@@ -157,7 +157,7 @@ void seedForPerf(PlannerStore store, Directory data) {
   final lines = <String>[
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//WeekToDo//Perf//EN',
+    'PRODID:-//fweek//Perf//EN',
     'X-WR-CALNAME:Calendar',
   ];
   void event(String uid, String summary, List<String> rest) => lines.addAll([

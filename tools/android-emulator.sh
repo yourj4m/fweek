@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start or stop the headless Android emulator used for testing.
 #
-#   tools/android-emulator.sh start    boot (or reuse) the "weektodo" device and wait until it is ready
+#   tools/android-emulator.sh start    boot (or reuse) the "fweek" device and wait until it is ready
 #   tools/android-emulator.sh stop     shut it down
 #   tools/android-emulator.sh status
 #
@@ -24,9 +24,9 @@ case "${1:-}" in
       # -gpu host: render with this machine's graphics driver. The software
       # modes do not survive here: SwiftShader segfaults a few seconds into
       # the boot, and ANGLE-on-SwiftShader dies when the app starts drawing.
-      setsid prlimit --core=1:1 -- "$dev" emulator -avd weektodo -no-window \
+      setsid prlimit --core=1:1 -- "$dev" emulator -avd fweek -no-window \
         -no-audio -no-boot-anim -no-snapshot -no-metrics \
-        -gpu "${WEEKTODO_EMULATOR_GPU:-host}" ${WEEKTODO_EMULATOR_ARGS:--feature -Vulkan} \
+        -gpu "${FWEEK_EMULATOR_GPU:-host}" ${FWEEK_EMULATOR_ARGS:--feature -Vulkan} \
         -memory 3072 -cores 2 \
         >"$log" 2>&1 < /dev/null &
     fi

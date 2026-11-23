@@ -17,7 +17,7 @@ import io.flutter.plugin.common.MethodChannel
 
 /**
  * The app's single screen, plus the few things the Dart side asks Android
- * for directly (channel "weektodo/platform"): scheduled reminders, the
+ * for directly (channel "fweek/platform"): scheduled reminders, the
  * notification permission, saving a file through the system's picker, and
  * handing a link or a place to the app that shows such things.
  */
@@ -178,7 +178,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private companion object {
-        const val CHANNEL = "weektodo/platform"
+        const val CHANNEL = "fweek/platform"
         const val REQUEST_NOTIFICATIONS = 0x5701
         const val REQUEST_SAVE = 0x5702
     }

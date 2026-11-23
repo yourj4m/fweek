@@ -1,8 +1,8 @@
 import 'dart:isolate';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/calendar/ics.dart';
-import 'package:weektodo/data/day.dart';
+import 'package:fweek/calendar/ics.dart';
+import 'package:fweek/data/day.dart';
 
 // Every test names the device's zone itself, so that the outcome does not
 // depend on where the tests run. Asserted clock times stay clear of the small
@@ -59,7 +59,7 @@ String feedText(
     [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//WeekToDo//tests//EN',
+      'PRODID:-//fweek//tests//EN',
       ...head,
       for (final component in components) ...component,
       'END:VCALENDAR',

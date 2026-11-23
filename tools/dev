@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run a command inside the weektodo-dev toolbox container with the
+# Run a command inside the fweek-dev toolbox container with the
 # project-local Flutter SDK on PATH.
 #
 #   tools/dev flutter test
@@ -11,7 +11,7 @@
 # needs no development packages. Create it once with tools/setup-dev.sh.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-container="${WEEKTODO_CONTAINER:-weektodo-dev}"
+container="${FWEEK_CONTAINER:-fweek-dev}"
 # The Flutter release is pinned in tools/flutter-version; see the note there
 # in the README before raising it.
 version="${FLUTTER_VERSION:-$(cat "$root/tools/flutter-version")}"
@@ -32,4 +32,4 @@ exec toolbox run -c "$container" env \
   FLUTTER_SUPPRESS_ANALYTICS=true \
   DART_SUPPRESS_ANALYTICS=true \
   CI=true \
-  bash -c 'cd "$1" && shift && exec "$@"' _ "${WEEKTODO_CWD:-$root}" "$@"
+  bash -c 'cd "$1" && shift && exec "$@"' _ "${FWEEK_CWD:-$root}" "$@"

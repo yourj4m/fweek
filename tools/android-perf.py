@@ -2,11 +2,11 @@
 """Frame timings of the Android app on the emulator, for comparing builds.
 
     tools/dev flutter build apk --profile --target-platform android-x64 \\
-        --dart-define=WEEKTODO_PERF=true
+        --dart-define=FWEEK_PERF=true
     tools/android-emulator.sh start
     tools/dev python3 tools/android-perf.py <result.json> --apk build/app/outputs/flutter-apk/app-profile.apk
 
-A build made with WEEKTODO_PERF fills an empty planner with the same few
+A build made with FWEEK_PERF fills an empty planner with the same few
 hundred tasks and a calendar every time, and logs how long each frame took
 and whether the screen was in motion at the time (see lib/perf_log.dart).
 This script plays a fixed set of interactions with real touches and

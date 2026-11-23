@@ -8,6 +8,8 @@ import 'recurrence.dart';
 
 /// Export and backup formats.
 abstract final class Export {
+  // Named after the app's earlier name; kept so that every backup made so
+  // far can still be restored.
   static const backupFormat = 'weektodo-backup';
   static const backupVersion = 6;
 
@@ -129,7 +131,7 @@ abstract final class Export {
       throw const FormatException('This file is not valid JSON.');
     }
     if (json is! Map || json['format'] != backupFormat) {
-      throw const FormatException('This file is not a WeekToDo backup.');
+      throw const FormatException('This file is not a fweek backup.');
     }
     final version = json['version'];
     if (version is! int || version > backupVersion) {
@@ -364,7 +366,7 @@ abstract final class Export {
     final lines = <String>[
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//WeekToDo//Planner//EN',
+      'PRODID:-//fweek//Planner//EN',
     ];
     String at(Day day, int minutes) =>
         '${date(day)}T${_clock(minutes).replaceAll(':', '')}00';

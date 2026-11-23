@@ -19,7 +19,7 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 }
 
 // Files dragged from a file manager and dropped anywhere on the window:
-// their paths go to the app (channel "weektodo/drop", method "files"), which
+// their paths go to the app (channel "fweek/drop", method "files"), which
 // takes calendar files into the planner.
 static void drag_data_received_cb(GtkWidget* widget,
                                   GdkDragContext* context,
@@ -67,7 +67,7 @@ static void my_application_activate(GApplication* application) {
   // gtk_header_bar_set_show_close_button(header_bar, TRUE);
   // gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
 
-  gtk_window_set_title(window, "WeekToDo");
+  gtk_window_set_title(window, "fweek");
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
@@ -95,7 +95,7 @@ static void my_application_activate(GApplication* application) {
   g_clear_object(&self->drop_channel);
   self->drop_channel = fl_method_channel_new(
       fl_engine_get_binary_messenger(fl_view_get_engine(view)),
-      "weektodo/drop", FL_METHOD_CODEC(codec));
+      "fweek/drop", FL_METHOD_CODEC(codec));
   gtk_drag_dest_set(GTK_WIDGET(view), GTK_DEST_DEFAULT_ALL, nullptr, 0,
                     GDK_ACTION_COPY);
   gtk_drag_dest_add_uri_targets(GTK_WIDGET(view));

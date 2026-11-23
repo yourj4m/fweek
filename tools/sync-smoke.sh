@@ -17,33 +17,33 @@
 # session with its own throwaway keyring.
 #
 # Use a test server or a dedicated test account: the run creates a folder
-# named "WeekToDo sync test <random>" in the account and leaves it there.
+# named "fweek sync test <random>" in the account and leaves it there.
 #
-# To check that an update keeps the connection, point WEEKTODO_OLD_BIN at the
+# To check that an update keeps the connection, point FWEEK_OLD_BIN at the
 # executable of an earlier build: device A is then set up with that build and
 # restarted (step 3) with the current one, on the same data and keyring.
 # tools/dev does not pass variables on, so set them inside the container:
 #
-#   tools/dev env WEEKTODO_OLD_BIN=$HOME/.local/opt/weektodo/weektodo \
-#       WEEKTODO_OLD_FORM=1 tools/sync-smoke.sh <output-dir> ...
+#   tools/dev env FWEEK_OLD_BIN=$HOME/.local/opt/fweek/fweek \
+#       FWEEK_OLD_FORM=1 tools/sync-smoke.sh <output-dir> ...
 #
-# WEEKTODO_OLD_FORM names where the earlier build has its sync form (see
+# FWEEK_OLD_FORM names where the earlier build has its sync form (see
 # "form" below); leave it out when both builds have it in the same place.
 set -uo pipefail
 # A crash during a test run must not reach the desktop's crash reporter: the
 # container shares the host's kernel, so the report would pop up there. With
 # a core limit of one byte the kernel skips the core handler altogether.
 prlimit --core=1:1 --pid $$ 2>/dev/null || ulimit -c 0
-if [ "${WEEKTODO_PRIVATE_BUS:-}" != 1 ]; then
-  export WEEKTODO_PRIVATE_BUS=1
+if [ "${FWEEK_PRIVATE_BUS:-}" != 1 ]; then
+  export FWEEK_PRIVATE_BUS=1
   exec dbus-run-session -- "$0" "$@"
 fi
 
 out="${1:?output directory}"; server="${2:?server url}"; user="${3:?user}"; password="${4:?app password}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-bin="$root/build/linux/x64/release/bundle/weektodo"
+bin="$root/build/linux/x64/release/bundle/fweek"
 app_id="io.github.yourj4m.weektodo"
-folder="WeekToDo sync test $(printf '%04x' $RANDOM)"
+folder="fweek sync test $(printf '%04x' $RANDOM)"
 [ -x "$bin" ] || { echo "No release build; run: tools/desktop-build.sh" >&2; exit 1; }
 mkdir -p "$out"
 : >"$out/app.log"
@@ -97,7 +97,9 @@ shot() { grim -o HEADLESS-1 "$out/$1.png" && echo "shot  $1"; }
 stored() { strings "$1"/planner.db* 2>/dev/null | grep -c -- "$2"; }
 
 start_app() {  # <data folder> [executable]
-  WEEKTODO_DATA_DIR="$1" "${2:-$bin}" >>"$out/app.log" 2>&1 &
+  # Builds from before the rename read WEEKTODO_DATA_DIR: without it an
+  # earlier build would open the real planner.
+  FWEEK_DATA_DIR="$1" WEEKTODO_DATA_DIR="$1" "${2:-$bin}" >>"$out/app.log" 2>&1 &
   app=$!
   for _ in $(seq 1 60); do
     swaymsg -t get_tree | grep -q "\"app_id\": \"$app_id\"" && break
@@ -151,10 +153,10 @@ add_task() {  # <text>: typed into Monday's first free row
 }
 
 echo "folder: $folder"
-old_bin="${WEEKTODO_OLD_BIN:-$bin}"
+old_bin="${FWEEK_OLD_BIN:-$bin}"
 [ "$old_bin" = "$bin" ] || echo "device A starts on the earlier build: $old_bin"
 start_app "$data_a" "$old_bin"
-if [ "$old_bin" = "$bin" ]; then connect "$data_a"; else connect "$data_a" "${WEEKTODO_OLD_FORM:-$current_form}"; fi
+if [ "$old_bin" = "$bin" ]; then connect "$data_a"; else connect "$data_a" "${FWEEK_OLD_FORM:-$current_form}"; fi
 shot 01-a-connected
 [ "$(stored "$data_a" 'sync.last_ok')" -ge 1 ] && pass "device A connected and synced" || fail "device A did not connect"
 add_task "Task from device A" 207

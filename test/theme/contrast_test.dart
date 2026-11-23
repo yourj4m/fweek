@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/theme/app_theme.dart';
+import 'package:fweek/theme/app_theme.dart';
 
 /// Readability of every theme and every highlight colour, by the measures
 /// of the Web Content Accessibility Guidelines: text needs a contrast of

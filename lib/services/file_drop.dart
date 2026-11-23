@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 /// program's own window code tells their paths over this channel; see
 /// `linux/runner/my_application.cc`.
 abstract final class FileDrop {
-  static const _channel = MethodChannel('weektodo/drop');
+  static const _channel = MethodChannel('fweek/drop');
 
   /// Calls [onFiles] with the paths of dropped files from now on; null
   /// stops listening.

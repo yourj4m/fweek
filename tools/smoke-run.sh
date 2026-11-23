@@ -19,7 +19,7 @@ set -uo pipefail
 prlimit --core=1:1 --pid $$ 2>/dev/null || ulimit -c 0
 out="${1:?output directory}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-bin="$root/build/linux/x64/release/bundle/weektodo"
+bin="$root/build/linux/x64/release/bundle/fweek"
 app_id="io.github.yourj4m.weektodo"
 [ -x "$bin" ] || { echo "No release build; run: tools/desktop-build.sh" >&2; exit 1; }
 mkdir -p "$out"
@@ -37,7 +37,7 @@ default_border none
 focus_follows_mouse no
 # The window files are dragged out of (tools/drag-source.c) floats in a
 # corner, so that the app keeps the whole screen.
-for_window [app_id="weektodo-drag-source"] floating enable, resize set 200 120, move position 1200 20
+for_window [app_id="fweek-drag-source"] floating enable, resize set 200 120, move position 1200 20
 CFG
 unset DISPLAY WAYLAND_DISPLAY
 export WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman
@@ -54,7 +54,7 @@ done
 [ -n "${socket:-}" ] || { echo "sway did not start"; tail -5 "$out/sway.log"; exit 1; }
 export WAYLAND_DISPLAY="$(basename "$socket")" GDK_BACKEND=wayland LIBGL_ALWAYS_SOFTWARE=1
 export SWAYSOCK="$(ls "$XDG_RUNTIME_DIR"/sway-ipc.* | head -1)"
-export WEEKTODO_DATA_DIR="$data"
+export FWEEK_DATA_DIR="$data"
 
 # A second output at 125 %, to the right; the app opens on the unscaled one.
 swaymsg create_output >/dev/null

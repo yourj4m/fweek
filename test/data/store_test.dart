@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:weektodo/data/database.dart';
-import 'package:weektodo/data/day.dart';
-import 'package:weektodo/data/export.dart';
-import 'package:weektodo/data/models.dart';
-import 'package:weektodo/data/planner_store.dart';
-import 'package:weektodo/data/recurrence.dart';
-import 'package:weektodo/sync/storage.dart';
-import 'package:weektodo/sync/sync_engine.dart';
+import 'package:fweek/data/database.dart';
+import 'package:fweek/data/day.dart';
+import 'package:fweek/data/export.dart';
+import 'package:fweek/data/models.dart';
+import 'package:fweek/data/planner_store.dart';
+import 'package:fweek/data/recurrence.dart';
+import 'package:fweek/sync/storage.dart';
+import 'package:fweek/sync/sync_engine.dart';
 
 void main() {
   late PlannerDatabase db;
@@ -293,7 +293,7 @@ void main() {
       test('travels to the other device, and so does the answer', () async {
         final other = PlannerStore(PlannerDatabase.inMemory(), today: () => today);
         final folder = MemoryStorage();
-        Future<void> sync(PlannerStore s) => SyncEngine(s, folder, folder: 'WeekToDo').sync();
+        Future<void> sync(PlannerStore s) => SyncEngine(s, folder, folder: 'fweek').sync();
         await sync(store);
         await sync(other);
         expect(other.task(evening)!.waitsForWord, isTrue);

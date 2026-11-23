@@ -58,6 +58,8 @@ class SyncEngine {
   /// Merge this device's files once there are more than this many.
   final int compactAbove;
 
+  // Named after the app's earlier name; kept so that devices on different
+  // versions, and the files already in the folder, stay readable.
   static const format = 'weektodo-changes';
   static const formatVersion = 1;
 
@@ -127,14 +129,14 @@ class SyncEngine {
     if (json is! Map || json['format'] != format) {
       throw SyncException(
         SyncFailure.incompatible,
-        'The file $name in the sync folder is not a WeekToDo file.',
+        'The file $name in the sync folder is not a fweek file.',
       );
     }
     final version = json['version'];
     if (version is! int || version > formatVersion) {
       throw const SyncException(
         SyncFailure.incompatible,
-        'Another device uses a newer version of WeekToDo. '
+        'Another device uses a newer version of fweek. '
         'Update this one to keep syncing.',
       );
     }

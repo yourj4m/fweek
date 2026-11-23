@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time setup for building the Android app, on top of tools/setup-dev.sh.
-# Nothing is installed on the host; everything lands in the weektodo-dev
+# Nothing is installed on the host; everything lands in the fweek-dev
 # container or under .tools/ (git-ignored):
 #
 #   - a JDK in the container
@@ -15,7 +15,7 @@
 # you.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-container="${WEEKTODO_CONTAINER:-weektodo-dev}"
+container="${FWEEK_CONTAINER:-fweek-dev}"
 sdk="$root/.tools/android-sdk"
 
 # Command-line tools release and its SHA-256, from
@@ -48,8 +48,8 @@ yes | "$root/tools/dev" sdkmanager --licenses >/dev/null || true
 
 if [ "${1:-}" = "--emulator" ]; then
   "$root/tools/dev" sdkmanager --install "emulator" "$image"
-  if ! "$root/tools/dev" avdmanager list avd -c | grep -qx weektodo; then
-    echo no | "$root/tools/dev" avdmanager create avd --name weektodo \
+  if ! "$root/tools/dev" avdmanager list avd -c | grep -qx fweek; then
+    echo no | "$root/tools/dev" avdmanager create avd --name fweek \
       --package "$image" --device pixel_6
   fi
 fi
