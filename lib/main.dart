@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'app_state.dart';
 import 'calendar/calendar_service.dart';
 import 'data/database.dart';
+import 'data/local_backups.dart';
 import 'data/planner_store.dart';
 import 'perf_log.dart';
 import 'platform.dart';
@@ -17,6 +18,7 @@ import 'services/notifications.dart';
 import 'services/opener.dart';
 import 'services/places.dart';
 import 'services/reminders.dart';
+import 'services/sync_all.dart';
 import 'sync/secrets.dart';
 import 'sync/sync_service.dart';
 import 'theme/app_theme.dart';
@@ -44,6 +46,7 @@ Future<void> main() async {
       const KeyringSecretStore(),
       FileCalendarCache(directory),
     ),
+    backups: LocalBackups(Directory(p.join(directory.path, 'backups'))),
   ));
 }
 
@@ -56,7 +59,12 @@ class FweekApp extends StatefulWidget {
     this.calendars,
     this.opener,
     this.places,
+    this.backups,
   });
+
+  /// Where copies of the planner are kept on this device; by default
+  /// nowhere (widget tests).
+  final LocalBackups? backups;
 
   /// Opens links and places; by default through the system (tests record
   /// what would be opened instead).
@@ -94,6 +102,12 @@ class _FweekAppState extends State<FweekApp> {
   late final Opener _opener =
       widget.opener ?? Opener(android: _android?.openUri);
   late final PlaceSearch _places = widget.places ?? PlaceSearch();
+  late final SyncAll _everything = SyncAll(
+    store: widget.store,
+    sync: _sync,
+    calendars: _calendars,
+    backups: widget.backups,
+  );
 
   /// Resolves once the calendars' saved events are in memory.
   late final Future<void> _calendarsLoaded;
@@ -164,6 +178,7 @@ class _FweekAppState extends State<FweekApp> {
     if (widget.places == null) _places.dispose();
     _lifecycle?.dispose();
     _reminders.dispose();
+    _everything.dispose();
     if (widget.sync == null) _sync.dispose();
     if (widget.calendars == null) _calendars.dispose();
     _controller.dispose();
@@ -238,6 +253,8 @@ class _FweekAppState extends State<FweekApp> {
         calendars: _calendars,
         opener: _opener,
         places: _places,
+        everything: _everything,
+        backups: widget.backups,
         android: _android,
         child: PerfMotion.watch(_Themed(child: child!)),
       ),

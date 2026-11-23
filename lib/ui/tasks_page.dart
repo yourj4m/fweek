@@ -107,6 +107,9 @@ class _ScrollState extends State<_Scroll> {
         controller: _controller,
         child: SingleChildScrollView(
           controller: _controller,
+          // On a phone a list is pulled down to sync, also a short one
+          // that has nothing to scroll.
+          physics: isMobile ? const AlwaysScrollableScrollPhysics() : null,
           padding: widget.padding,
           child: RepaintBoundary(child: widget.child),
         ),

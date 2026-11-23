@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:material_ui/material_ui.dart' show RefreshIndicator;
 import 'icons.dart';
 
 import '../app_state.dart';
@@ -17,6 +18,7 @@ import '../data/models.dart';
 import '../data/planner_store.dart';
 import '../platform.dart';
 import '../services/file_drop.dart';
+import '../services/sync_all.dart';
 import '../sync/sync_service.dart';
 import '../text/links.dart';
 import '../theme/app_theme.dart';
@@ -196,6 +198,8 @@ class _PlannerPageState extends State<PlannerPage> {
       app.next();
     } else if (key == LogicalKeyboardKey.keyP) {
       app.setPanel(!app.panel);
+    } else if (key == LogicalKeyboardKey.keyS) {
+      syncEverything(context);
     } else {
       return KeyEventResult.ignored;
     }
@@ -577,11 +581,12 @@ class _Header extends StatelessWidget {
           // phone has a bar at the bottom for this.
           final Widget? views = isMobile
               ? null
-              : !narrow || box.maxWidth >= 600
+              : !narrow || box.maxWidth >= 646
                   ? const _ViewSwitch(labels: true)
-                  : box.maxWidth >= 500
+                  : box.maxWidth >= 546
                       ? const _ViewSwitch(labels: false)
                       : const _PageSwitch();
+          const gap = SizedBox(width: 6);
           return Row(
             children: [
               Expanded(
@@ -601,16 +606,19 @@ class _Header extends StatelessWidget {
                   tooltip: 'Show the lists beside the week (P)',
                   onTap: () => app.setPanel(true),
                 ),
-                const SizedBox(width: 6),
+                gap,
               ],
-              if (views != null) ...[views, const SizedBox(width: 6)],
+              if (views != null) ...[views, gap],
               AppButton(
                 icon: AppIcons.calendarPlus,
                 kind: ButtonKind.secondary,
                 tooltip: isMobile ? 'New event' : 'New event (N)',
                 onTap: () => showNewEvent(context),
               ),
-              const SizedBox(width: 6),
+              gap,
+              // A phone's header is full as it is: there the page is pulled
+              // down from its top instead (see [_PullToSync]).
+              if (!isMobile) ...[const _SyncButton(), gap],
               Builder(
                 builder: (context) => AppButton(
                   icon: AppIcons.menu,
@@ -623,14 +631,14 @@ class _Header extends StatelessWidget {
               ),
               // The arrows keep their place on every page, so that the
               // buttons before them do too.
-              const SizedBox(width: 6),
+              gap,
               AppButton(
                 icon: AppIcons.chevronLeft,
                 kind: ButtonKind.primary,
                 tooltip: tasks ? 'Previous list' : 'Previous',
                 onTap: _turn(context, app, -1),
               ),
-              const SizedBox(width: 6),
+              gap,
               AppButton(
                 icon: AppIcons.chevronRight,
                 kind: ButtonKind.primary,
@@ -641,6 +649,115 @@ class _Header extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// Runs everything the sync button stands for (see [SyncAll]) and says how
+/// it went. Asked again while a run is under way, it waits for that run and
+/// leaves the report to whoever started it.
+Future<void> syncEverything(BuildContext context) async {
+  final everything = AppScope.read(context).everything;
+  final joined = everything.running;
+  final app = context.readApp;
+  final result = await everything.run();
+  if (joined) return;
+  if (result.ok) {
+    app.say(result.message);
+  } else {
+    app.say(
+      result.message,
+      action: 'Settings',
+      onAction: () {
+        if (context.mounted) showSettingsDialog(context);
+      },
+    );
+  }
+}
+
+/// The header's sync button, on a desktop: one press syncs with the
+/// Nextcloud folder, reads the calendars again and keeps a copy of the
+/// planner on this device. Its icon turns while that runs, and is a warning
+/// while the last sync with Nextcloud stands failed.
+class _SyncButton extends StatefulWidget {
+  const _SyncButton();
+
+  @override
+  State<_SyncButton> createState() => _SyncButtonState();
+}
+
+class _SyncButtonState extends State<_SyncButton> with SingleTickerProviderStateMixin {
+  late final _turn = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+  late final SyncAll _everything = AppScope.read(context).everything;
+
+  @override
+  void initState() {
+    super.initState();
+    _everything.addListener(_onRun);
+    if (_everything.running) _turn.repeat();
+  }
+
+  void _onRun() {
+    if (!mounted) return;
+    if (_everything.running) {
+      _turn.repeat();
+    } else {
+      // The turn it is in is finished, so that a quick run shows as well.
+      _turn.forward(from: _turn.value).whenComplete(() {
+        if (mounted && !_everything.running) _turn.value = 0;
+      });
+    }
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _everything.removeListener(_onRun);
+    _turn.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = !_everything.running && context.sync.state == SyncState.error;
+    return AppButton(
+      icon: failed ? AppIcons.cloudAlert : AppIcons.refreshCw,
+      kind: ButtonKind.secondary,
+      foreground: failed ? AppTheme.danger : null,
+      turning: _turn,
+      tooltip: 'Sync everything (S)',
+      onTap: () => syncEverything(context),
+    );
+  }
+}
+
+/// On a phone: the page, scrolled to its top and pulled further down,
+/// syncs everything, as the header's button does on a desktop. A mark
+/// follows the finger and turns until the sync is through.
+class _PullToSync extends StatelessWidget {
+  const _PullToSync({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isMobile) return child;
+    final theme = context.theme;
+    return RefreshIndicator(
+      onRefresh: () => syncEverything(context),
+      // The page's own scrolling up and down; not the turning of weeks or
+      // lists, nor a line of text moving under the cursor.
+      notificationPredicate: (notification) =>
+          notification.metrics.axis == Axis.vertical,
+      color: theme.text,
+      backgroundColor: theme.popover,
+      strokeWidth: 2,
+      displacement: 28,
+      semanticsLabel: 'Syncing',
+      child: child,
     );
   }
 }
@@ -1066,20 +1183,19 @@ class _MainMenuState extends State<_MainMenu> {
                     _run(() => calendars.showHidden = !calendars.showHidden),
               ),
             const _Divider(),
-            if (sync.configured)
-              MenuRow(
-                icon: sync.state == SyncState.error
-                    ? AppIcons.cloudAlert
-                    : AppIcons.refreshCw,
-                label: 'Sync now',
-                hint: switch (sync.state) {
-                  SyncState.syncing => 'syncing',
-                  SyncState.error => 'failed',
-                  _ => null,
-                },
-                danger: sync.state == SyncState.error,
-                onTap: () => _run(() => sync.syncNow()),
-              ),
+            MenuRow(
+              icon: sync.state == SyncState.error
+                  ? AppIcons.cloudAlert
+                  : AppIcons.refreshCw,
+              label: 'Sync everything',
+              hint: switch (sync.state) {
+                SyncState.syncing => 'syncing',
+                SyncState.error => 'failed',
+                _ => isMobile ? null : 'S',
+              },
+              danger: sync.state == SyncState.error,
+              onTap: () => _run(() => syncEverything(page)),
+            ),
             MenuRow(
               icon: AppIcons.settings,
               label: 'Settings',
@@ -1788,9 +1904,11 @@ class _NarrowLayout extends StatelessWidget {
           child: const _Header(narrow: true),
         ),
         Expanded(
-          child: ValueListenableBuilder<AppPage>(
-            valueListenable: context.readApp.pageNotifier,
-            builder: (context, page, _) => page == AppPage.tasks ? lists : pager,
+          child: _PullToSync(
+            child: ValueListenableBuilder<AppPage>(
+              valueListenable: context.readApp.pageNotifier,
+              builder: (context, page, _) => page == AppPage.tasks ? lists : pager,
+            ),
           ),
         ),
         // While a task is typed on a phone: a bar right above the keyboard

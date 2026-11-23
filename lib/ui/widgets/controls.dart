@@ -153,6 +153,7 @@ class AppButton extends StatelessWidget {
     this.foreground,
     this.iconSize = 20,
     this.expand = false,
+    this.turning,
   });
 
   final IconData? icon;
@@ -175,6 +176,9 @@ class AppButton extends StatelessWidget {
 
   /// Stretch to the available width.
   final bool expand;
+
+  /// While given, the icon turns with it: something is under way.
+  final Animation<double>? turning;
 
   @override
   Widget build(BuildContext context) {
@@ -236,7 +240,13 @@ class AppButton extends StatelessWidget {
         final textStyle = (small ? context.text.small15 : context.text.bodyBold17)
             .copyWith(color: content);
         final children = <Widget>[
-          if (icon != null) Icon(icon, size: iconSize, color: content),
+          if (icon != null)
+            turning == null
+                ? Icon(icon, size: iconSize, color: content)
+                : RotationTransition(
+                    turns: turning!,
+                    child: Icon(icon, size: iconSize, color: content),
+                  ),
           if (label != null) Text(label!, style: textStyle, maxLines: 1),
         ];
         return AnimatedContainer(

@@ -8,12 +8,14 @@ import 'package:fweek/calendar/calendar_service.dart';
 import 'package:fweek/calendar/ics.dart';
 import 'package:fweek/data/database.dart';
 import 'package:fweek/data/day.dart';
+import 'package:fweek/data/local_backups.dart';
 import 'package:fweek/data/models.dart';
 import 'package:fweek/data/planner_store.dart';
 import 'package:fweek/main.dart';
 import 'package:fweek/services/opener.dart';
 import 'package:fweek/services/places.dart';
 import 'package:fweek/sync/secrets.dart';
+import 'package:fweek/sync/sync_service.dart';
 
 /// The day the reference captures were taken, so renders line up with them.
 final referenceToday = Day(2026, 11, 13);
@@ -97,6 +99,8 @@ Future<void> pumpApp(
   CalendarService? calendars,
   Opener? opener,
   PlaceSearch? places,
+  SyncService? sync,
+  LocalBackups? backups,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -107,6 +111,8 @@ Future<void> pumpApp(
     store: store,
     notifications: false,
     calendars: calendars,
+    sync: sync,
+    backups: backups,
     // Nothing leaves a test: links are recorded, places come from a list.
     opener: opener ?? Opener(android: (uri) async => true),
     places: places ?? FakePlaces(),

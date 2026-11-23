@@ -4,10 +4,12 @@ import 'package:flutter/widgets.dart';
 
 import 'calendar/calendar_service.dart';
 import 'data/day.dart';
+import 'data/local_backups.dart';
 import 'data/planner_store.dart';
 import 'services/android_bridge.dart';
 import 'services/opener.dart';
 import 'services/places.dart';
+import 'services/sync_all.dart';
 import 'sync/sync_service.dart';
 
 /// A short message at the bottom of the window, with at most one action
@@ -185,6 +187,8 @@ class AppScope extends StatelessWidget {
     required this.calendars,
     required this.opener,
     required this.places,
+    required this.everything,
+    this.backups,
     this.android,
     required this.child,
   });
@@ -201,6 +205,12 @@ class AppScope extends StatelessWidget {
 
   /// The online place search.
   final PlaceSearch places;
+
+  /// What the sync button runs: the sync folder, the calendars and a copy.
+  final SyncAll everything;
+
+  /// Copies of the planner kept on this device; null where none are (tests).
+  final LocalBackups? backups;
 
   /// Android's own services (reminders, file saving); null elsewhere.
   final AndroidBridge? android;

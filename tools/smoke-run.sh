@@ -223,7 +223,7 @@ today="$(date +%F)"
 # month after (the form is 512 wide, centred; the month opens under the end
 # day, its arrow for the next month at +261,+26, the days from +27,+89 in
 # steps of 39 by 38).
-click 1258 48; sleep 0.8
+click 1212 48; sleep 0.8
 type_text "Smoke trip"
 click 666 264; sleep 0.7
 shot 07l-end-day
@@ -239,9 +239,18 @@ trip_first="$(field 'Smoke trip' date)"; trip_last="$(field 'Smoke trip' end_dat
 
 # The header names its views: a click on Tasks, and on Week back again.
 shot 07o-week
-click 1192 48
+click 1146 48
 wait_for_change 07o-week 07p-tasks 1400x240+10+14 "the header's Tasks leads to the Tasks page"
-click 1044 48; sleep 0.8
+click 998 48; sleep 0.8
+
+# The header's sync button: with nothing connected it still keeps a copy of
+# the planner beside it, one file for the day.
+click 1258 48; sleep 1.5
+shot 07q-synced
+copy="$data/backups/planner-$(date +%F).json"
+[ -s "$copy" ] && grep -q '"Smoke trip"' "$copy" \
+  && pass "the sync button keeps a copy of the planner on this device" \
+  || fail "no copy of the planner at $copy after the sync button"
 
 # The Tasks page (L): a list is started in the blank column and named
 # where it stands; a task typed into it is in that list and has no day.
@@ -268,7 +277,7 @@ PY
 # week; dropped on Wednesday it is planned for that day and still in its
 # list.
 at 440 174; press; sleep 0.1
-for p in "470 170" "700 140" "900 100" "1020 60" "1044 48"; do at $p; done
+for p in "470 170" "700 140" "900 100" "980 60" "998 48"; do at $p; done
 sleep 1.3
 shot 07g-carried
 for p in "1200 200" "900 300" "640 320" "600 330"; do at $p; done

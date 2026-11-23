@@ -7,15 +7,19 @@ import 'package:flutter/widgets.dart';
 import 'icons.dart';
 
 import '../app_state.dart';
+import '../data/day.dart';
 import '../data/export.dart';
+import '../data/local_backups.dart';
 import '../data/planner_store.dart';
 import '../platform.dart';
 import '../services/android_bridge.dart';
 import '../services/places.dart';
 import '../theme/app_theme.dart';
 import 'calendar_settings.dart';
+import 'strings.dart';
 import 'sync_settings.dart';
 import 'task_dialog.dart';
+import 'task_list.dart' show formatTime;
 import 'widgets/controls.dart';
 
 /// Opens the settings card.
@@ -387,6 +391,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                           ),
                         ),
                       ),
+                    if (AppScope.read(context).backups case final backups?)
+                      _KeptCopies(backups: backups, report: _report),
                     section('Advanced'),
                     toggle(
                       'Show frame timing',
@@ -583,6 +589,112 @@ class _ThemeTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The copies of the planner kept on this device (the sync button makes one
+/// a day), and the way to bring one back.
+class _KeptCopies extends StatefulWidget {
+  const _KeptCopies({required this.backups, required this.report});
+
+  final LocalBackups backups;
+  final void Function(String message, {bool failed}) report;
+
+  @override
+  State<_KeptCopies> createState() => _KeptCopiesState();
+}
+
+class _KeptCopiesState extends State<_KeptCopies> {
+  late List<LocalBackup> _copies = widget.backups.list();
+
+  static String _name(LocalBackup copy, Day today) => switch (today.difference(copy.day)) {
+        0 => 'Today',
+        1 => 'Yesterday',
+        _ => '${Strings.weekdayShort(copy.day)}, ${Strings.dayMonth(copy.day)}'
+            '${copy.day.year == today.year ? '' : ' ${copy.day.year}'}',
+      };
+
+  Future<void> _choose(BuildContext anchor) async {
+    final store = context.readStore;
+    final today = store.today;
+    final copies = _copies = widget.backups.list();
+    final use24h = store.setting<bool>(Settings.use24h);
+    final picked = await showPopover<LocalBackup>(
+      context: context,
+      anchor: globalRect(anchor),
+      align: -1,
+      builder: (popover) => PopoverSurface(
+        padding: const EdgeInsets.all(8),
+        child: SizedBox(
+          width: 264,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final copy in copies)
+                    MenuRow(
+                      icon: AppIcons.history,
+                      label: _name(copy, today),
+                      hint: formatTime(copy.written.hour * 60 + copy.written.minute,
+                          use24h: use24h),
+                      onTap: () => Navigator.of(popover).pop(copy),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    try {
+      final count = Export.restore(store, picked.file.readAsStringSync());
+      setState(() => _copies = widget.backups.list());
+      widget.report('Restored $count tasks from the copy of ${_name(picked, today).toLowerCase()}');
+    } on FormatException catch (error) {
+      widget.report(error.message, failed: true);
+    } on Object catch (error) {
+      widget.report('Could not read the copy: $error', failed: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final today = context.store.today;
+    final copies = _copies;
+    // A phone has no button for it: there the page is pulled down.
+    final how = isMobile
+        ? 'Syncing (pull the page down from its top) makes one a day'
+        : 'The sync button in the header makes one each day it is pressed';
+    final text = copies.isEmpty
+        ? 'No copy of the planner is kept on this device yet. $how.'
+        : 'Copies kept on this device: ${copies.length}, the latest from '
+            '${_name(copies.first, today).toLowerCase()}. $how; the '
+            '${widget.backups.keep} latest are kept.';
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(text, style: context.text.caption14.copyWith(color: theme.ink(60))),
+          if (copies.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Builder(
+              builder: (anchor) => AppButton(
+                icon: AppIcons.history,
+                label: 'Restore a copy',
+                size: Dim.controlInline,
+                iconSize: 16,
+                onTap: () => _choose(anchor),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
