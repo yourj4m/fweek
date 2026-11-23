@@ -34,9 +34,10 @@ if [ ! -f "$store" ]; then
   chmod 600 "$store"
   echo "Created the signing key in $keys - keep this folder."
 fi
-# The key's name inside the file: whatever it was made with.
+# The key's name inside the file: whatever it was made with. (The whole
+# listing is read: a reader that stops early fails the one writing to it.)
 alias="$("$dev" keytool -list -keystore "$store" -storepass:file "$secret" 2>/dev/null |
-  awk -F, '/PrivateKeyEntry/ { print $1; exit }')"
+  awk -F, '/PrivateKeyEntry/ && !found { print $1; found = 1 }')"
 [ -n "$alias" ] || { echo "Could not read the signing key in $store" >&2; exit 1; }
 # Gradle reads the signing details from here (git-ignored).
 (umask 077; cat > "$root/android/key.properties" <<PROPS
