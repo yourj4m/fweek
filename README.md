@@ -7,7 +7,7 @@ Local-first: everything is stored on your machine and the app works offline.
 Optionally it keeps your devices in step through a folder in your own
 Nextcloud, with no other server involved.
 
-This is a personal project, made for one person's own devices and shared as
+This is a personal project and is shared as
 it is. It was called WeekToDo for a while (no relation to the planner at
 weektodo.me), and a few names that nobody reads still say so: the app id
 `io.github.yourj4m.weektodo` and the format tags inside backup and sync
