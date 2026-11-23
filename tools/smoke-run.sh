@@ -299,6 +299,38 @@ print(row[0] if row else "")
 PY
 )"
 [ "$panel" = "true" ] && pass "P opens the lists beside the week" || fail "the lists panel did not open ('$panel')"
+
+# A new list made in the panel is named where it stands: what is typed
+# next is its name, without a click on anything.
+click 1212 396; sleep 0.8
+type_text "Books"; key Return; sleep 0.5
+shot 07r-panel-list
+books="$(python3 - "$data/planner.db" <<'PY'
+import sqlite3, sys
+print(sqlite3.connect(sys.argv[1]).execute(
+    "select count(*) from lists where title = 'Books' and deleted = 0").fetchone()[0])
+PY
+)"
+[ "$books" = "1" ] && pass "a list made in the panel takes its name at once" \
+  || fail "after 'New list' in the panel and typing, $books lists are called Books"
+
+# The line between the week and the panel, dragged 100 px to the left:
+# the panel is that much wider, and the width is kept.
+at 1136 450; press; sleep 0.1
+for x in 1120 1090 1060 1036; do at "$x" 450; done
+sleep 0.2
+release; sleep 0.6
+shot 07s-panel-wide
+width="$(python3 - "$data/planner.db" <<'PY'
+import sqlite3, sys
+row = sqlite3.connect(sys.argv[1]).execute(
+    "select value from meta where key = 'local.panel_width'").fetchone()
+print(row[0] if row else "")
+PY
+)"
+awk -v w="${width:-0}" 'BEGIN { exit !(w >= 372 && w <= 388) }' \
+  && pass "the panel's edge is dragged to make it wider ($width px)" \
+  || fail "after dragging the panel's edge 100 px its width is '${width}', not about 380"
 type_text p; sleep 0.5
 
 # A calendar file dragged out of another program's window and dropped on
@@ -324,6 +356,28 @@ if gcc $(pkg-config --cflags gtk+-3.0) "$root/tools/drag-source.c" \
     && pass "a calendar file dragged from another window and dropped on the planner is added" \
     || fail "the dropped calendar file's event is not in the planner"
   key Escape; sleep 0.4
+  swaymsg "[app_id=\"$app_id\"] focus" >/dev/null; sleep 0.3
+
+  # A contacts file dropped the same way: its birthday (today's, to be in
+  # sight) is in a calendar of its own, kept beside the planner and not
+  # in it.
+  printf '%s\r\n' 'BEGIN:VCARD' 'VERSION:3.0' 'FN:Smoke Contact' "BDAY:1990$(date +%m%d)" \
+    'END:VCARD' > "$XDG_RUNTIME_DIR/contacts.vcf"
+  "$XDG_RUNTIME_DIR/drag-source" "$XDG_RUNTIME_DIR/contacts.vcf" >>"$out/drag-source.log" 2>&1 &
+  source_window=$!
+  sleep 1.5
+  at 1300 80; press; sleep 0.2
+  for x in 1280 1240 1180 1100 1000 900 800 720 700; do at "$x" 420; done
+  sleep 0.4
+  release; sleep 1.5
+  shot 07t-birthdays
+  kill "$source_window" 2>/dev/null
+  if grep -qs "Smoke Contact's birthday" "$data"/calendars/* \
+      && [ "$(stored 'Smoke Contact')" -eq 0 ]; then
+    pass "a contacts file dropped on the planner becomes the Birthdays calendar, outside the planner's own data"
+  else
+    fail "the dropped contacts file: calendar copy $(grep -ls "Smoke Contact" "$data"/calendars/* | wc -l), in the planner $(stored 'Smoke Contact')"
+  fi
   swaymsg "[app_id=\"$app_id\"] focus" >/dev/null; sleep 0.3
 else
   echo "note: no compiler for the drag source; dropping a file was not tried"

@@ -242,6 +242,31 @@ def planner(out, shot, width, height):
         shot("f12-added")
 
 
+def pull_to_sync(shot, width, height):
+    """On a phone the page, at its top, is pulled down to sync everything."""
+    ui.launch()
+    time.sleep(1.5)
+    if ui.keyboard_shown():
+        ui.back(pause=0.8)
+    week = ui.find("Week", exact=True)
+    if week:
+        ui.tap(*week[0].centre, pause=1.2)
+    check(not ui.find("Sync everything"),
+          "the phone's header has no sync button: there the page is pulled")
+    # Pulls from the middle of the page: while the page is not at its top
+    # they scroll it there, and the one that starts at the top syncs. The
+    # message stays for six seconds; one look at the screen takes two.
+    x = width // 2
+    said = []
+    for _ in range(4):
+        ui.swipe(x, int(height * 0.38), x, int(height * 0.82), ms=350, pause=1.2)
+        said = ui.find("kept on this device")
+        if said:
+            break
+    shot("f13-pulled")
+    check(bool(said), "pulled down from its top, the page syncs: a copy of the planner is kept")
+
+
 def events(out, shot, width, height):
     # From an empty planner, which the profile build fills with its test
     # tasks and calendar: what an earlier run hid stays hidden otherwise.
@@ -366,6 +391,7 @@ def main():
         events(args.out, shot, width, height)
     else:
         planner(args.out, shot, width, height)
+        pull_to_sync(shot, width, height)
 
     errors = ui.logcat_errors()
     check(not errors, "no errors in the device log" + ("" if not errors else ": " + errors[0][:160]))

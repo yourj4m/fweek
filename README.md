@@ -78,9 +78,12 @@ Test builds for Linux and Android, from the same code. What works:
   bottom). Every list is a column while the window has
   room for all of them; in a narrower window their names stand at the left
   and one list is open; on a phone the names are tabs, and a swipe turns to
-  the next list. There is always a way to start a new list; a list's menu
-  renames, moves and deletes it. Done tasks fold away under the list
-  ("3 done"), where they can be looked at and cleared.
+  the next list. There is always a way to start a new list, which then
+  waits for its name where it stands; a list's menu renames, moves and
+  deletes it. A task ticked today stays in its row, struck through, for
+  the rest of the day, so that the list keeps a running record of what was
+  done; from the next day on it is folded away under the list ("3 done"),
+  where done tasks can be looked at and cleared.
 - **From a list into the week**: "Plan for" in a task's menu gives it a
   day, as does its card; or drag it onto "Week" in the header (a tab of
   the phone's bar) and hold it there: the page turns, and the task is dropped
@@ -93,6 +96,9 @@ Test builds for Linux and Android, from the same code. What works:
   onto days, and from a day back into a list. A plain panel icon before
   the views opens it; the one button on the panel shuts it (P does both).
   That icon only shows the lists beside the week; "Tasks" is the page.
+  The line between the week and the panel is dragged to make the panel
+  wider or narrower (a double click gives it its first width again); each
+  device keeps its own width.
 - **Hints**: on the desktop, a button that is only an icon says what it
   does when the pointer rests on it.
 - **Deadlines**: a task can have a day by which it is to be done, apart
@@ -115,6 +121,17 @@ Test builds for Linux and Android, from the same code. What works:
   sort or hide completed tasks.
 - **Sync** through Nextcloud (Settings → Sync): on start, every five minutes,
   a few seconds after you stop editing, and on request.
+- **Sync everything**: the button with the two arrows in the header (or S;
+  on a phone, scroll to the top of the page and pull it down) does at once
+  what otherwise happens at its own times: it syncs with the Nextcloud
+  folder, reads every calendar again, and keeps a copy of the planner on
+  the device. A message says what was done or what failed; the button
+  turns red while the last sync with Nextcloud stands failed.
+- **Copies on the device**: that copy is one file a day in `backups/`
+  beside the planner (the fourteen latest are kept), the same file
+  Settings → Backup saves. Settings → Your data lists them and brings one
+  back. They guard against a slip of one's own, not against losing the
+  device.
 - **Calendars**: subscribe to a calendar's iCal address (for example Google
   Calendar's "secret address") and its events appear in your week: move
   them, recolour them, edit their notes, hide them, or turn one into a task
@@ -122,6 +139,12 @@ Test builds for Linux and Android, from the same code. What works:
   headings. Your changes sync between your devices; the calendar itself is
   never changed. See
   [Calendars](#calendars).
+- **Birthdays**: Google Calendar gives out no address for its Birthdays
+  calendar. Export your contacts instead (contacts.google.com → Export, as
+  vCard or as Google CSV) and read that file in Settings → Calendars →
+  Birthdays, or drop it on the desktop window: the birthdays and other
+  yearly dates of your contacts become a calendar of their own, kept on
+  that device. See [Birthdays](#birthdays).
 - **Calendar files**: drop an `.ics` file (an invitation, an export) anywhere
   on the desktop window, or pick one in Settings → Calendars on any device,
   and its events are added to the planner as events of your own, which
@@ -136,8 +159,8 @@ Test builds for Linux and Android, from the same code. What works:
   week (or month).
 - **Shortcuts**: ← → previous/next (on the Tasks page: the next list,
   where one shows at a time), T today, M month view, L tasks page and
-  back, P the lists beside the week, N new event, Ctrl+F search, Ctrl+,
-  settings, Esc close. Tab and the arrow keys reach every button and
+  back, P the lists beside the week, N new event, S sync everything,
+  Ctrl+F search, Ctrl+, settings, Esc close. Tab and the arrow keys reach every button and
   row; on a row, Enter opens, Space completes, Delete deletes and the menu
   key (or Shift+F10) opens its menu.
 - Text that is not a button can be selected and copied: details in cards,
@@ -145,8 +168,9 @@ Test builds for Linux and Android, from the same code. What works:
 
 - **Android** (13 and newer): the single-column layout with larger rows, a
   bar at the bottom for the week and the tasks, a swipe to turn the week (or
-  to the next list), a long press to pick a task up (let go for its menu,
-  move on to drag it), reminders that fire while the app is closed.
+  to the next list), a pull down from the top of the page to sync
+  everything, a long press to pick a task up (let go for its menu, move on
+  to drag it), reminders that fire while the app is closed.
   While you type a task, a bar above the keyboard gives it a time (wheels
   for hours and minutes), a place, a note or a colour. See
   [Android](#android).
@@ -404,6 +428,46 @@ is treated as the same series; and a calendar that issues new identifiers
 with every download (some published Outlook calendars do) is noticed, and
 its events are then told apart by title and start instead. A change whose
 event has gone from the calendar is kept, in case it comes back.
+
+### Birthdays
+
+Google Calendar's own "Birthdays" calendar cannot be subscribed to. It has
+no "Integrate calendar" section and so no iCal address; since 2024 the
+birthdays are special events of the main calendar, which Google hands out
+through its own sign-in (its API, CalDAV) but leaves out of the main
+calendar's iCal address. What other programs do is read the contacts,
+where the birthdays come from, and so does this one.
+
+- In Google Contacts choose Export, as **vCard** or as **Google CSV**.
+  Any address book that writes vCard files will do as well.
+- Read the file in Settings → Calendars → Birthdays, or drop it on the
+  desktop window. Every birthday, and every other date a contact carries
+  (an anniversary), becomes an all-day event that comes round each year, in
+  a calendar named Birthdays: "Ada Lovelace's birthday", with "Born 10
+  December 1990" as its note when the contact says the year. Someone born
+  on 29 February is on the last day of February in other years.
+- It is a calendar like the subscribed ones: a colour, hidden and shown
+  from the menu, renamed, removed, and its single dates can be moved,
+  annotated, hidden or turned into tasks.
+- **The file stays on the device.** Nothing of it is uploaded: the dates
+  are kept where the calendars' downloads are kept. As for any calendar,
+  what syncs is the calendar's name, colour and visibility and what you
+  change about single dates, under fingerprints
+  (`test/calendar/contacts_test.dart` checks that no name and no date of
+  birth leaves). So read the file on each device that should show the
+  birthdays; a device that has not lists the calendar under "On your other
+  devices".
+- When your contacts change, export again and read the new file: it fills
+  the one calendar anew, and a date keeps what you changed about it. On a
+  desktop the place of the file is remembered: save the new export over
+  the old one and the next sync reads it.
+
+Other ways there are, none built in: a Google Apps Script of your own
+that copies the birthdays into an ordinary calendar every night, which
+then has a secret address to subscribe to; and Google Calendar's Settings →
+Import & export → Export, whose archive is reported to hold the birthdays
+as an `.ics` file of its own, which can be dropped on the window like any
+calendar file (its events then become events of your own).
 
 ### Places
 

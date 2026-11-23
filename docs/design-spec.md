@@ -405,20 +405,37 @@ half and half.
   the right, a 1 px rule at its left; "Lists" (24 px bold) level with the
   week's title, and at its right the one button that shuts the panel; each
   list a heading like a day's (18 px bold over a 2 px rule) that folds it,
-  and its open tasks on ruled rows.
+  and its tasks on ruled rows. A new list's heading is a field for its
+  name, in the same type, at once.
+- **The panel's edge** is dragged: a 10 px strip over the rule takes the
+  pointer (column-resize cursor) and shows a 3 px line of 25 % ink, 45 %
+  while dragged. 220 to 640 px, the week keeping 920 px; a double click
+  returns to 280 px.
+- **Ticked today**: in a list a task ticked today keeps its row, drawn as
+  done (struck through, 30 %), until the day ends; the count beside the
+  list's name is of what is still to do. Then it goes under "n done".
 
 ### The header's buttons
 
 From the left: the icon that opens the panel (a plain 40 px icon, no
 ground; only in the week, in a window with room, while the panel is shut),
-the views, the new-event button (40 px, 5 % ink), the menu, the arrows.
-What comes and goes stands first, so that nothing after it moves.
+the views, the new-event button (40 px, 5 % ink), the sync button (the
+same; not on a phone), the menu, the arrows. What comes and goes stands
+first, so that nothing after it moves.
+
+- **Sync**: two arrows in a circle, which turn (one turn in 0.9 s, the
+  turn under way finished when the run ends) while everything is synced;
+  a red cloud with a warning mark while the last sync with Nextcloud
+  stands failed. On a phone the page is pulled down from its top instead:
+  a round mark (the page's menu colour, a 2 px arrow in the text colour)
+  follows the finger from under the header, and turns until the sync is
+  through; a quarter of the page's height arms it.
 
 - **Views**: a 40 px pill of 5 % ink holding "Week", "Month", "Tasks"
   (15 px; 14 px padding at each side), the one on show bold on a pill in
   the page's colour, the others medium at 60 %. Each name takes the width
-  of its bold form. In a single-column window from 600 px they stay; from
-  500 px they are icons (18 px, 9 px padding); below, one button that
+  of its bold form. In a single-column window from 646 px they stay; from
+  546 px they are icons (18 px, 9 px padding); below, one button that
   turns between the planner and the tasks. While a task is dragged, the
   names it can be carried to have a 35 % outline; held over one for
   650 ms, that page comes up.

@@ -116,15 +116,17 @@ stop_app() { kill "$app"; wait "$app" 2>/dev/null; app=""; sleep 0.5; }
 #   2: three rows of themes
 #   3: with "New items are" above it
 #   4: with "A task from a list, given a day" above it as well
+#   5: with a line more said about done tasks in lists
 form() {
   case "$1" in
     1) echo "921 973 1025 1077 1203" ;;
     2) echo "1074 1126 1178 1230 1356" ;;
     3) echo "1220 1272 1324 1376 1502" ;;
-    *) echo "1422 1474 1526 1578 1704" ;;
+    4) echo "1422 1474 1526 1578 1704" ;;
+    *) echo "1442 1494 1546 1598 1724" ;;
   esac
 }
-current_form=4
+current_form=5
 
 # Fills in the sync settings and connects.
 connect() {  # <data folder> [form]
