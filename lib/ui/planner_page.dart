@@ -96,15 +96,18 @@ class _PlannerPageState extends State<PlannerPage> {
   }
 
   /// On a desktop: calendar files dropped anywhere on the window are taken
-  /// into the planner.
-  late final bool _dropping = defaultTargetPlatform == TargetPlatform.linux;
+  /// into the planner. The window's own code (Linux and Windows) passes
+  /// their paths on.
+  late final bool _dropping = defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.windows;
 
   void _dropped(List<String> paths) {
     if (!mounted) return;
     final files = <CalendarFile>[];
     var others = 0;
     for (final path in paths) {
-      final name = path.split('/').last;
+      // The file's name, after the last separator of either system.
+      final name = path.split(RegExp(r'[/\\]')).last;
       final lower = name.toLowerCase();
       // A contacts file: its birthdays become the Birthdays calendar.
       if (lower.endsWith('.vcf') || lower.endsWith('.vcard') || lower.endsWith('.csv')) {

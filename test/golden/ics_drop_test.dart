@@ -66,6 +66,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('on Windows too, with its paths: the card names the file, not the folders',
+      (tester) async {
+    final store = seededStore();
+    await pumpApp(tester, store);
+    // On this machine a backslash is part of a name, so the file is made
+    // under the name the Windows path ends in after its last folder.
+    final path = write(r'Mes documents é\invite.ics', [seminar()]);
+    await drop(tester, [path]);
+    expect(find.text('From invite.ics'), findsOneWidget);
+    expect(store.allTasks.map((t) => t.title), contains('Séminaire ISTerre'));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
   desktopTest('adds its events and says which; each leads to its day and opens', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store);
