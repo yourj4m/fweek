@@ -752,7 +752,14 @@ class PlannerStore extends ChangeNotifier {
   /// An event the user has placed stands where its key puts it, among the
   /// tasks. One never placed has no key: those come first, in the order
   /// given (by time). Completed tasks go last when that is the setting.
-  List<Task> arrangeDay(List<Task> tasks, List<Task> events) {
+  /// Then the items with a time are put in time order among the places
+  /// such items hold: see [inTimeOrder].
+  List<Task> arrangeDay(List<Task> tasks, List<Task> events) =>
+      inTimeOrder(_byKey(tasks, events));
+
+  /// [arrangeDay] before the items with a time are put in time order: the
+  /// order of the keys, which a new key is made between.
+  List<Task> _byKey(List<Task> tasks, List<Task> events) {
     if (events.isEmpty) return tasks;
     final loose = <Task>[], keyed = <Task>[...tasks];
     for (final event in events) {
@@ -770,12 +777,137 @@ class PlannerStore extends ChangeNotifier {
     return [...loose, ...keyed];
   }
 
+  /// [items] with those that have a time in time order. Items without a
+  /// time stay where they were put, and so do those with a time that are
+  /// already in time order among themselves (the largest such set, where
+  /// an item placed by hand counts for more than any number of a
+  /// calendar's events nobody placed). The others move next to them, by
+  /// time: before the first later one, or right after the last one. So an
+  /// event a calendar brings in later stands by its time, and a task given
+  /// a time keeps its place while events move around it. Done tasks sorted
+  /// down are ordered among themselves. Returns [items] itself when
+  /// nothing moves.
+  List<Task> inTimeOrder(List<Task> items) => _timeOrder(items).shown;
+
+  /// [inTimeOrder], and the ids of the items it moved.
+  ({List<Task> shown, Set<String> moved}) _timeOrder(List<Task> items) {
+    final doneDown = setting<bool>(Settings.sortDoneDown);
+    final moved = <String>{};
+    final parts = doneDown
+        ? [items.where((t) => !t.done).toList(), items.where((t) => t.done).toList()]
+        : [items];
+    var changed = false;
+    final shown = <Task>[];
+    for (final part in parts) {
+      final ordered = _timeOrderOf(part, moved);
+      changed |= !identical(ordered, part);
+      shown.addAll(ordered);
+    }
+    return (shown: changed ? shown : items, moved: moved);
+  }
+
+  List<Task> _timeOrderOf(List<Task> items, Set<String> moved) {
+    final timed = [for (final t in items) if (t.time != null) t];
+    if (timed.length < 2) return items;
+    // Events nobody placed have no place of their own to keep.
+    int weight(Task t) => t.position.isNotEmpty || !Task.isEventId(t.id) ? 1 << 20 : 1;
+    final score = [for (final t in timed) weight(t)], before = List.filled(timed.length, -1);
+    var best = 0;
+    for (var i = 0; i < timed.length; i++) {
+      for (var j = 0; j < i; j++) {
+        if (timed[j].time! <= timed[i].time! && score[j] + weight(timed[i]) > score[i]) {
+          score[i] = score[j] + weight(timed[i]);
+          before[i] = j;
+        }
+      }
+      if (score[i] > score[best]) best = i;
+    }
+    final stay = <Task>{};
+    for (var i = best; i >= 0; i = before[i]) {
+      stay.add(timed[i]);
+    }
+    final movers = [for (final t in timed) if (!stay.contains(t)) t];
+    if (movers.isEmpty) return items;
+    // By time; of one time, in the order they stood in.
+    final order = {for (var i = 0; i < movers.length; i++) movers[i]: i};
+    movers.sort((a, b) {
+      final byTime = a.time!.compareTo(b.time!);
+      return byTime != 0 ? byTime : order[a]!.compareTo(order[b]!);
+    });
+    final result = <Task>[];
+    var next = 0, left = stay.length;
+    for (final t in items) {
+      if (t.time != null && !stay.contains(t)) continue;
+      if (stay.contains(t)) {
+        while (next < movers.length && movers[next].time! < t.time!) {
+          result.add(movers[next++]);
+        }
+        result.add(t);
+        if (--left == 0) result.addAll(movers.skip(next));
+      } else {
+        result.add(t);
+      }
+    }
+    for (final t in movers) {
+      moved.add(t.id);
+    }
+    return result;
+  }
+
+  /// Gives the items [moved] of a day's rows [shown] keys that put them
+  /// where they are shown, so that the keys follow the rows before a place
+  /// among them is counted. What lies between two rows that stay gets keys
+  /// between theirs.
+  void _keepShownOrder(List<Task> shown, Set<String> moved) {
+    final doneDown = setting<bool>(Settings.sortDoneDown);
+    var i = 0;
+    while (i < shown.length) {
+      if (!moved.contains(shown[i].id)) {
+        i++;
+        continue;
+      }
+      var end = i;
+      while (end < shown.length && moved.contains(shown[end].id)) {
+        end++;
+      }
+      // The rows that stay on either side, if of the same part (open or,
+      // sorted down, done).
+      final part = shown[i].done;
+      String? keyOf(int at) {
+        if (at < 0 || at >= shown.length) return null;
+        if (doneDown && shown[at].done != part) return null;
+        final key = shown[at].position;
+        return key.isEmpty ? null : key;
+      }
+
+      final low = keyOf(i - 1);
+      var high = keyOf(end);
+      if (low != null && high != null && low.compareTo(high) >= 0) high = null;
+      final keys = orderKeysBetween(low, high, end - i);
+      for (var k = i; k < end; k++) {
+        final item = shown[k];
+        if (item.event case final source?) {
+          _writeEvent(source, {'position': keys[k - i]});
+        } else if (_tasks.containsKey(item.id)) {
+          _write('tasks', item.id, {'position': keys[k - i]});
+        }
+      }
+      i = end;
+    }
+  }
+
   /// Everything shown on [day], in order: see [arrangeDay].
   List<Task> itemsOn(Day day) =>
       arrangeDay(tasksOn(day), dayEventsResolver?.call(day) ?? const []);
 
+  /// The items of [slot] in the order of their keys. On a day that is the
+  /// order shown except among items with a time ([inTimeOrder]); a place
+  /// counted in the rows shown is the same place here, since the rows
+  /// without a time stand in both alike and those with one fill the places
+  /// such rows hold.
   List<Task> _itemsAt(Slot slot) => switch (slot) {
-        DaySlot(:final day) => itemsOn(day),
+        DaySlot(:final day) =>
+          _byKey(tasksOn(day), dayEventsResolver?.call(day) ?? const []),
         // As the list shows them, so that a place counted in its rows is
         // the place meant.
         ListSlot(:final listId) => shownIn(listId),
@@ -823,6 +955,16 @@ class PlannerStore extends ChangeNotifier {
     String place(Task t) => inList ? t.listPosition : t.position;
     List<Task> others() => _itemsAt(slot).where((t) => t.id != except).toList();
     var shown = others();
+    // On a day some items with a time may be shown elsewhere than their
+    // keys put them (see [inTimeOrder]): those get keys for where they are
+    // shown first, so that a place counted in the rows is the place meant.
+    if (!inList) {
+      final order = _timeOrder(shown);
+      if (order.moved.isNotEmpty) {
+        _keepShownOrder(order.shown, order.moved);
+        shown = others();
+      }
+    }
     final i = index == null ? shown.length : index.clamp(0, shown.length);
     // What a calendar brought and was never placed has no key and stands
     // above all that has one. To put something among such events, or above

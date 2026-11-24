@@ -445,7 +445,7 @@ void main() {
               'DESCRIPTION:Bring the draft.',
               'DESCRIPTION:<a href="https://example.org/draft">The draft</a> is here.'));
       await pumpApp(tester, store, calendars: calendars, opener: recordingOpener(opened));
-      await tester.tap(find.text('10:00 Team meeting'));
+      await tester.tap(find.text('8:00 Team meeting'));
       await tester.pumpAndSettle();
       final text = find.byType(LinkedText);
       expect(tester.widget<LinkedText>(text).text,

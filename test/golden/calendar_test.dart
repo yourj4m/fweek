@@ -24,16 +24,16 @@ void main() {
   desktopTest('events sit above the tasks of their day', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store, calendars: await calendarWith(tester, store));
-    expect(find.text('10:00 Team meeting'), findsOneWidget);
+    expect(find.text('8:00 Team meeting'), findsOneWidget);
     expect(find.text('9:00 Group seminar'), findsOneWidget);
     expect(find.text('14:30 Thesis committee'), findsOneWidget);
     // Above the day's first task.
-    expect(tester.getTopLeft(find.text('10:00 Team meeting')).dy,
+    expect(tester.getTopLeft(find.text('8:00 Team meeting')).dy,
         lessThan(tester.getTopLeft(find.textContaining('Buy oat milk')).dy));
     // An event is a row like a task, but with nothing to tick: a task has
     // the circle, an event does not.
     final row = find.ancestor(
-        of: find.text('10:00 Team meeting'), matching: find.byType(TaskRow));
+        of: find.text('8:00 Team meeting'), matching: find.byType(TaskRow));
     expect(find.descendant(of: row, matching: find.byType(CheckToggle)), findsNothing);
     final task = find.ancestor(
         of: find.textContaining('Buy oat milk'), matching: find.byType(TaskRow));
@@ -64,21 +64,22 @@ void main() {
     }
 
     // Between "Second task" and "Call dentist".
-    await drag('10:00 Team meeting', monday, 2);
+    await drag('8:00 Team meeting', monday, 2);
     expect(shown(monday), ['Buy oat milk', 'Second task', 'Team meeting', 'Call dentist']);
     await expectLater(
         find.byType(MaterialApp), matchesGoldenFile('goldens/week_1440_event_placed.png'));
 
-    // Below the last task.
-    await drag('10:00 Team meeting', monday, 3);
-    expect(shown(monday), ['Buy oat milk', 'Second task', 'Call dentist', 'Team meeting']);
+    // Below the last task, which is the dentist at 9:30: the meeting at
+    // 8:00 stays above it, since items with a time keep to time order.
+    await drag('8:00 Team meeting', monday, 3);
+    expect(shown(monday), ['Buy oat milk', 'Second task', 'Team meeting', 'Call dentist']);
 
     // A task goes above an event nobody placed (Friday's committee).
     await drag('Water the plants', referenceToday, 0);
     expect(shown(referenceToday), ['Water the plants', 'Thesis committee']);
 
     // To another day, between that day's tasks.
-    await drag('10:00 Team meeting', monday.addDays(5), 1);
+    await drag('8:00 Team meeting', monday.addDays(5), 1);
     final saturday = monday.addDays(5);
     expect(shown(saturday), ['Mark me complete', 'Team meeting', 'Tap', 'Drag to the next day']);
     expect(store.itemsOn(monday).any((t) => t.title == 'Team meeting'), isFalse);
@@ -89,20 +90,20 @@ void main() {
     final store = seededStore();
     await pumpApp(tester, store, calendars: await calendarWith(tester, store));
     final row = find.ancestor(
-        of: find.text('10:00 Team meeting'), matching: find.byType(TaskRow));
-    await rightClick(tester, find.text('10:00 Team meeting'));
+        of: find.text('8:00 Team meeting'), matching: find.byType(TaskRow));
+    await rightClick(tester, find.text('8:00 Team meeting'));
     expect(find.text('Mark as done'), findsNothing);
     await tester.tap(find.text('Turn into a task'));
     await tester.pumpAndSettle();
     expect(changeIn(store).kind, ItemKind.task);
     expect(find.descendant(of: row, matching: find.byType(CheckToggle)), findsOneWidget);
 
-    await rightClick(tester, find.text('10:00 Team meeting'));
+    await rightClick(tester, find.text('8:00 Team meeting'));
     await tester.tap(find.text('Mark as done'));
     await tester.pumpAndSettle();
     expect(changeIn(store).done, isTrue);
 
-    await rightClick(tester, find.text('10:00 Team meeting'));
+    await rightClick(tester, find.text('8:00 Team meeting'));
     await tester.tap(find.text('Turn into an event'));
     await tester.pumpAndSettle();
     expect(find.descendant(of: row, matching: find.byType(CheckToggle)), findsNothing);
@@ -116,10 +117,10 @@ void main() {
         tester.widget<Text>(find.text(label)).style!.color!;
     // Monday's meeting lies behind (it is Friday), Friday's committee ahead
     // (14:30, and it is 9:36).
-    expect(inkOf('10:00 Team meeting').a, lessThan(0.5));
+    expect(inkOf('8:00 Team meeting').a, lessThan(0.5));
     expect(inkOf('14:30 Thesis committee').a, 1);
     // Not struck through: it is past, not done.
-    expect(tester.widget<Text>(find.text('10:00 Team meeting')).style!.decoration,
+    expect(tester.widget<Text>(find.text('8:00 Team meeting')).style!.decoration,
         TextDecoration.none);
   });
 
@@ -157,7 +158,7 @@ void main() {
       'then the title, the calendar\'s note, the place', (tester) async {
     final store = seededStore();
     await pumpApp(tester, store, calendars: await calendarWith(tester, store));
-    await tester.tap(find.text('10:00 Team meeting'));
+    await tester.tap(find.text('8:00 Team meeting'));
     await tester.pumpAndSettle();
     expect(store.eventOverrides, isEmpty, reason: 'looking changes nothing');
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/event_card.png'));
@@ -165,8 +166,8 @@ void main() {
         (w) => w is EditableText && w.controller.text == 'Team meeting'); // the title
     // Along the top, in this order: the day, the start, the end, the calendar.
     final day = tester.getRect(find.text('Mon, 9 Nov 2026'));
-    final start = tester.getRect(find.text('10:00'));
-    final end = tester.getRect(find.text('– 11:00'));
+    final start = tester.getRect(find.text('8:00'));
+    final end = tester.getRect(find.text('– 9:00'));
     final calendar = tester.getRect(find.text('Work'));
     expect(day.right, lessThan(start.left));
     expect(start.right, lessThan(end.left));
@@ -177,7 +178,7 @@ void main() {
       expect(part.bottom, lessThan(tester.getRect(card).top));
     }
     // The time is said once.
-    expect(find.textContaining('10:00 – 11:00'), findsNothing);
+    expect(find.textContaining('8:00 – 9:00'), findsNothing);
     // Under the title what the calendar says, as the note; under it the
     // place (which shows on the row behind the card too); no second,
     // empty field for notes.
@@ -200,7 +201,7 @@ void main() {
     expect(changeIn(store).title, isNull, reason: 'the title still follows the calendar');
 
     // Another end.
-    await tester.tap(find.text('– 11:00'));
+    await tester.tap(find.text('– 9:00'));
     await tester.pumpAndSettle();
     expect(find.text('No end'), findsOneWidget);
     await tester.tap(find.text('11:30'));
@@ -222,7 +223,7 @@ void main() {
     final calendars = await calendarWith(tester, store);
     await pumpApp(tester, store, calendars: calendars);
 
-    await rightClick(tester, find.text('10:00 Team meeting'));
+    await rightClick(tester, find.text('8:00 Team meeting'));
     expect(find.text('Hide Work'), findsOneWidget);
     await tester.tap(find.text('Colour'));
     await tester.pumpAndSettle();
@@ -230,16 +231,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(changeIn(store).color, 'green');
 
-    await rightClick(tester, find.text('10:00 Team meeting'));
+    await rightClick(tester, find.text('8:00 Team meeting'));
     await tester.tap(find.text('Hide'));
     await tester.pumpAndSettle();
-    expect(find.text('10:00 Team meeting'), findsNothing);
+    expect(find.text('8:00 Team meeting'), findsNothing);
     expect(changeIn(store).hidden, isTrue);
     expect(find.text('Event hidden'), findsOneWidget);
 
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
-    expect(find.text('10:00 Team meeting'), findsOneWidget);
+    expect(find.text('8:00 Team meeting'), findsOneWidget);
     expect(changeIn(store).hidden, isFalse);
     expect(changeIn(store).color, 'green', reason: 'the colour stays');
   });
@@ -251,15 +252,15 @@ void main() {
     final meeting = calendars.eventsBetween(monday, monday).on(monday).single;
     store.setEventHidden(meeting.id, true);
     await tester.pumpAndSettle();
-    expect(find.text('10:00 Team meeting'), findsNothing);
+    expect(find.text('8:00 Team meeting'), findsNothing);
 
     await tester.tap(find.bySemanticsLabel('Menu'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Show hidden events'));
     await tester.pumpAndSettle();
-    expect(find.text('10:00 Team meeting'), findsOneWidget);
+    expect(find.text('8:00 Team meeting'), findsOneWidget);
 
-    await rightClick(tester, find.text('10:00 Team meeting'));
+    await rightClick(tester, find.text('8:00 Team meeting'));
     await tester.tap(find.text('Show again'));
     await tester.pumpAndSettle();
     expect(changeIn(store).hidden, isFalse);
@@ -270,7 +271,7 @@ void main() {
     final store = seededStore();
     final calendars = await calendarWith(tester, store);
     await pumpApp(tester, store, calendars: calendars);
-    final from = tester.getCenter(find.text('10:00 Team meeting'));
+    final from = tester.getCenter(find.text('8:00 Team meeting'));
     final target = tester.getCenter(find.text('12 Nov')) + const Offset(0, 60);
     final mouse = await tester.startGesture(from, kind: PointerDeviceKind.mouse);
     await mouse.moveBy(const Offset(20, 10));
@@ -285,8 +286,8 @@ void main() {
     expect(titles(calendars.eventsBetween(monday, monday).on(monday)), isEmpty);
     expect(titles(calendars.eventsBetween(thursday, thursday).on(thursday)), ['Team meeting']);
     // Still an event of its calendar, at its own time.
-    expect(find.text('10:00 Team meeting'), findsOneWidget);
-    expect(tester.getCenter(find.text('10:00 Team meeting')).dx,
+    expect(find.text('8:00 Team meeting'), findsOneWidget);
+    expect(tester.getCenter(find.text('8:00 Team meeting')).dx,
         closeTo(tester.getCenter(find.text('12 Nov')).dx, 120));
   });
 
@@ -312,7 +313,7 @@ void main() {
     store.setSetting(Settings.listPanel, true);
     final calendars = await calendarWith(tester, store);
     await pumpApp(tester, store, calendars: calendars);
-    final from = tester.getCenter(find.text('10:00 Team meeting'));
+    final from = tester.getCenter(find.text('8:00 Team meeting'));
     final target = tester.getCenter(find.text('Keep tasks here without a date')) +
         const Offset(0, 30);
     final mouse = await tester.startGesture(from, kind: PointerDeviceKind.mouse);
@@ -325,7 +326,7 @@ void main() {
 
     final list = store.lists.first.id;
     final made = store.tasksIn(list).firstWhere((t) => t.title == 'Team meeting');
-    expect(made.time, 10 * 60);
+    expect(made.time, 8 * 60);
     expect(made.location, 'Room 204');
     expect(made.note, 'Bring the draft.');
     expect(changeIn(store).hidden, isTrue);
@@ -339,7 +340,7 @@ void main() {
   desktopTest('the month shows events before tasks', (tester) async {
     final store = seededStore()..setSetting(Settings.view, 'month');
     await pumpApp(tester, store, calendars: await calendarWith(tester, store));
-    expect(find.text('10:00 Team meeting'), findsOneWidget);
+    expect(find.text('8:00 Team meeting'), findsOneWidget);
     // The weekly seminar: the four Wednesdays from its start on 4 November,
     // and 2 December in the month's last row.
     expect(find.text('9:00 Group seminar'), findsNWidgets(5));
@@ -363,12 +364,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(calendars.subscriptions.single.hidden, isTrue);
     expect(store.calendarRows.single.hidden, isTrue);
-    expect(find.text('10:00 Team meeting'), findsNothing);
+    expect(find.text('8:00 Team meeting'), findsNothing);
     expect(find.text('Conference'), findsNothing);
 
     await tester.tap(find.bySemanticsLabel(RegExp('^Show Work')));
     await tester.pumpAndSettle();
-    expect(find.text('10:00 Team meeting'), findsOneWidget);
+    expect(find.text('8:00 Team meeting'), findsOneWidget);
   });
 
   desktopTest('the settings list the calendar: hide, recolour, rename, remove', (tester) async {

@@ -60,6 +60,12 @@ Builds for Windows, Linux and Android, from the same code. What works:
   line makes it the other, and so does "Turn into an event / a task" in any
   item's menu. What a calendar brings is an event until you turn it into a
   task.
+- **Time order**: within a day, items with a time keep to time order among
+  themselves, while items without a time stay where you put them. A 9:00
+  event a calendar brings in, or an import adds, goes above your 15:00 one,
+  next to it rather than at the top or the end; an item dragged above an
+  earlier one goes back after it. A calendar's events stand above the day's
+  tasks as long as no item of yours there has a time.
 - **New event**: the calendar-with-a-plus button in the header (or N, or
   the menu) opens a form for an event with all it can have: title, start
   and end day, all day or a start and an end time, repeat, reminder,

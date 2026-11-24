@@ -425,13 +425,14 @@ void main() {
       expect(shown(device, monday), ['Team meeting', 'A', 'Review', 'B']);
       store.moveTask(a, DaySlot(monday), index: 0);
       expect(shown(device, monday), ['A', 'Team meeting', 'Review', 'B']);
-      // A new event of the calendar, not placed by anyone, comes first.
+      // A new event of the calendar, not placed by anyone, goes by its time
+      // among the placed ones: after the meeting.
       await device.download(feed([
         meeting(),
         review(),
         ['UID:new@test', 'SUMMARY:Lunch', 'DTSTART:20261109T110000Z', 'DTEND:20261109T120000Z'],
       ]));
-      expect(shown(device, monday), ['Lunch', 'A', 'Team meeting', 'Review', 'B']);
+      expect(shown(device, monday), ['A', 'Team meeting', 'Lunch', 'Review', 'B']);
     });
 
     test('dropped on another day at a place, it stands there; sent there by the menu, among that '
@@ -443,9 +444,10 @@ void main() {
       store.addTask(DaySlot(tuesday), 'A');
       store.addTask(DaySlot(tuesday), 'B');
       final id = only(calendars, monday).id;
-      // Among Review, A, B: under A.
+      // Among Review, A, B: under A. Review, which nobody placed, then
+      // goes by its time: after the meeting.
       store.moveTask(id, DaySlot(tuesday), index: 2);
-      expect(shown(device, tuesday), ['Review', 'A', 'Team meeting', 'B']);
+      expect(shown(device, tuesday), ['A', 'Team meeting', 'Review', 'B']);
       expect(store.eventOverrides.single.date, tuesday);
 
       store.moveTask(id, DaySlot(monday));
@@ -497,6 +499,123 @@ void main() {
       final sent = folder.files.values.map(utf8.decode).join();
       expect(sent, isNot(contains('Team meeting')));
       expect(sent, isNot(contains('Review')));
+    });
+  });
+
+  group('items with a time stand in time order', () {
+    List<String> shown(Device device, Day day) => titles(device.store.itemsOn(day));
+    List<String> review() => [
+          'UID:review@test',
+          'SUMMARY:Review',
+          'DTSTART:20261109T130000Z',
+          'DTEND:20261109T140000Z',
+        ];
+
+    test('a calendar\'s events go by time among the day\'s items with a time', () async {
+      final device = Device(text: feed([meeting(), review()]));
+      await device.start();
+      final store = device.store;
+      final meetingTime = store.itemsOn(monday).first.time!;
+      // Only events with a time: on top, by time.
+      store.addTask(DaySlot(monday), 'A');
+      final call = store.addTask(DaySlot(monday), 'Call')!;
+      expect(shown(device, monday), ['Team meeting', 'Review', 'A', 'Call']);
+      // A task of one's own with a time, earlier than both: they follow it.
+      store.updateTask(call, time: () => meetingTime - 60);
+      expect(shown(device, monday), ['A', 'Call', 'Team meeting', 'Review']);
+      // Between the two: the meeting, already before it, stays on top; the
+      // review goes after it.
+      store.updateTask(call, time: () => meetingTime + 60);
+      expect(shown(device, monday), ['Team meeting', 'A', 'Call', 'Review']);
+      expect(store.eventOverrides, isEmpty, reason: 'only what is shown changed');
+      store.addTask(DaySlot(monday), 'B');
+      expect(shown(device, monday), ['Team meeting', 'A', 'Call', 'Review', 'B']);
+    });
+
+    test('of items placed by hand, only those out of time order move', () async {
+      final device = Device();
+      await device.start();
+      final store = device.store;
+      String at(String title, int? hour) {
+        final id = store.addTask(DaySlot(monday), title)!;
+        if (hour != null) store.updateTask(id, time: () => hour * 60);
+        return id;
+      }
+
+      at('A', null);
+      at('Nine', 9);
+      at('B', null);
+      at('Eleven', 11);
+      at('C', null);
+      // Imported or typed last, but at eight and at ten.
+      at('Eight', 8);
+      at('Ten', 10);
+      expect(shown(device, monday), ['A', 'Eight', 'Nine', 'B', 'Ten', 'Eleven', 'C']);
+    });
+
+    test('a task without a time lands where it is dropped among them', () async {
+      final device = Device(text: feed([meeting(), review()]));
+      await device.start();
+      final store = device.store;
+      final meetingTime = store.itemsOn(monday).first.time!;
+      final a = store.addTask(DaySlot(monday), 'A')!;
+      final call = store.addTask(DaySlot(monday), 'Call')!;
+      store.updateTask(call, time: () => meetingTime - 60);
+      expect(shown(device, monday), ['A', 'Call', 'Team meeting', 'Review']);
+      // The place counts among the rows shown (Call, Team meeting, Review).
+      store.moveTask(a, DaySlot(monday), index: 2);
+      expect(shown(device, monday), ['Call', 'Team meeting', 'A', 'Review']);
+      store.moveTask(a, DaySlot(monday), index: 1);
+      expect(shown(device, monday), ['Call', 'A', 'Team meeting', 'Review']);
+      store.moveTask(a, DaySlot(monday), index: 3);
+      expect(shown(device, monday), ['Call', 'Team meeting', 'Review', 'A']);
+      store.moveTask(a, DaySlot(monday), index: 0);
+      expect(shown(device, monday), ['A', 'Call', 'Team meeting', 'Review']);
+    });
+
+    test('an item with a time dragged above an earlier one goes back after it', () async {
+      final device = Device(text: feed([meeting(), review()]));
+      final calendars = await device.start();
+      final store = device.store;
+      store.addTask(DaySlot(monday), 'A');
+      store.moveTask(only0(calendars, monday, 'Review'), DaySlot(monday), index: 0);
+      expect(shown(device, monday), ['Team meeting', 'Review', 'A']);
+    });
+
+    test('the other device shows the same order', () async {
+      final folder = MemoryStorage();
+      Future<void> sync(Device device) =>
+          SyncEngine(device.store, folder, folder: 'fweek').sync();
+      final desk = Device(text: feed([meeting(), review()]));
+      final phone = Device(text: feed([meeting(), review()]));
+      await desk.start();
+      await phone.start();
+      final meetingTime = desk.store.itemsOn(monday).first.time!;
+      final a = desk.store.addTask(DaySlot(monday), 'A')!;
+      final call = desk.store.addTask(DaySlot(monday), 'Call')!;
+      desk.store.updateTask(call, time: () => meetingTime + 60);
+      desk.store.moveTask(a, DaySlot(monday), index: 3);
+      expect(shown(desk, monday), ['Team meeting', 'Call', 'Review', 'A']);
+      await sync(desk);
+      await sync(phone);
+      expect(shown(phone, monday), ['Team meeting', 'Call', 'Review', 'A']);
+    });
+
+    test('done tasks sorted down are in time order among themselves', () async {
+      final device = Device();
+      await device.start();
+      final store = device.store;
+      store.setSetting(Settings.sortDoneDown, true);
+      final late = store.addTask(DaySlot(monday), 'Late')!;
+      final open = store.addTask(DaySlot(monday), 'Open')!;
+      final soon = store.addTask(DaySlot(monday), 'Soon')!;
+      store.updateTask(late, time: () => 18 * 60);
+      store.updateTask(open, time: () => 12 * 60);
+      store.updateTask(soon, time: () => 8 * 60);
+      expect(shown(device, monday), ['Soon', 'Open', 'Late']);
+      store.setDone(late, true);
+      store.setDone(soon, true);
+      expect(shown(device, monday), ['Open', 'Soon', 'Late']);
     });
   });
 
