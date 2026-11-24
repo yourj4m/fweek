@@ -855,6 +855,9 @@ void main() {
       final phone = Device(text: feed([meeting()]));
       final onDesk = await desk.start(), onPhone = await phone.start();
       final calendar = onDesk.subscriptions.single;
+      // After the phone's start, which writes the calendar's own name: in
+      // one millisecond the device ids would decide which write wins.
+      await Future<void>.delayed(const Duration(milliseconds: 5));
 
       onDesk.rename(calendar.id, 'Lab');
       onDesk.setColor(calendar.id, 'green');
