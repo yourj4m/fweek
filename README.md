@@ -1,11 +1,18 @@
 # fweek
 
-A minimal weekly planner for Linux (Wayland) and Android. Your week as ruled
-columns, a page of lists for what has no day yet, and nothing else in the way.
+A minimal weekly planner for Windows, Linux (Wayland) and Android. Your
+week as ruled columns, a page of lists for what has no day yet, and nothing
+else in the way.
 
 Local-first: everything is stored on your machine and the app works offline.
-Optionally it keeps your devices in step through a folder in your own
-Nextcloud, with no other server involved.
+Optionally it keeps your devices in step through your own Google Drive or
+your own Nextcloud, with no other server involved.
+
+**Download** the latest version from the
+[release page](https://github.com/yourj4m/fweek/releases): a setup program
+for Windows, a `.tar.gz` for Linux (unpack, then `./install.sh`), an APK for
+Android. Website, privacy policy and terms:
+https://yourj4m.github.io/planner-oauth-site/
 
 ## Quickstart 
 For Android
@@ -24,9 +31,21 @@ build/linux/x64/release/bundle/fweek    # run
 tools/install-local.sh                     # optional: add to the application menu
 ```
 
+For Windows (on a Windows machine with Flutter and Visual Studio's C++
+tools; GitHub Actions does this for every push)
+```sh
+flutter build windows --release            # build/windows/x64/runner/Release/fweek.exe
+iscc windows\installer\fweek.iss            # optional: the installer, into dist\
+```
+
+Releases: pushing a tag such as `v1.2.0` makes `.github/workflows/build.yml`
+build all three and publish them on the release page. Google Drive sync in
+those builds, and the signed APK, need repository secrets: see
+[docs/google-setup.md](docs/google-setup.md).
+
 ## Status
 
-Test builds for Linux and Android, from the same code. What works:
+Builds for Windows, Linux and Android, from the same code. What works:
 
 - **Week view**: the five weekdays side by side across the window, and
   Saturday and Sunday in a row of their own under them, half the width
@@ -141,7 +160,7 @@ Test builds for Linux and Android, from the same code. What works:
   a tap opens one (back, or the arrow, returns to the list). The settings
   open again on the section last looked at, and a failed sync's message
   leads straight to the section that can put it right.
-- **Sync** through Nextcloud (Settings → Sync): on start, every five minutes,
+- **Sync** through Google Drive or Nextcloud (Settings → Sync): on start, every five minutes,
   a few seconds after you stop editing, and on request.
 - **Sync everything**: the button with the two arrows in the header (or S;
   on a phone, scroll to the top of the page and pull it down) does at once
@@ -363,6 +382,28 @@ devices cannot overwrite each other, and a sync that is interrupted is simply
 finished by the next one. A device that has piled up many files merges them
 into one. Nothing is encrypted beyond the connection itself: anyone who can
 read the folder can read the planner.
+
+#### Google Drive
+
+Settings → Sync → **Google Drive** → *Connect Google account* opens Google's
+own sign-in page in the browser; after the account is chosen and access
+allowed, Google sends the browser back to a one-time address on this device
+(`http://127.0.0.1:<port>`, with PKCE), and the app takes it from there. It
+asks for the account's address and for its own hidden folder in that
+account's Drive (`drive.appdata`) only: it cannot see the user's files, and
+the files it keeps there are invisible in Drive. Sync then works exactly as
+with Nextcloud, with the same files, named by their whole path in that
+folder. The long-lived token is kept in the keyring (Windows: encrypted with
+the Windows login; Android: the Keystore), never in the planner.
+Disconnecting withdraws the app's access at Google and leaves the files
+(Drive → Settings → Manage apps → fweek → Delete hidden app data removes
+them).
+
+Only builds made with a Google sign-in client offer it; how to register one,
+and the pages the consent screen links to, is in
+[docs/google-setup.md](docs/google-setup.md). To try it without Google,
+`tools/google-smoke.sh` runs the real app against a stand-in
+(`test/sync/fake_google.dart`).
 
 Do not copy `planner.db` between devices to move your data; connect the new
 device to sync, or use Backup and Restore. Two copies of one database share a

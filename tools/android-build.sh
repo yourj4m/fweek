@@ -57,8 +57,28 @@ number="$(git -C "$root" rev-list --count HEAD)"
 # the icons in use was not always made again when the code used more (see
 # tools/desktop-build.sh).
 rm -rf "$root/.dart_tool/flutter_build" "$root/build/flutter_assets"
+# The Google sign-in client for Google Drive sync, if one is set up: the
+# JSON file Google Cloud offers for a "Desktop app" client, saved as
+# ~/.config/fweek/google-oauth.json (outside the repository). Without it
+# the build offers Nextcloud only.
+google_defines=()
+google_file="${FWEEK_GOOGLE_OAUTH:-$HOME/.config/fweek/google-oauth.json}"
+if [ -f "$google_file" ]; then
+  read -r google_id google_secret < <(python3 - "$google_file" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+client = data.get("installed") or data.get("web") or data
+print(client.get("client_id", ""), client.get("client_secret", ""))
+PY
+)
+  if [ -n "$google_id" ] && [ -n "$google_secret" ]; then
+    google_defines=(--dart-define="FWEEK_GOOGLE_CLIENT_ID=$google_id"
+                    --dart-define="FWEEK_GOOGLE_CLIENT_SECRET=$google_secret")
+    echo "Google Drive sync: client from $google_file"
+  fi
+fi
 "$dev" flutter build apk --release --split-per-abi --target-platform "$platform" \
-  --build-number "$number"
+  --build-number "$number" "${google_defines[@]}"
 apk="$root/build/app/outputs/flutter-apk/app-$abi-release.apk"
 echo "Built $apk ($(du -h "$apk" | cut -f1))"
 
