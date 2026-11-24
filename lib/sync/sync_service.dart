@@ -198,11 +198,8 @@ class SyncService extends ChangeNotifier {
       endpoints: _googleEndpoints,
       // On a phone the browser stays in front once signed in; the page it
       // lands on has a link back into the app.
-      returnTo: Platform.isAndroid
-          ? 'intent:#Intent;action=android.intent.action.MAIN;'
-              'category=android.intent.category.LAUNCHER;'
-              'package=io.github.yourj4m.weektodo;end'
-          : null,
+      // (`fweek:` addresses open ReturnActivity.kt.)
+      returnTo: Platform.isAndroid ? 'fweek://signed-in' : null,
     );
   }
 

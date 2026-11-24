@@ -30,6 +30,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- "Back to fweek" on the page the browser shows after Google sign-in:
+             brings fweek forward and closes (ReturnActivity.kt). -->
+        <activity
+            android:name=".ReturnActivity"
+            android:exported="true"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fweek" />
+            </intent-filter>
+        </activity>
         <!-- Reminder alarms, and the events after which they must be set again. -->
         <receiver
             android:name=".ReminderReceiver"
