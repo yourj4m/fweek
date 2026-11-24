@@ -43,13 +43,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   // One window per planner: a second start shows the first. Test runs
   // point the app at a data folder of their own, and may run side by side.
-  const wchar_t* data_dir = _wgetenv(L"FWEEK_DATA_DIR");
-  HANDLE instance = nullptr;
-  if (data_dir == nullptr || *data_dir == L'\0') {
-    instance = ::CreateMutexW(nullptr, TRUE, kInstanceMutex);
-    if (instance != nullptr && ::GetLastError() == ERROR_ALREADY_EXISTS) {
+  // (GetEnvironmentVariableW, not _wgetenv: the build turns MSVC's warning
+  // about the latter into an error.)
+  const bool own_data_dir =
+      ::GetEnvironmentVariableW(L"FWEEK_DATA_DIR", nullptr, 0) > 1;
+  HANDLE running = nullptr;
+  if (!own_data_dir) {
+    running = ::CreateMutexW(nullptr, TRUE, kInstanceMutex);
+    if (running != nullptr && ::GetLastError() == ERROR_ALREADY_EXISTS) {
       ShowRunningInstance();
-      ::CloseHandle(instance);
+      ::CloseHandle(running);
       return EXIT_SUCCESS;
     }
   }
@@ -92,6 +95,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   ::CoUninitialize();
-  if (instance != nullptr) ::CloseHandle(instance);
+  if (running != nullptr) ::CloseHandle(running);
   return EXIT_SUCCESS;
 }

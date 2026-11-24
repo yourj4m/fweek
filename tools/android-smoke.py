@@ -68,6 +68,12 @@ def to_middle(title):
     navigation buttons are. Where things end up on the page depends on the
     day of the week, so nothing is taken to be where it was."""
     width, height = ui.screen_size()
+    # Not on the screen at all: further down the week (the page shows today
+    # at its top, so what lies on a later day may be below it).
+    for _ in range(6):
+        if ui.find(re.escape(title)):
+            break
+        ui.swipe(width * 0.5, height * 0.7, width * 0.5, height * 0.35, 400, pause=0.9)
     for _ in range(8):
         node = task(title)
         if node.top > height * 0.55:
