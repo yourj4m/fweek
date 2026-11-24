@@ -28,10 +28,12 @@ tools/install-local.sh                     # optional: add to the application me
 
 Test builds for Linux and Android, from the same code. What works:
 
-- **Week view**: five weekday columns plus a stacked weekend, with as many
-  ruled rows as reach the bottom of the window (more when a day holds
-  more), so that the week fills a maximized window without scrolling; a
-  single-column layout below 1024 px.
+- **Week view**: the five weekdays side by side across the window, and
+  Saturday and Sunday in a row of their own under them, half the width
+  each, with three empty lines under the fuller of the two. The weekdays
+  get as many ruled rows as reach the bottom of the window (more when a
+  day holds more), so that the week fills a maximized window without
+  scrolling; a single-column layout below 1024 px.
 - **Tasks and events**: an item is a task, with a circle to tick it off, or
   an event, with none: an event is marked by a bar at its left and turns
   faint once it is over. New items are tasks unless Settings → General → "New
@@ -103,8 +105,10 @@ Test builds for Linux and Android, from the same code. What works:
   of the week is put into a list, or taken out, at the top of its card.
 - **Lists beside the week**: in a wide window (1240 px and up) the lists
   also open as a panel at the right of the week, to drag tasks straight
-  onto days, and from a day back into a list. A plain panel icon before
-  the views opens it; the one button on the panel shuts it (P does both).
+  onto days, and from a day back into a list. A plain panel icon in the
+  window's top right corner opens it, and the panel's own button, in that
+  same corner, shuts it, so two clicks on one spot open and shut it (P
+  does both).
   That icon only shows the lists beside the week; "Tasks" is the page.
   The line between the week and the panel is dragged to make the panel
   wider or narrower (a double click gives it its first width again); each

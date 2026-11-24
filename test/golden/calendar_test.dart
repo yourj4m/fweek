@@ -123,22 +123,34 @@ void main() {
         TextDecoration.none);
   });
 
-  desktopTest('an event over several days is one bar under the headings, across its days',
+  desktopTest('an event over several days is a bar under the headings of each row it touches',
       (tester) async {
     final store = seededStore();
     await pumpApp(tester, store, calendars: await calendarWith(tester, store));
-    // Friday and Saturday: one bar, not a row on each day.
-    expect(find.text('Conference'), findsOneWidget);
-    final bar = tester.getRect(
-        find.ancestor(of: find.text('Conference'), matching: find.byType(SpanBar)));
+    // Friday and Saturday: a bar under Friday's heading, and one under
+    // Saturday's in the weekend's row; not a row on each day.
+    expect(find.text('Conference'), findsNWidgets(2));
+    final bars = [
+      for (final e in find
+          .ancestor(of: find.text('Conference'), matching: find.byType(SpanBar))
+          .evaluate())
+        tester.getRect(find.byWidget(e.widget)),
+    ]..sort((a, b) => a.top.compareTo(b.top));
     final friday = tester.getRect(find.text('13 Nov'));
-    final saturday = tester.getRect(find.text('Sat'));
-    expect(bar.left, closeTo(friday.left, 1));
-    expect(bar.right, closeTo(saturday.right, 1));
+    final saturday = tester.getRect(find.text('14 Nov'));
+    final weekdays = bars.first, weekend = bars.last;
+    expect(weekdays.left, closeTo(friday.left, 1));
+    expect(weekdays.right, closeTo(tester.getRect(find.text('Today')).right, 1));
     // Directly under the headings and above every day's rows.
-    expect(bar.top, greaterThan(friday.bottom));
-    expect(bar.bottom, lessThan(tester.getRect(find.text('14:30 Thesis committee')).top));
-    expect(bar.bottom, lessThan(tester.getRect(find.textContaining('Buy oat milk')).top));
+    expect(weekdays.top, greaterThan(friday.bottom));
+    expect(weekdays.bottom, lessThan(tester.getRect(find.text('14:30 Thesis committee')).top));
+    expect(weekdays.bottom, lessThan(tester.getRect(find.textContaining('Buy oat milk')).top));
+    // The weekend's: from Saturday's left edge, under its heading, above its
+    // tasks; Sunday has none of it.
+    expect(weekend.left, closeTo(saturday.left, 1));
+    expect(weekend.right, closeTo(tester.getRect(find.text('Sat')).right, 1));
+    expect(weekend.top, greaterThan(saturday.bottom));
+    expect(weekend.bottom, lessThan(tester.getRect(find.text('Mark me complete')).top));
   });
 
   desktopTest('an event opens as a card: day, time from start to end and calendar on top, '

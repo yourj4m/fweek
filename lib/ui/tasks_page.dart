@@ -1202,7 +1202,7 @@ class ListPanel extends StatelessWidget {
         children: [
           Padding(
             padding: EdgeInsets.fromLTRB(
-                Dim.pagePadding, Dim.pagePadding + bars.top, Dim.pagePadding - 8, 0),
+                Dim.pagePadding, Dim.pagePadding + bars.top, Dim.pagePadding + bars.right, 0),
             child: SizedBox(
               height: Dim.headerHeight,
               child: Row(
@@ -1210,8 +1210,9 @@ class ListPanel extends StatelessWidget {
                   Expanded(
                     child: Text('Lists', style: context.text.heading24, maxLines: 1),
                   ),
-                  // The one button that shuts the panel. The Tasks page
-                  // itself is a view, chosen in the header.
+                  // The one button that shuts the panel, in the window's
+                  // corner where the header's opened it (see the planner's
+                  // header). The Tasks page itself is a view, chosen there.
                   Semantics(
                     container: true,
                     child: AppButton(

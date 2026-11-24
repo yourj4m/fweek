@@ -1018,14 +1018,13 @@ void main() {
     double rowsOf(WidgetTester tester, Day day) =>
         tester.getSize(find.byWidgetPredicate((w) => w is TaskListBody && w.slot == DaySlot(day))).height /
         42;
-    /// The reference week with a quiet weekend (the two days stacked in
-    /// the last column need rows of their own for what they hold) and
-    /// [more] lists besides Someday.
+    final saturday = monday.addDays(5), sunday = monday.addDays(6);
     /// The reference week with a light weekend: one task each on Saturday
-    /// and Sunday (the two share a column, and so its rows).
+    /// and Sunday. The weekend is a row of its own under the weekdays, its
+    /// items and three empty lines; the weekdays take what it leaves.
     PlannerStore lightWeekend() {
       final store = seededStore();
-      for (final day in [monday.addDays(5), monday.addDays(6)]) {
+      for (final day in [saturday, sunday]) {
         for (final task in store.tasksOn(day).skip(1).toList()) {
           store.deleteTask(task.id, wholeSeries: true);
         }
@@ -1037,8 +1036,29 @@ void main() {
         (tester) async {
       await pumpApp(tester, lightWeekend(), size: const Size(1536, 790));
       expect(scrollRoom(tester), 0);
-      expect(rowsOf(tester, monday), 14, reason: 'as many rows as reach the bottom');
+      expect(rowsOf(tester, saturday), 4, reason: 'one task and three empty lines');
+      expect(rowsOf(tester, sunday), 4);
+      expect(rowsOf(tester, monday), 8, reason: 'as many rows as reach the weekend');
       await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/week_1536_fit.png'));
+    });
+
+    desktopTest('the weekend has three empty lines under the fuller day, the same for both',
+        (tester) async {
+      final store = lightWeekend();
+      for (var i = 0; i < 4; i++) {
+        store.addTask(DaySlot(saturday), 'Weekend $i');
+      }
+      await pumpApp(tester, store, size: const Size(1536, 790));
+      expect(rowsOf(tester, saturday), 8);
+      expect(rowsOf(tester, sunday), 8);
+      // Saturday and Sunday side by side, each half the width; the
+      // weekdays above them, five across.
+      final sat = tester.getRect(find.text('14 Nov')), sun = tester.getRect(find.text('15 Nov'));
+      expect(sat.top, sun.top);
+      // The weekdays gave way to it, down to their fewest rows.
+      expect(rowsOf(tester, monday), 4);
+      expect(sat.top, greaterThan(tester.getRect(find.text('9 Nov')).bottom + 4 * 42));
+      expect(tester.getTopLeft(find.text('14 Nov')).dx, tester.getTopLeft(find.text('9 Nov')).dx);
     });
 
     desktopTest('with a band of several-day events over the week it still fits', (tester) async {
@@ -1046,7 +1066,7 @@ void main() {
       await pumpApp(tester, store,
           size: const Size(1536, 790), calendars: await calendarWith(tester, store));
       expect(scrollRoom(tester), 0);
-      expect(rowsOf(tester, monday), 13);
+      expect(rowsOf(tester, monday), 6);
     });
 
     desktopTest('a taller window has more rows, a lower one fewer; the week keeps its place',
@@ -1055,11 +1075,12 @@ void main() {
       final top = tester.getTopLeft(find.text('9 Nov')).dy;
       await pumpApp(tester, lightWeekend(), size: const Size(1536, 1400));
       expect(scrollRoom(tester), 0);
-      expect(rowsOf(tester, monday), 28);
+      expect(rowsOf(tester, monday), 22);
+      expect(rowsOf(tester, saturday), 4, reason: 'the weekend does not grow with the window');
       expect(tester.getTopLeft(find.text('9 Nov')).dy, top);
-      await pumpApp(tester, lightWeekend(), size: const Size(1536, 520));
+      await pumpApp(tester, lightWeekend(), size: const Size(1536, 650));
       expect(scrollRoom(tester), 0);
-      expect(rowsOf(tester, monday), 7);
+      expect(rowsOf(tester, monday), 5);
       expect(tester.getTopLeft(find.text('9 Nov')).dy, top);
     });
 
@@ -1073,20 +1094,20 @@ void main() {
       expect(scrollRoom(tester), greaterThan(0));
     });
 
-    desktopTest('a very low window keeps the rows its days need, at least four, and scrolls',
+    desktopTest('a very low window keeps at least four rows for the weekdays, and scrolls',
         (tester) async {
       await pumpApp(tester, lightWeekend(), size: const Size(1536, 300));
-      // Saturday and Sunday, one task each and a line to type on, with the
-      // second heading and the gap between them: six.
-      expect(rowsOf(tester, monday), 6);
+      expect(rowsOf(tester, monday), 4);
+      expect(rowsOf(tester, saturday), 4);
       expect(scrollRoom(tester), greaterThan(0));
 
       final store = lightWeekend();
-      for (final day in [monday.addDays(5), monday.addDays(6)]) {
+      for (final day in [saturday, sunday]) {
         store.deleteTask(store.tasksOn(day).single.id, wholeSeries: true);
       }
       await pumpApp(tester, store, size: const Size(1536, 300));
       expect(rowsOf(tester, monday), 4);
+      expect(rowsOf(tester, saturday), 3, reason: 'an empty weekend: three lines');
     });
   });
 

@@ -834,7 +834,7 @@ void main() {
       final panel = find.byType(ListPanel);
       final line = find.bySemanticsLabel('Width of the lists panel');
       double width() => tester.getSize(panel).width - Dim.pagePadding;
-      double weekEnds() => tester.getTopRight(find.text('Sat')).dx;
+      double weekEnds() => tester.getTopRight(find.text('Sun')).dx;
       expect(width(), ListPanel.defaultWidth);
       // The line to take hold of is the panel's edge.
       expect(tester.getCenter(line).dx, tester.getTopLeft(panel).dx);
@@ -905,10 +905,17 @@ void main() {
       final show = find.bySemanticsLabel('Show the lists beside the week (P)');
       final hide = find.bySemanticsLabel('Hide the lists (P)');
       expect((show.evaluate().length, hide.evaluate().length), (1, 0));
+      // In the window's top right corner, after the arrows.
+      final corner = tester.getCenter(show);
+      expect(corner.dx, greaterThan(tester.getCenter(find.bySemanticsLabel('Next')).dx));
+      expect(tester.getRect(show).right, closeTo(1536 - Dim.pagePadding, 1));
 
       await tester.tap(show);
       await tester.pumpAndSettle();
       expect(find.byType(ListPanel), findsOneWidget);
+      // The button that hides them is in the same place: a second click
+      // where the first was undoes it.
+      expect(tester.getCenter(hide), corner);
       // The panel has the one button that shuts it; the header has none
       // for it now, and the way to the Tasks page is said once, by name.
       expect((show.evaluate().length, hide.evaluate().length), (0, 1));
@@ -923,13 +930,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ListPanel), findsNothing);
       expect((show.evaluate().length, hide.evaluate().length), (1, 0));
-      // Neither on the month nor on the Tasks page.
+      expect(tester.getCenter(show), corner);
+      // Neither on the month nor on the Tasks page; the arrows keep their
+      // place on every page all the same.
+      final arrows = tester.getRect(find.bySemanticsLabel('Next'));
       await tester.tap(find.bySemanticsLabel('Month'));
       await tester.pumpAndSettle();
       expect(show, findsNothing);
+      expect(tester.getRect(find.bySemanticsLabel('Next')), arrows);
       await tester.tap(find.bySemanticsLabel('Tasks'));
       await tester.pumpAndSettle();
       expect(show, findsNothing);
+      expect(tester.getRect(find.bySemanticsLabel('Next list')), arrows);
     });
 
     desktopTest('a button that is only an icon says what it does when the pointer rests on it',

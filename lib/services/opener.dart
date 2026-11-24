@@ -19,14 +19,13 @@ Future<({int exitCode, String output})> _runProgram(
 /// browser, the mail program, the map app. The app shows no web pages or
 /// maps of its own.
 class Opener {
-  Opener({this.android, ProgramRunner? run, TargetPlatform? platform})
-      : _run = run ?? _runProgram,
-        _platform = platform;
+  Opener({this.android, ProgramRunner? run, this.platform})
+      : _run = run ?? _runProgram;
 
   /// The system whose programs are asked; by default the one the app runs
   /// on (tests name one).
-  final TargetPlatform? _platform;
-  TargetPlatform get _system => _platform ?? defaultTargetPlatform;
+  final TargetPlatform? platform;
+  TargetPlatform get _system => platform ?? defaultTargetPlatform;
 
   /// On Android: asks the system to view an address; false when no app
   /// takes it. Null elsewhere.

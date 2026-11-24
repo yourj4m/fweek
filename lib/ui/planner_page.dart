@@ -622,18 +622,6 @@ class _Header extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              // The lists beside the week, where there is room for them.
-              // This only opens the panel, which has the button that shuts
-              // it; it stands first so that nothing else moves when it goes.
-              if (!tasks && panelRoom && !app.monthView && !app.panel) ...[
-                AppButton(
-                  icon: AppIcons.panelRightOpen,
-                  kind: ButtonKind.ghost,
-                  tooltip: 'Show the lists beside the week (P)',
-                  onTap: () => app.setPanel(true),
-                ),
-                gap,
-              ],
               if (views != null) ...[views, gap],
               AppButton(
                 icon: AppIcons.calendarPlus,
@@ -671,6 +659,24 @@ class _Header extends StatelessWidget {
                 tooltip: tasks ? 'Next list' : 'Next',
                 onTap: _turn(context, app, 1),
               ),
+              // The lists beside the week, where there is room for them: in
+              // the window's top right corner. Opened, the panel has its
+              // button that shuts it in that same corner, so the button
+              // stays under the pointer either way. Where the lists cannot
+              // open (the month, the Tasks page) its place stays, so that
+              // the arrows keep theirs on every page.
+              if (panelRoom && !(app.panel && !tasks && !app.monthView)) ...[
+                gap,
+                if (!tasks && !app.monthView)
+                  AppButton(
+                    icon: AppIcons.panelRightOpen,
+                    kind: ButtonKind.ghost,
+                    tooltip: 'Show the lists beside the week (P)',
+                    onTap: () => app.setPanel(true),
+                  )
+                else
+                  const SizedBox.square(dimension: Dim.controlMedium),
+              ],
             ],
           );
         },
@@ -1469,7 +1475,6 @@ class _DayColumn extends StatelessWidget {
     required this.narrow,
     required this.onOpen,
     this.spans = const [],
-    this.spanRow,
     this.heading = true,
   });
 
@@ -1488,10 +1493,6 @@ class _DayColumn extends StatelessWidget {
   /// day rather than in a band across the week.
   final List<Task> spans;
 
-  /// Height of the slot each of [spans] takes, when they must keep to the
-  /// ruled grid.
-  final double? spanRow;
-
   final bool heading;
 
   @override
@@ -1501,7 +1502,7 @@ class _DayColumn extends StatelessWidget {
         children: [
           if (heading) _DayHeader(day: day, narrow: narrow),
           if (spans.isNotEmpty)
-            DaySpans(day: day, spans: spans, onOpen: onOpen, rowHeight: spanRow),
+            DaySpans(day: day, spans: spans, onOpen: onOpen),
           TaskListBody(
             slot: DaySlot(day),
             tasks: tasks,
@@ -1568,7 +1569,10 @@ class _WideLayout extends StatelessWidget {
           Padding(
             padding:
                 EdgeInsets.fromLTRB(padding.left, padding.top, padding.right, 0),
-            child: const _Header(narrow: false),
+            child: _Header(
+              narrow: false,
+              panelRoom: MediaQuery.sizeOf(context).width >= panelFrom,
+            ),
           ),
           const SizedBox(height: 28),
           Expanded(child: TasksBody(onOpen: onOpen)),
@@ -1591,7 +1595,7 @@ class _WideLayout extends StatelessWidget {
                   .withSpans(context.store.spansBetween(first, first.addDays(6)))
                   .spans,
               first,
-              first.addDays(5),
+              first.addDays(4),
             ).length;
       final fit = _Fit.of(
         constraints.maxHeight - padding.vertical,
@@ -1789,9 +1793,21 @@ class _WeekGrid extends StatelessWidget {
 
   final ValueChanged<Task> onOpen;
 
-  /// Ruled rows of a weekday when no day needs more: as many as the window
-  /// has room for (see [_Fit]).
+  /// Ruled rows the window has room for under the weekdays' headings (see
+  /// [_Fit]): the weekdays take what the weekend below them leaves.
   final int minRows;
+
+  /// Empty lines under the last item of Saturday and Sunday.
+  static const weekendSpare = 3;
+
+  /// Between the weekdays and the weekend.
+  static double get weekendGap => Dim.row;
+
+  /// The weekdays never get fewer rows than this; a shorter window scrolls.
+  static const fewestWeekdayRows = _Fit.fewestRows;
+
+  /// Height of a band of several-day events with [lanes] lanes.
+  static double bandHeight(int lanes) => lanes == 0 ? 0 : 6 + lanes * SpanBar.lane;
 
   @override
   Widget build(BuildContext context) {
@@ -1811,60 +1827,45 @@ class _WeekGrid extends StatelessWidget {
     };
     List<Task> tasks(Day d) => items[d]!;
 
-    // Five single columns, then the last two days stacked in the sixth.
-    // Events over several days lie in a band across the six columns, right
-    // under the headings; those reaching the seventh day show again under
-    // its heading, each on a ruled row of its own.
-    final upper = days[5], lower = days[6];
-    final band = SpanLanes.pack(range.spans, days.first, upper);
-    final lowerSpans = range.spansOn(lower).toList();
+    // The five weekdays side by side across the page, and the weekend in a
+    // row of its own under them, the two days sharing the page's width.
+    // Events over several days lie in a band right under each row's
+    // headings; one running into the weekend shows in both bands.
+    final weekdays = days.take(5).toList();
+    final weekend = days.skip(5).toList();
+    final weekdayBand = SpanLanes.pack(range.spans, weekdays.first, weekdays.last);
+    final weekendBand = SpanLanes.pack(range.spans, weekend.first, weekend.last);
 
-    /// Lines a day takes in all: its items and the line to type on, but no
-    /// fewer than [minimum].
-    int lines(Day d, int minimum) => rowsNeeded(drag, DaySlot(d), tasks(d), minimum);
-
-    var rows = minRows;
-    for (final d in days.take(5)) {
-      final needed = lines(d, minRows);
+    // The weekend: its items and three empty lines, the fuller day's count
+    // for both (the first empty line is the one typed on).
+    var weekendRows = 0;
+    for (final d in weekend) {
+      final items = rowsNeeded(drag, DaySlot(d), tasks(d), 0) - 1;
+      if (items + weekendSpare > weekendRows) weekendRows = items + weekendSpare;
+    }
+    // The weekdays fill what the window has left above it.
+    final weekendHeight = weekendGap +
+        Dim.dayHeader +
+        bandHeight(weekendBand.length) +
+        weekendRows * Dim.row;
+    var rows = (minRows - (weekendHeight / Dim.row).ceil())
+        .clamp(fewestWeekdayRows, _Fit.mostRows);
+    for (final d in weekdays) {
+      final needed = rowsNeeded(drag, DaySlot(d), tasks(d), rows);
       if (needed > rows) rows = needed;
     }
-    // The two days stacked in the last column share what a weekday has,
-    // half each (the second heading and a gap take two rows).
-    final weekend = ((minRows - 2) ~/ 2).clamp(1, _Fit.mostRows);
-    final upperRows = lines(upper, weekend);
-    var lowerRows = lines(lower, weekend) + lowerSpans.length;
-    // Both stacks share a height in rows: a weekday is its rows; the
-    // weekend is both bodies, a one-row gap and the second heading.
-    final stacked = upperRows + lowerRows + 2;
-    if (stacked > rows) {
-      rows = stacked;
-    } else {
-      lowerRows = rows - upperRows - 2;
-    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
+    Widget headings(List<Day> row) => Row(
           spacing: Dim.columnGap,
           children: [
-            for (final d in days.take(6))
-              Expanded(child: _DayHeader(day: d, narrow: false)),
+            for (final d in row) Expanded(child: _DayHeader(day: d, narrow: false)),
           ],
-        ),
-        if (!band.isEmpty)
-          SpanBand(
-            first: days.first,
-            columns: 6,
-            lanes: band,
-            gap: Dim.columnGap,
-            onOpen: onOpen,
-          ),
-        Row(
+        );
+    Widget columns(List<Day> row, int rows) => Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           spacing: Dim.columnGap,
           children: [
-            for (final d in days.take(5))
+            for (final d in row)
               Expanded(
                 child: _DayColumn(
                   day: d,
@@ -1875,33 +1876,33 @@ class _WeekGrid extends StatelessWidget {
                   onOpen: onOpen,
                 ),
               ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _DayColumn(
-                    day: upper,
-                    heading: false,
-                    tasks: tasks(upper),
-                    rows: upperRows,
-                    narrow: false,
-                    onOpen: onOpen,
-                  ),
-                  SizedBox(height: Dim.row),
-                  _DayColumn(
-                    day: lower,
-                    tasks: tasks(lower),
-                    spans: lowerSpans,
-                    spanRow: Dim.row,
-                    rows: lowerRows - lowerSpans.length,
-                    narrow: false,
-                    onOpen: onOpen,
-                  ),
-                ],
-              ),
-            ),
           ],
-        ),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        headings(weekdays),
+        if (!weekdayBand.isEmpty)
+          SpanBand(
+            first: weekdays.first,
+            columns: weekdays.length,
+            lanes: weekdayBand,
+            gap: Dim.columnGap,
+            onOpen: onOpen,
+          ),
+        columns(weekdays, rows),
+        SizedBox(height: weekendGap),
+        headings(weekend),
+        if (!weekendBand.isEmpty)
+          SpanBand(
+            first: weekend.first,
+            columns: weekend.length,
+            lanes: weekendBand,
+            gap: Dim.columnGap,
+            onOpen: onOpen,
+          ),
+        columns(weekend, weekendRows),
       ],
     );
   }

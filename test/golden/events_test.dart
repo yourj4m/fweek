@@ -275,7 +275,9 @@ void main() {
       await tap(tester, form);
       final trip = named(store, 'Trip to Lyon');
       expect((trip.date, trip.endDay), (Day(2026, 11, 12), Day(2026, 11, 14)));
-      expect(find.bySemanticsLabel('Event over several days: Trip to Lyon'), findsOneWidget);
+      // Thursday to Saturday: a bar over the weekdays and one over the
+      // weekend, in the row of its own under them.
+      expect(find.bySemanticsLabel('Event over several days: Trip to Lyon'), findsNWidgets(2));
     });
 
     desktopTest('an end day before the start puts the event on that day', (tester) async {
@@ -493,7 +495,8 @@ void main() {
       final id = store.addItem(
           day: today, endDay: today.addDays(1), title: 'Night train', time: 22 * 60, end: 7 * 60);
       await pumpApp(tester, store, size: const Size(1536, 790));
-      final bar = find.bySemanticsLabel('Event over several days: 22:00 Night train');
+      // Friday into Saturday: its bar over the weekdays.
+      final bar = find.bySemanticsLabel('Event over several days: 22:00 Night train').first;
       await tap(tester, bar);
       expect(find.text('Fri, 13 – Sat, 14 Nov 2026'), findsOneWidget);
       expect(find.text('– Sat 7:00'), findsOneWidget);

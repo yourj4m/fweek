@@ -159,7 +159,7 @@ key Escape; sleep 0.4
 
 # Drag the second task from Monday to Wednesday.
 at 70 217; press; sleep 0.1
-for x in 90 150 250 400 520 560; do at "$x" 300; done
+for x in 90 150 250 400 560 700; do at "$x" 300; done
 shot 04-dragging
 release; sleep 0.6
 shot 05-dropped
@@ -223,7 +223,7 @@ today="$(date +%F)"
 # month after (the form is 512 wide, centred; the month opens under the end
 # day, its arrow for the next month at +261,+26, the days from +27,+89 in
 # steps of 39 by 38).
-click 1212 48; sleep 0.8
+click 1166 48; sleep 0.8
 type_text "Smoke trip"
 click 666 264; sleep 0.7
 shot 07l-end-day
@@ -239,13 +239,13 @@ trip_first="$(field 'Smoke trip' date)"; trip_last="$(field 'Smoke trip' end_dat
 
 # The header names its views: a click on Tasks, and on Week back again.
 shot 07o-week
-click 1146 48
+click 1100 48
 wait_for_change 07o-week 07p-tasks 1400x240+10+14 "the header's Tasks leads to the Tasks page"
-click 998 48; sleep 0.8
+click 952 48; sleep 0.8
 
 # The header's sync button: with nothing connected it still keeps a copy of
 # the planner beside it, one file for the day.
-click 1258 48; sleep 1.5
+click 1212 48; sleep 1.5
 shot 07q-synced
 copy="$data/backups/planner-$(date +%F).json"
 [ -s "$copy" ] && grep -q '"Smoke trip"' "$copy" \
@@ -293,16 +293,33 @@ PY
 # week; dropped on Wednesday it is planned for that day and still in its
 # list.
 at 440 174; press; sleep 0.1
-for p in "470 170" "700 140" "900 100" "980 60" "998 48"; do at $p; done
+for p in "470 170" "700 140" "900 100" "940 60" "952 48"; do at $p; done
 sleep 1.3
 shot 07g-carried
-for p in "1200 200" "900 300" "640 320" "600 330"; do at $p; done
+for p in "1200 200" "900 300" "740 320" "700 330"; do at $p; done
 sleep 0.4
 release; sleep 0.8
 shot 07h-planned
 [ "$(field Stalker date)" = "$wednesday" ] && [ "$(field Stalker list_id)" = "$films" ] \
   && pass "held on the header's Week, a task is carried to the week and planned for a day" \
   || fail "the carried task is on '$(field Stalker date)' (wanted $wednesday), in list '$(field Stalker list_id)'"
+
+# The lists button keeps to the window's top right corner: a click there
+# opens the lists, a second click on the same spot shuts them.
+panel_setting() {
+  python3 - "$data/planner.db" <<'PY'
+import sqlite3, sys
+row = sqlite3.connect(sys.argv[1]).execute(
+    "select value from meta where key = 'local.list_panel'").fetchone()
+print(row[0] if row else "")
+PY
+}
+click 1396 48; sleep 0.8
+opened="$(panel_setting)"
+click 1396 48; sleep 0.8
+[ "$opened" = "true" ] && [ "$(panel_setting)" = "false" ] \
+  && pass "the lists button opens and shuts the lists from the same spot" \
+  || fail "two clicks on the lists button's corner gave '$opened', then '$(panel_setting)'"
 
 # The lists beside the week (P), and away again.
 type_text p; sleep 0.8

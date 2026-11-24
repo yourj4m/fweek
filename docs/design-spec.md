@@ -333,9 +333,9 @@ Every theme: text on page, card and menu at 7 : 1 or better; the muted text
   phone) with 4 px between and 6 px above the first. A bar is a wash of the
   calendar's colour (18 % on light, 26 % on dark pages) with the 3 px bar at
   its start, radius 6, square at an end where the event goes on beyond the
-  week. In the desktop week the band spans the six columns; Sunday, stacked
-  under Saturday, repeats its bars under its own heading on full ruled rows
-  so that the grid still lines up. In the single-column week every day
+  week. In the desktop week a band lies under the weekdays' headings and
+  another under the weekend's; an event running from Friday into Saturday
+  shows in both. In the single-column week every day
   shows its bars under its heading with "2/3" for the second of three days.
   In the month, bars sit at the top of each cell, flush with the cell's edge
   where the event continues, titled once per row.
@@ -377,8 +377,8 @@ suggestions, a note field, the colour swatches.
 
 The reference keeps its lists ("Someday") under the week. Here they have a
 page of their own, and the week takes the whole window: as many ruled rows
-as reach its bottom (at least 4), the two weekend days sharing their column
-half and half.
+as reach its bottom (at least 4), the weekend in a row of its own below
+(see "The weekend in a row of its own").
 
 - **Tasks page**, wide: a header like the week's ("Tasks", the number still
   to do at 20 %), 28 px, then every list as a column, 24 px apart, 220 to
@@ -496,3 +496,21 @@ General, Appearance, Tasks, Calendars, Sync, Data, Advanced.
   (Sync, Calendars or Data). The Sync row is marked with a red cloud while
   the last sync stands failed. What is typed into a section's fields stays
   when another section is looked at.
+
+### The weekend in a row of its own
+
+The reference stacks Saturday over Sunday in a sixth column. Here the
+desktop week gives the five weekdays the whole width, five columns 24 px
+apart, and puts the weekend in a second row one ruled row (42 px) below:
+Saturday and Sunday side by side, half the width each, under headings of
+their own and with their own band of several-day events. Both weekend days
+have the rows of the fuller one plus three empty ones; the weekdays take
+what the window has left above them, at least four.
+
+### The lists button
+
+The button that opens the lists beside the week sits in the window's top
+right corner, after the arrows; the panel's button that shuts them is in
+the same corner, so the pointer finds it where it clicked. Where the lists
+cannot open (the month, the Tasks page) its place is left empty, so the
+arrows keep theirs on every page.
