@@ -83,9 +83,10 @@ class SyncAll extends ChangeNotifier {
     Future<(String?, String?)> cloud() async {
       if (!sync.configured) return (null, null);
       await sync.syncNow();
+      final place = (sync.config?.isGoogle ?? false) ? 'Google Drive' : 'Nextcloud';
       return sync.state == SyncState.error
-          ? (null, 'Nextcloud: ${sync.message ?? 'the sync failed.'}')
-          : ('Nextcloud in sync', null);
+          ? (null, '$place: ${sync.message ?? 'the sync failed.'}')
+          : ('$place in sync', null);
     }
 
     Future<(String?, String?)> feeds() async {

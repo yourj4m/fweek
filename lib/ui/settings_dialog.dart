@@ -198,6 +198,7 @@ class _SettingsDialogState extends State<_SettingsDialog>
         if (sync.state == SyncState.error) {
           return (text: 'The last sync failed', failed: true);
         }
+        if (config.isGoogle) return (text: 'Google Drive: ${config.user}', failed: false);
         final host = Uri.tryParse(config.root.toString())?.host ?? config.server;
         return (text: 'Nextcloud on $host', failed: false);
       case SettingsSection.data:
@@ -911,7 +912,7 @@ class _DataPageState extends State<_DataPage> {
       children: [
         SettingsNote(
           'Your planner is stored on this ${isMobile ? 'device' : 'computer'}, '
-          'and in your Nextcloud if sync is on.',
+          'and in your Nextcloud or Google Drive if sync is on.',
         ),
         const SettingsHeading('Save to a file'),
         Wrap(
