@@ -170,7 +170,7 @@ class _SyncSettingsState extends State<SyncSettings> {
         Text(
           'Create an app password in Nextcloud under Settings → Security → '
           'Devices & sessions; that page also shows your login name. The '
-          'password is kept ${isMobile ? 'encrypted on this device' : 'in the system keyring'}.',
+          'password is kept $secretPlace.',
           style: muted,
         ),
         if (_error != null) ...[

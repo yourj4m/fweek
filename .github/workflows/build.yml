@@ -1,0 +1,291 @@
+# Builds fweek for Linux, Windows and Android on every push, and publishes
+# the three downloads on a release page for every version tag (v1.2.3).
+#
+# Secrets (repository settings -> Secrets and variables -> Actions), each
+# optional:
+#   ANDROID_KEYSTORE_BASE64    the signing key (android-release.jks) in base64;
+#   ANDROID_KEYSTORE_PASSWORD  its password. Without both, no APK is built:
+#                              one signed with another key would not install
+#                              over the app already on a phone.
+#   FWEEK_GOOGLE_CLIENT_ID     the Google sign-in client for Google Drive sync
+#   FWEEK_GOOGLE_CLIENT_SECRET (see the README); without them the builds
+#                              offer Nextcloud only.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  PUB_CACHE: ${{ github.workspace }}/.pub-cache
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      flutter: ${{ steps.v.outputs.flutter }}
+      name: ${{ steps.v.outputs.name }}
+      number: ${{ steps.v.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: v
+        shell: bash
+        run: |
+          echo "flutter=$(cat tools/flutter-version)" >> "$GITHUB_OUTPUT"
+          # A version tag names the version; other builds carry the
+          # pubspec's, marked as a development build.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            name="${GITHUB_REF#refs/tags/v}"
+          else
+            name="$(sed -n 's/^version: *\([0-9.]*\).*/\1/p' pubspec.yaml)-dev.$(git rev-parse --short HEAD)"
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          # The build number counts commits, as tools/android-build.sh does,
+          # so every later build is an update and never a downgrade.
+          echo "number=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ needs.version.outputs.flutter }}
+          channel: stable
+          cache: true
+      - name: Tests
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test 2>&1 | tee test.log || {
+            # The log of a failed run in one annotation, readable on the
+            # run's page without signing in.
+            echo "::error title=Tests failed::$(grep -E '\[E\]|Expected|Actual|Which:|FAIL|Error' test.log | tail -n 60 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          }
+
+  linux:
+    needs: version
+    # The oldest supported runner: the app then also runs on systems with an
+    # older C library than the newest.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ needs.version.outputs.flutter }}
+          channel: stable
+          cache: true
+      - name: Build tools and libraries
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang cmake ninja-build pkg-config libgtk-3-dev libsecret-1-dev liblzma-dev
+      - name: Build
+        shell: bash
+        env:
+          GOOGLE_ID: ${{ secrets.FWEEK_GOOGLE_CLIENT_ID }}
+          GOOGLE_SECRET: ${{ secrets.FWEEK_GOOGLE_CLIENT_SECRET }}
+        run: |
+          set -o pipefail
+          flutter build linux --release \
+            --build-name "${{ needs.version.outputs.name }}" \
+            --build-number "${{ needs.version.outputs.number }}" \
+            --dart-define=FWEEK_GOOGLE_CLIENT_ID="$GOOGLE_ID" \
+            --dart-define=FWEEK_GOOGLE_CLIENT_SECRET="$GOOGLE_SECRET" 2>&1 | tee build.log || {
+            echo "::error title=Linux build failed::$(tail -n 60 build.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          }
+      - name: Package
+        shell: bash
+        run: tools/package-linux.sh "${{ needs.version.outputs.name }}" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.tar.gz
+          retention-days: 14
+
+  windows:
+    needs: version
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ needs.version.outputs.flutter }}
+          channel: stable
+          cache: true
+      - name: The real app on Windows
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test integration_test -d windows 2>&1 | tee it.log || {
+            echo "::error title=Windows integration tests failed::$(tail -n 60 it.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          }
+      - name: Build
+        shell: bash
+        env:
+          GOOGLE_ID: ${{ secrets.FWEEK_GOOGLE_CLIENT_ID }}
+          GOOGLE_SECRET: ${{ secrets.FWEEK_GOOGLE_CLIENT_SECRET }}
+        run: |
+          set -o pipefail
+          flutter build windows --release \
+            --build-name "${{ needs.version.outputs.name }}" \
+            --build-number "${{ needs.version.outputs.number }}" \
+            --dart-define=FWEEK_GOOGLE_CLIENT_ID="$GOOGLE_ID" \
+            --dart-define=FWEEK_GOOGLE_CLIENT_SECRET="$GOOGLE_SECRET" 2>&1 | tee build.log || {
+            echo "::error title=Windows build failed::$(tail -n 60 build.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          }
+      - name: The built program starts, once
+        shell: pwsh
+        run: |
+          $exe = "build\windows\x64\runner\Release\fweek.exe"
+          $first = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 12
+          if ($first.HasExited) { Write-Output "::error title=fweek.exe::The program exited at once (code $($first.ExitCode))"; exit 1 }
+          $title = (Get-Process -Id $first.Id).MainWindowTitle
+          if ($title -ne "fweek") { Write-Output "::error title=fweek.exe::No window called fweek (found '$title')"; exit 1 }
+          # A second start shows the first window and ends.
+          $second = Start-Process $exe -PassThru
+          if (-not $second.WaitForExit(15000)) { Write-Output "::error title=fweek.exe::A second start kept running"; exit 1 }
+          $running = @(Get-Process fweek -ErrorAction SilentlyContinue).Count
+          if ($running -ne 1) { Write-Output "::error title=fweek.exe::$running copies running"; exit 1 }
+          $data = Join-Path $env:APPDATA "yourj4m\fweek\planner.db"
+          if (-not (Test-Path $data)) { Write-Output "::error title=fweek.exe::No planner at $data"; exit 1 }
+          Stop-Process -Id $first.Id
+          Write-Output "fweek.exe started, kept one window and its planner at $data"
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            $default = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            if (-not (Test-Path $default)) { choco install innosetup -y --no-progress | Out-Null }
+            $iscc = $default
+          } else { $iscc = $iscc.Source }
+          & $iscc "/DAppVersion=${{ needs.version.outputs.name }}" windows\installer\fweek.iss
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error title=Installer::Inno Setup failed"; exit 1 }
+      - name: The installer installs, and the installed program starts
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\fweek-*-windows-x64-setup.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER' -Wait
+          $exe = Join-Path $env:LOCALAPPDATA "Programs\fweek\fweek.exe"
+          if (-not (Test-Path $exe)) { Write-Output "::error title=Installer::Nothing at $exe"; exit 1 }
+          $link = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "fweek.lnk" | Select-Object -First 1
+          if (-not $link) { Write-Output "::error title=Installer::No Start-menu shortcut"; exit 1 }
+          $app = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 10
+          if ($app.HasExited) { Write-Output "::error title=Installer::The installed program exited (code $($app.ExitCode))"; exit 1 }
+          Stop-Process -Id $app.Id
+          $uninstall = Join-Path $env:LOCALAPPDATA "Programs\fweek\unins000.exe"
+          Start-Process $uninstall -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          Write-Output "Installed to $exe, started, uninstalled"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*-setup.exe
+          retention-days: 14
+
+  android:
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Signing key present?
+        id: key
+        shell: bash
+        env:
+          KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEY" ] && [ -n "$PASSWORD" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=No APK::The signing key is not among the repository's secrets; the APK is left out."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+      - uses: actions/setup-java@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        if: steps.key.outputs.present == 'true'
+        with:
+          flutter-version: ${{ needs.version.outputs.flutter }}
+          channel: stable
+          cache: true
+      - name: Build
+        if: steps.key.outputs.present == 'true'
+        shell: bash
+        env:
+          KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          GOOGLE_ID: ${{ secrets.FWEEK_GOOGLE_CLIENT_ID }}
+          GOOGLE_SECRET: ${{ secrets.FWEEK_GOOGLE_CLIENT_SECRET }}
+        run: |
+          set -o pipefail
+          store="$RUNNER_TEMP/android-release.jks"
+          echo "$KEY" | base64 -d > "$store"
+          alias="$(keytool -list -keystore "$store" -storepass "$PASSWORD" 2>/dev/null |
+            awk -F, '/PrivateKeyEntry/ && !found { print $1; found = 1 }')"
+          [ -n "$alias" ] || { echo "::error title=APK::The signing key could not be read"; exit 1; }
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$store" "$PASSWORD" "$alias" "$PASSWORD" > android/key.properties
+          flutter build apk --release --split-per-abi --target-platform android-arm64 \
+            --build-name "${{ needs.version.outputs.name }}" \
+            --build-number "${{ needs.version.outputs.number }}" \
+            --dart-define=FWEEK_GOOGLE_CLIENT_ID="$GOOGLE_ID" \
+            --dart-define=FWEEK_GOOGLE_CLIENT_SECRET="$GOOGLE_SECRET" 2>&1 | tee build.log || {
+            echo "::error title=APK build failed::$(tail -n 60 build.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1
+          }
+          rm -f android/key.properties "$store"
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            "dist/fweek-${{ needs.version.outputs.name }}-android-arm64.apk"
+      - uses: actions/upload-artifact@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          name: android
+          path: dist/*.apk
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, test, linux, windows, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloads
+          merge-multiple: true
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: fweek ${{ needs.version.outputs.name }}
+          generate_release_notes: true
+          files: downloads/*
+          body: |
+            **Downloads**
+            - **Windows**: `fweek-${{ needs.version.outputs.name }}-windows-x64-setup.exe`. Installs for your user, no administrator rights needed; an update installs over the earlier version and keeps your planner. The installer is not signed, so Windows may first say it protects your PC: choose "More info", then "Run anyway".
+            - **Linux**: `fweek-${{ needs.version.outputs.name }}-linux-x64.tar.gz`. Unpack it and run `./install.sh` (no root needed); needs GTK 3.
+            - **Android**: `fweek-${{ needs.version.outputs.name }}-android-arm64.apk` (Android 13 or later, 64-bit phones). Allow installing from your browser or file manager when asked; updates install over the app and keep its data.

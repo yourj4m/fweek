@@ -19,7 +19,14 @@ Future<({int exitCode, String output})> _runProgram(
 /// browser, the mail program, the map app. The app shows no web pages or
 /// maps of its own.
 class Opener {
-  Opener({this.android, ProgramRunner? run}) : _run = run ?? _runProgram;
+  Opener({this.android, ProgramRunner? run, TargetPlatform? platform})
+      : _run = run ?? _runProgram,
+        _platform = platform;
+
+  /// The system whose programs are asked; by default the one the app runs
+  /// on (tests name one).
+  final TargetPlatform? _platform;
+  TargetPlatform get _system => _platform ?? defaultTargetPlatform;
 
   /// On Android: asks the system to view an address; false when no app
   /// takes it. Null elsewhere.
@@ -39,8 +46,15 @@ class Opener {
     try {
       final android = this.android;
       if (android != null) return await android(address);
-      if (!Platform.isLinux) return false;
-      return (await _run('xdg-open', [address])).exitCode == 0;
+      return switch (_system) {
+        TargetPlatform.linux => (await _run('xdg-open', [address])).exitCode == 0,
+        // Windows' own way of handing an address to the program set for it
+        // (browser, mail program). Unlike `start`, it takes the address as
+        // one argument, so `&` and quotes in it are not read by a shell.
+        TargetPlatform.windows =>
+          (await _run('rundll32', ['url.dll,FileProtocolHandler', address])).exitCode == 0,
+        _ => false,
+      };
     } on Object catch (error) {
       debugPrint('Could not open $address: $error');
       return false;
@@ -85,6 +99,9 @@ class Opener {
   }
 
   Future<bool> _hasGeoHandler() async {
+    // Windows has no common map program for geo: addresses; its Maps app
+    // takes addresses of its own. The web map is the dependable choice.
+    if (_system != TargetPlatform.linux) return false;
     try {
       final answer = await _run('xdg-mime', ['query', 'default', 'x-scheme-handler/geo']);
       return answer.exitCode == 0 && answer.output.trim().isNotEmpty;

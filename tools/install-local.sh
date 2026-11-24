@@ -6,6 +6,11 @@
 #   tools/install-local.sh                    # install, or update
 #   tools/install-local.sh --uninstall        # remove (keeps your planner data)
 #
+# The download for Linux (tools/package-linux.sh) carries this script as
+# install.sh beside the built app, in bundle/, and its icons, in icons/:
+#
+#   ./install.sh                              # from the unpacked download
+#
 # Nothing here needs root. Planner data lives separately in
 # ~/.local/share/io.github.yourj4m.weektodo and is never touched by this
 # script; neither are the passwords in the keyring. An update therefore keeps
@@ -17,7 +22,16 @@
 # the new version starts the next time the app is opened. Folders no app is
 # running from are cleaned up by the following install.
 set -euo pipefail
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -x "$here/bundle/fweek" ]; then
+  # The unpacked download.
+  bundle="$here/bundle"
+  icon_source="$here/icons"
+else
+  root="$(cd "$here/.." && pwd)"
+  bundle="$root/build/linux/x64/release/bundle"
+  icon_source="$root/assets/icon"
+fi
 app_id="io.github.yourj4m.weektodo"
 prefix="$HOME/.local"
 target="$prefix/opt/fweek"
@@ -52,7 +66,6 @@ if [ "${1:-}" = "--uninstall" ]; then
   exit 0
 fi
 
-bundle="$root/build/linux/x64/release/bundle"
 if [ ! -x "$bundle/fweek" ]; then
   echo "No release build found. Run: tools/desktop-build.sh" >&2
   exit 1
@@ -108,7 +121,7 @@ fi
 
 for size in 48 64 128 256 512; do
   mkdir -p "$icons/${size}x${size}/apps"
-  cp "$root/assets/icon/fweek-$size.png" "$icons/${size}x${size}/apps/$app_id.png"
+  cp "$icon_source/fweek-$size.png" "$icons/${size}x${size}/apps/$app_id.png"
 done
 
 cat > "$desktop" <<DESKTOP

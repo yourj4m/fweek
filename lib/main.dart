@@ -124,7 +124,7 @@ class _FweekAppState extends State<FweekApp> {
       android.takeLaunchTask().then((id) {
         if (id != null) _openTask(id);
       });
-    } else if (live && Platform.isLinux) {
+    } else if (live && (Platform.isLinux || Platform.isWindows)) {
       _desktop = DesktopNotifications()..init();
     }
     _reminders = ReminderService(

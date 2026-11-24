@@ -329,7 +329,7 @@ class _CalendarSettingsState extends State<CalendarSettings> {
           'Google Calendar: Settings → the calendar → Integrate calendar → '
           '"Secret address in iCal format". Anyone who has this address can '
           'read the calendar, so it is kept '
-          '${isMobile ? 'encrypted on this device' : 'in the system keyring'} '
+          '$secretPlace '
           'and is never synced: add it on each device. Neither are the '
           'calendar\'s events. What does sync with your planner is what you '
           'arrange here: a calendar\'s name, colour and whether it is shown, '

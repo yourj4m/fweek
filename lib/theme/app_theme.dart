@@ -393,7 +393,7 @@ class AppText {
   }) =>
       TextStyle(
         fontFamily: family,
-        fontFamilyFallback: const ['Noto Color Emoji', 'Noto Sans'],
+        fontFamilyFallback: const ['Noto Color Emoji', 'Noto Sans', 'Segoe UI Emoji', 'Segoe UI Symbol'],
         fontSize: size,
         height: lineHeight / size,
         fontWeight: weight,

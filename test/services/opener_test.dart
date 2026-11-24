@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fweek/services/opener.dart';
 
@@ -49,7 +50,10 @@ void main() {
   });
 
   group('on the desktop', () {
-    Opener desktop(List<String> ran, {required bool mapProgram}) => Opener(
+    Opener desktop(List<String> ran,
+            {required bool mapProgram, TargetPlatform platform = TargetPlatform.linux}) =>
+        Opener(
+          platform: platform,
           run: (program, arguments) async {
             ran.add('$program ${arguments.join(' ')}');
             if (program == 'xdg-mime') {
@@ -76,6 +80,18 @@ void main() {
       await desktop(ran, mapProgram: true).openMap(label: 'Gare de Grenoble');
       expect(ran, ['xdg-open https://www.openstreetmap.org/search?query=Gare+de+Grenoble']);
     }, testOn: 'linux');
+
+    test('on Windows a link goes to the program Windows has for it, as one argument',
+        () async {
+      final ran = <String>[];
+      final opener = desktop(ran, mapProgram: true, platform: TargetPlatform.windows);
+      expect(await opener.open('https://example.org/a?b=1&c="d"'), isTrue);
+      expect(ran, ['rundll32 url.dll,FileProtocolHandler https://example.org/a?b=1&c="d"']);
+      ran.clear();
+      // Windows has no common map program: a place opens on the web map.
+      await opener.openMap(label: 'Café', geo: '45.1885,5.7245');
+      expect(ran.single, startsWith('rundll32 url.dll,FileProtocolHandler https://www.openstreetmap.org/?mlat=45.18850'));
+    });
   });
 
   test('an empty place opens nothing', () async {
